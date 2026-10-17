@@ -1,0 +1,34 @@
+# Machine-specific services, credentials and generated acceptance evidence
+/.runtime/
+/output/
+**/output/
+*.local.ini
+*.local.sql
+*.local.json
+*.pid
+*.log
+*.bak
+
+# Dependency/build/cache directories (application sources remain tracked)
+**/node_modules/
+**/target/
+**/dist/
+**/dist-ssr/
+**/.cache/
+**/.vite/
+**/.turbo/
+__pycache__/
+*.py[cod]
+*.tsbuildinfo
+
+# Local editors and operating-system metadata
+.idea/
+.vscode/
+.history/
+.DS_Store
+Thumbs.db
+Desktop.ini
+
+# Personal environment overrides; the checked-in frontend/.env.local is a
+# non-secret, reproducible localhost configuration.
+**/.env.*.local

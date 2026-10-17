@@ -1,0 +1,21 @@
+<template>
+
+  <el-tabs v-model="activeTab">
+    <el-tab-pane label="打卡概况" name="overview" lazy>
+      <AttendanceClockOverview />
+    </el-tab-pane>
+    <el-tab-pane label="打卡明细" name="record" lazy>
+      <AttendanceClockRecordList />
+    </el-tab-pane>
+  </el-tabs>
+</template>
+
+<script lang="ts" setup>
+import AttendanceClockOverview from './AttendanceClockOverview.vue'
+import AttendanceClockRecordList from './AttendanceClockRecordList.vue'
+
+/** 考勤打卡管理 */
+defineOptions({ name: 'HrmAttendanceClock' })
+
+const activeTab = ref('overview') // 当前页签
+</script>

@@ -1,0 +1,306 @@
+package cn.iocoder.yudao.module.mes.service.pro.task;
+
+import cn.hutool.core.collection.CollUtil;
+import cn.iocoder.yudao.framework.common.pojo.PageResult;
+import cn.iocoder.yudao.framework.common.util.object.BeanUtils;
+import cn.iocoder.yudao.module.mes.controller.admin.pro.task.vo.MesProTaskPageReqVO;
+import cn.iocoder.yudao.module.mes.controller.admin.pro.task.vo.MesProTaskSaveReqVO;
+import cn.iocoder.yudao.module.mes.dal.dataobject.md.item.MesMdItemDO;
+import cn.iocoder.yudao.module.mes.dal.dataobject.md.unitmeasure.MesMdUnitMeasureDO;
+import cn.iocoder.yudao.module.mes.dal.dataobject.pro.task.MesProTaskDO;
+import cn.iocoder.yudao.module.mes.dal.dataobject.pro.workorder.MesProWorkOrderDO;
+import cn.iocoder.yudao.module.mes.dal.mysql.pro.task.MesProTaskMapper;
+import cn.iocoder.yudao.module.mes.enums.md.autocode.MesMdAutoCodeRuleCodeEnum;
+import cn.iocoder.yudao.module.mes.enums.pro.MesProTaskStatusEnum;
+import cn.iocoder.yudao.module.mes.service.md.autocode.MesMdAutoCodeRecordService;
+import cn.iocoder.yudao.module.mes.service.md.item.MesMdItemService;
+import cn.iocoder.yudao.module.mes.service.md.unitmeasure.MesMdUnitMeasureService;
+import cn.iocoder.yudao.module.mes.service.md.workstation.MesMdWorkstationService;
+import cn.iocoder.yudao.module.mes.service.pro.process.MesProProcessService;
+import cn.iocoder.yudao.module.mes.service.pro.route.MesProRouteService;
+import cn.iocoder.yudao.module.mes.service.pro.workorder.MesProWorkOrderService;
+import jakarta.annotation.Resource;
+import org.springframework.context.annotation.Lazy;
+import org.springframework.stereotype.Service;
+import org.springframework.transaction.annotation.Transactional;
+import org.springframework.validation.annotation.Validated;
+
+import java.math.BigDecimal;
+import java.time.LocalDateTime;
+import java.util.Arrays;
+import java.util.Collection;
+import java.util.Collections;
+import java.util.HashMap;
+import java.util.List;
+import java.util.Map;
+import java.util.Objects;
+
+import static cn.iocoder.yudao.framework.common.exception.util.ServiceExceptionUtil.exception;
+import static cn.iocoder.yudao.framework.common.util.collection.CollectionUtils.convertList;
+import static cn.iocoder.yudao.module.mes.enums.ErrorCodeConstants.PRO_TASK_ALREADY_FINISHED;
+import static cn.iocoder.yudao.module.mes.enums.ErrorCodeConstants.PRO_TASK_NOT_EXISTS;
+import static cn.iocoder.yudao.module.mes.enums.ErrorCodeConstants.PRO_TASK_WORK_ORDER_MISMATCH;
+
+/**
+ * MES 生产任务 Service 实现类
+ *
+ * @author 芋道源码
+ */
+@Service
+@Validated
+public class MesProTaskServiceImpl implements MesProTaskService {
+
+    @Resource
+    private MesProTaskMapper taskMapper;
+
+    @Resource
+    @Lazy
+    private MesProWorkOrderService workOrderService;
+    @Resource
+    private MesMdWorkstationService workstationService;
+    @Resource
+    private MesProProcessService processService;
+    @Resource
+    private MesMdItemService itemService;
+    @Resource
+    private MesMdUnitMeasureService unitMeasureService;
+    @Resource
+    private MesProRouteService routeService;
+    @Resource
+    private MesMdAutoCodeRecordService autoCodeRecordService;
+
+    @Override
+    @Transactional(rollbackFor = Exception.class)
+    public Long createTask(MesProTaskSaveReqVO createReqVO) {
+        // 1. 校验关联数据存在
+        MesProWorkOrderDO workOrder = workOrderService.validateWorkOrderExistsForUpdate(createReqVO.getWorkOrderId());
+        workstationService.validateWorkstationExists(createReqVO.getWorkstationId());
+        routeService.validateRouteExists(createReqVO.getRouteId());
+        processService.validateProcessExistsAndEnable(createReqVO.getProcessId());
+        MesMdItemDO item = itemService.validateItemExists(createReqVO.getItemId());
+
+        // 2.1 构建任务 DO：自动填充客户信息
+        MesProTaskDO task = BeanUtils.toBean(createReqVO, MesProTaskDO.class)
+                .setName(buildTaskName(item, createReqVO.getQuantity()))
+                .setCode(autoCodeRecordService.generateAutoCode(MesMdAutoCodeRuleCodeEnum.PRO_TASK_CODE.getCode()))
+                .setStatus(MesProTaskStatusEnum.PREPARE.getStatus());
+        if (task.getClientId() == null && workOrder.getClientId() != null) {
+            task.setClientId(workOrder.getClientId());
+        }
+        // 2.2 插入
+        taskMapper.insert(task);
+        updateWorkOrderScheduledQuantity(task.getWorkOrderId());
+        return task.getId();
+    }
+
+    @Override
+    @Transactional(rollbackFor = Exception.class)
+    public void updateTask(MesProTaskSaveReqVO updateReqVO) {
+        // 1.1 校验存在
+        MesProTaskDO task = validateTaskNotFinished(updateReqVO.getId());
+        Long workOrderId = updateReqVO.getWorkOrderId() != null ? updateReqVO.getWorkOrderId() : task.getWorkOrderId();
+        lockWorkOrders(task.getWorkOrderId(), workOrderId);
+        // 等锁前的对象只是定位工单的快照，不能用于后续状态、归属或数量判断。
+        task = validateTaskNotFinishedForUpdate(task.getId(), task.getWorkOrderId());
+        // 1.2 校验关联数据存在（工单已在加锁时校验）
+        if (updateReqVO.getWorkstationId() != null) {
+            workstationService.validateWorkstationExists(updateReqVO.getWorkstationId());
+        }
+        if (updateReqVO.getRouteId() != null) {
+            routeService.validateRouteExists(updateReqVO.getRouteId());
+        }
+        if (updateReqVO.getProcessId() != null) {
+            processService.validateProcessExistsAndEnable(updateReqVO.getProcessId());
+        }
+        MesMdItemDO item;
+        if (updateReqVO.getItemId() != null) {
+            item = itemService.validateItemExists(updateReqVO.getItemId());
+        } else {
+            item = itemService.validateItemExists(task.getItemId());
+        }
+        BigDecimal quantity = updateReqVO.getQuantity() != null ? updateReqVO.getQuantity() : task.getQuantity();
+
+        // 2. 更新
+        MesProTaskDO updateObj = BeanUtils.toBean(updateReqVO, MesProTaskDO.class)
+                .setName(buildTaskName(item, quantity));
+        taskMapper.updateById(updateObj);
+        updateWorkOrderScheduledQuantity(task.getWorkOrderId());
+        if (!Objects.equals(task.getWorkOrderId(), workOrderId)) {
+            updateWorkOrderScheduledQuantity(workOrderId);
+        }
+    }
+
+    /**
+     * 构建任务名称，格式："产品名【数量】单位"
+     */
+    private String buildTaskName(MesMdItemDO item, BigDecimal quantity) {
+        String unitName = "";
+        if (item.getUnitMeasureId() != null) {
+            MesMdUnitMeasureDO unit = unitMeasureService.getUnitMeasure(item.getUnitMeasureId());
+            if (unit != null) {
+                unitName = unit.getName();
+            }
+        }
+        return item.getName() + "【" + quantity + "】" + unitName;
+    }
+
+    @Override
+    @Transactional(rollbackFor = Exception.class)
+    public void deleteTask(Long id) {
+        // 1. 校验存在且非终态
+        MesProTaskDO task = validateTaskNotFinished(id);
+        workOrderService.validateWorkOrderExistsForUpdate(task.getWorkOrderId());
+        task = validateTaskNotFinishedForUpdate(id, task.getWorkOrderId());
+
+        // 2. 删除
+        taskMapper.deleteById(id);
+        updateWorkOrderScheduledQuantity(task.getWorkOrderId());
+    }
+
+    @Override
+    public MesProTaskDO getTask(Long id) {
+        return taskMapper.selectById(id);
+    }
+
+    @Override
+    public PageResult<MesProTaskDO> getTaskPage(MesProTaskPageReqVO pageReqVO) {
+        return taskMapper.selectPage(pageReqVO);
+    }
+
+    @Override
+    public List<MesProTaskDO> getTaskListByWorkOrderIds(Collection<Long> workOrderIds) {
+        if (CollUtil.isEmpty(workOrderIds)) {
+            return Collections.emptyList();
+        }
+        return taskMapper.selectListByWorkOrderIds(workOrderIds);
+    }
+
+    @Override
+    public MesProTaskDO validateTaskExists(Long id) {
+        MesProTaskDO task = taskMapper.selectById(id);
+        if (task == null) {
+            throw exception(PRO_TASK_NOT_EXISTS);
+        }
+        return task;
+    }
+
+    @Override
+    public MesProTaskDO validateTaskNotFinished(Long id) {
+        MesProTaskDO task = validateTaskExists(id);
+        if (MesProTaskStatusEnum.isEndStatus(task.getStatus())) {
+            throw exception(PRO_TASK_ALREADY_FINISHED);
+        }
+        return task;
+    }
+
+    @Override
+    public MesProTaskDO validateTaskExistsForUpdate(Long id, Long workOrderId) {
+        MesProTaskDO task = taskMapper.selectByIdForUpdate(id);
+        if (task == null) {
+            throw exception(PRO_TASK_NOT_EXISTS);
+        }
+        if (!Objects.equals(task.getWorkOrderId(), workOrderId)) {
+            throw exception(PRO_TASK_WORK_ORDER_MISMATCH);
+        }
+        return task;
+    }
+
+    @Override
+    public MesProTaskDO validateTaskNotFinishedForUpdate(Long id, Long workOrderId) {
+        MesProTaskDO task = validateTaskExistsForUpdate(id, workOrderId);
+        if (MesProTaskStatusEnum.isEndStatus(task.getStatus())) {
+            throw exception(PRO_TASK_ALREADY_FINISHED);
+        }
+        return task;
+    }
+
+    @Override
+    public List<MesProTaskDO> getTaskList(Collection<Long> ids) {
+        if (CollUtil.isEmpty(ids)) {
+            return Collections.emptyList();
+        }
+        return taskMapper.selectByIds(ids);
+    }
+
+    @Override
+    @Transactional(rollbackFor = Exception.class)
+    public void finishTaskByOrderId(Long workOrderId) {
+        workOrderService.validateWorkOrderExistsForUpdate(workOrderId);
+        // 1. 读取工单下所有任务，过滤掉已完成/已取消的
+        List<MesProTaskDO> tasks = taskMapper.selectListByWorkOrderIdForUpdate(workOrderId);
+        LocalDateTime now = LocalDateTime.now();
+        // 2. 构建待更新列表，批量更新
+        List<MesProTaskDO> updateList = convertList(tasks,
+                task -> new MesProTaskDO().setId(task.getId())
+                        .setStatus(MesProTaskStatusEnum.FINISHED.getStatus()).setFinishDate(now),
+                task -> !MesProTaskStatusEnum.isEndStatus(task.getStatus()));
+        if (CollUtil.isNotEmpty(updateList)) {
+            taskMapper.updateBatch(updateList);
+        }
+    }
+
+    @Override
+    @Transactional(rollbackFor = Exception.class)
+    public void cancelTaskByOrderId(Long workOrderId) {
+        workOrderService.validateWorkOrderExistsForUpdate(workOrderId);
+        // 1. 读取工单下所有任务，过滤掉已完成/已取消的
+        List<MesProTaskDO> tasks = taskMapper.selectListByWorkOrderIdForUpdate(workOrderId);
+        LocalDateTime now = LocalDateTime.now();
+        // 2. 构建待更新列表，批量更新
+        List<MesProTaskDO> updateList = convertList(tasks,
+                task -> new MesProTaskDO().setId(task.getId())
+                        .setStatus(MesProTaskStatusEnum.CANCELED.getStatus()).setCancelDate(now),
+                task -> !MesProTaskStatusEnum.isEndStatus(task.getStatus()));
+        if (CollUtil.isNotEmpty(updateList)) {
+            taskMapper.updateBatch(updateList);
+        }
+        updateWorkOrderScheduledQuantity(workOrderId);
+    }
+
+    private void lockWorkOrders(Long firstId, Long secondId) {
+        // 跨工单移动任务时保持锁顺序，避免反向移动产生死锁。
+        if (Objects.equals(firstId, secondId)) {
+            workOrderService.validateWorkOrderExistsForUpdate(firstId);
+        } else if (firstId < secondId) {
+            workOrderService.validateWorkOrderExistsForUpdate(firstId);
+            workOrderService.validateWorkOrderExistsForUpdate(secondId);
+        } else {
+            workOrderService.validateWorkOrderExistsForUpdate(secondId);
+            workOrderService.validateWorkOrderExistsForUpdate(firstId);
+        }
+    }
+
+    /**
+     * 排产数量按同一路线/工序的任务求和，再取各组最大值。
+     * 例如两道工序各排 50 件仍为 50 件；同工序分工作站排 20+30 件为 50 件。
+     * 已完成任务保留历史排产，取消任务不占用排产数量。调用前须先锁工单。
+     */
+    private void updateWorkOrderScheduledQuantity(Long workOrderId) {
+        Map<List<Long>, BigDecimal> processQuantities = new HashMap<>();
+        // 使用当前读，避免事务中前面的校验查询建立快照后漏掉已提交的任务。
+        for (MesProTaskDO task : taskMapper.selectListByWorkOrderIdForUpdate(workOrderId)) {
+            if (Objects.equals(task.getStatus(), MesProTaskStatusEnum.CANCELED.getStatus())) {
+                continue;
+            }
+            if (task.getQuantity() != null) {
+                processQuantities.merge(Arrays.asList(task.getRouteId(), task.getProcessId()),
+                        task.getQuantity(), BigDecimal::add);
+            }
+        }
+        BigDecimal quantityScheduled = processQuantities.values().stream()
+                .max(BigDecimal::compareTo).orElse(BigDecimal.ZERO);
+        workOrderService.updateScheduledQuantity(workOrderId, quantityScheduled);
+    }
+
+    @Override
+    public void updateProducedQuantity(Long id,
+                                       BigDecimal incrProducedQuantity,
+                                       BigDecimal incrQualifyQuantity,
+                                       BigDecimal incrUnqualifyQuantity) {
+        // 校验任务存在
+        validateTaskExists(id);
+        // 更新数量
+        taskMapper.updateProducedQuantity(id, incrProducedQuantity, incrQualifyQuantity, incrUnqualifyQuantity);
+    }
+
+}
