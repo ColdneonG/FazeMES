@@ -21,6 +21,9 @@ public class MesWmMaterialStockListReqVO {
     @Schema(description = "物料编号")
     private Long itemId;
 
+    @Schema(description = "所属生产工单")
+    private Long workOrderId;
+
     @Schema(description = "批次编号")
     private Long batchId;
 

@@ -3,6 +3,8 @@ import request from '@/config/axios'
 // MES 库存台账 VO
 export interface WmMaterialStockVO {
   id: number
+  workOrderId?: number
+  workOrderCode?: string
   itemTypeId: number
   itemId: number
   itemCode: string

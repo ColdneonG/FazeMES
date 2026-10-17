@@ -69,6 +69,8 @@ public class MesDvCheckPlanDO extends BaseDO {
      * 枚举 {@link MesDvCheckPlanStatusEnum}
      */
     private Integer status;
+    /** Next ungenerated occurrence, advanced atomically with task creation. */
+    private LocalDateTime nextTaskTime;
     /**
      * 备注
      */

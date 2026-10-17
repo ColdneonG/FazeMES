@@ -5,6 +5,9 @@ import cn.hutool.core.exceptions.ExceptionUtil;
 import cn.hutool.core.map.MapUtil;
 import cn.hutool.core.util.ObjUtil;
 import cn.hutool.core.util.StrUtil;
+import cn.iocoder.yudao.framework.apilog.core.annotation.ApiAccessLog;
+import cn.iocoder.yudao.framework.apilog.core.interceptor.ApiAccessLogInterceptor;
+import cn.iocoder.yudao.framework.apilog.core.util.ApiLogSanitizer;
 import cn.iocoder.yudao.framework.common.biz.infra.logger.ApiErrorLogCommonApi;
 import cn.iocoder.yudao.framework.common.biz.infra.logger.dto.ApiErrorLogCreateReqDTO;
 import cn.iocoder.yudao.framework.common.exception.ServiceException;
@@ -37,6 +40,7 @@ import org.springframework.web.bind.MissingServletRequestParameterException;
 import org.springframework.web.bind.annotation.ExceptionHandler;
 import org.springframework.web.bind.annotation.RestControllerAdvice;
 import org.springframework.web.method.annotation.MethodArgumentTypeMismatchException;
+import org.springframework.web.method.HandlerMethod;
 import org.springframework.web.multipart.MaxUploadSizeExceededException;
 import org.springframework.web.servlet.NoHandlerFoundException;
 import org.springframework.web.servlet.resource.NoResourceFoundException;
@@ -379,10 +383,15 @@ public class GlobalExceptionHandler {
         errorLog.setTraceId(TracerUtils.getTraceId());
         errorLog.setApplicationName(applicationName);
         errorLog.setRequestUrl(request.getRequestURI());
-        Map<String, Object> requestParams = MapUtil.<String, Object>builder()
-                .put("query", ServletUtils.getParamMap(request))
-                .put("body", ServletUtils.getBody(request)).build();
-        errorLog.setRequestParams(JsonUtils.toJsonString(requestParams));
+        Object handler = request.getAttribute(ApiAccessLogInterceptor.ATTRIBUTE_HANDLER_METHOD);
+        ApiAccessLog annotation = handler instanceof HandlerMethod method ? method.getMethodAnnotation(ApiAccessLog.class) : null;
+        if (annotation == null || (annotation.enable() && annotation.requestEnable())) {
+            String[] sanitizeKeys = annotation == null ? null : annotation.sanitizeKeys();
+            Map<String, Object> requestParams = MapUtil.<String, Object>builder()
+                    .put("query", ApiLogSanitizer.sanitizeMap(ServletUtils.getParamMap(request), sanitizeKeys))
+                    .put("body", ApiLogSanitizer.sanitizeJson(ServletUtils.getBody(request), sanitizeKeys)).build();
+            errorLog.setRequestParams(JsonUtils.toJsonString(requestParams));
+        }
         errorLog.setRequestMethod(request.getMethod());
         errorLog.setUserAgent(ServletUtils.getUserAgent(request));
         errorLog.setUserIp(ServletUtils.getClientIP(request));

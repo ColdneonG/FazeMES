@@ -7,6 +7,7 @@ import cn.iocoder.yudao.module.mes.dal.dataobject.wm.miscreceipt.MesWmMiscReceip
 import cn.iocoder.yudao.module.mes.dal.mysql.wm.miscreceipt.MesWmMiscReceiptDetailMapper;
 import jakarta.annotation.Resource;
 import org.springframework.stereotype.Service;
+import org.springframework.transaction.annotation.Transactional;
 import org.springframework.validation.annotation.Validated;
 
 import java.util.List;
@@ -25,6 +26,7 @@ public class MesWmMiscReceiptDetailServiceImpl implements MesWmMiscReceiptDetail
     private MesWmMiscReceiptDetailMapper receiptDetailMapper;
 
     @Override
+    @Transactional(rollbackFor=Exception.class)
     public Long createMiscReceiptDetail(MesWmMiscReceiptLineSaveReqVO createReqVO) {
         MesWmMiscReceiptDetailDO detail = BeanUtils.toBean(createReqVO, MesWmMiscReceiptDetailDO.class);
         detail.setId(null); // 清空 id，让数据库自动生成
@@ -34,6 +36,7 @@ public class MesWmMiscReceiptDetailServiceImpl implements MesWmMiscReceiptDetail
     }
 
     @Override
+    @Transactional(rollbackFor=Exception.class)
     public void updateMiscReceiptDetail(MesWmMiscReceiptLineSaveReqVO updateReqVO) {
         // 基于 lineId 查询唯一的 detail 记录（VO 的 id 字段是 lineId）
         List<MesWmMiscReceiptDetailDO> details = receiptDetailMapper.selectListByLineId(updateReqVO.getId());

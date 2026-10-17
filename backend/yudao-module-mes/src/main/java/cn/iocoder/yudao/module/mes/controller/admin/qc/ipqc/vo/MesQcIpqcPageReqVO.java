@@ -26,6 +26,9 @@ public class MesQcIpqcPageReqVO extends PageParam {
     @Schema(description = "生产工单 ID", example = "10")
     private Long workOrderId;
 
+    private Long workstationId;
+    private Long taskId;
+
     @Schema(description = "产品物料 ID", example = "50")
     private Long itemId;
 

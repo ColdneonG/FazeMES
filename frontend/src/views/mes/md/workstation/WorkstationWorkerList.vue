@@ -16,7 +16,16 @@
     <el-table v-loading="loading" :data="list" :stripe="true" :show-overflow-tooltip="true" border>
       <el-table-column label="岗位编号" align="center" prop="postId" />
       <el-table-column label="岗位名称" align="center" prop="postName" />
-      <el-table-column label="数量" align="center" prop="quantity" width="100" />
+      <el-table-column label="所需人数" align="center" prop="quantity" width="100" />
+      <el-table-column label="实际人员绑定" min-width="200">
+        <template #default="{ row }">
+          {{
+            row.userIds?.length
+              ? row.userIds.map((id: number) => userNames[id] || `人员 ${id}`).join('、')
+              : '未绑定：人数和排班未限制'
+          }}
+        </template>
+      </el-table-column>
       <el-table-column label="备注" align="center" prop="remark" />
       <el-table-column label="操作" align="center" width="120" v-if="!isDetail">
         <template #default="scope">
@@ -36,7 +45,12 @@
         v-loading="formLoading"
       >
         <el-form-item label="岗位" prop="postId">
-          <el-select v-model="formData.postId" placeholder="请选择岗位" class="!w-1/1">
+          <el-select
+            v-model="formData.postId"
+            placeholder="请选择岗位"
+            class="!w-1/1"
+            @change="changePost"
+          >
             <el-option
               v-for="post in postList"
               :key="post.id"
@@ -45,13 +59,34 @@
             />
           </el-select>
         </el-form-item>
-        <el-form-item label="数量" prop="quantity">
+        <el-form-item label="所需人数" prop="quantity">
           <el-input-number
             v-model="formData.quantity"
             :min="1"
             controls-position="right"
             class="!w-1/1"
           />
+        </el-form-item>
+        <el-form-item label="实际人员" prop="userIds">
+          <el-select
+            v-model="formData.userIds"
+            multiple
+            filterable
+            clearable
+            :disabled="!formData.postId"
+            placeholder="选择此岗位的实际人员"
+            class="!w-1/1"
+          >
+            <el-option
+              v-for="user in userList"
+              :key="user.id"
+              :label="user.nickname"
+              :value="user.id"
+            />
+          </el-select>
+          <div class="text-12px text-gray-500 mt-5px"
+            >空绑定表示未限制。绑定后按启用状态、岗位及已确认个人排班检查人数；没有当前适用排班时不限制出勤时段。</div
+          >
         </el-form-item>
         <el-form-item label="备注" prop="remark">
           <el-input v-model="formData.remark" type="textarea" placeholder="请输入备注" />
@@ -83,12 +118,27 @@ const isDetail = computed(() => props.formType === 'detail') // 是否详情模�
 const loading = ref(false) // 列表的加载中
 const list = ref<MdWorkstationWorkerVO[]>([]) // 列表的数据
 const postList = ref<PostApi.PostVO[]>([]) // 岗位下拉列表
+const userList = ref<{ id: number; nickname: string }[]>([])
+const userNames = reactive<Record<number, string>>({})
+const loadUsers = async (postId?: number) => {
+  const users = postId ? await MdWorkstationWorkerApi.getWorkerCandidates(postId) : []
+  users.forEach((user) => {
+    userNames[user.id] = user.nickname
+  })
+  return users
+}
+const changePost = async (postId?: number) => {
+  formData.value.userIds = []
+  userList.value = await loadUsers(postId)
+}
 
 /** 查询列表 */
 const getList = async () => {
   loading.value = true
   try {
     list.value = await MdWorkstationWorkerApi.getWorkstationWorkerList(props.workstationId)
+    if (!isDetail.value)
+      await Promise.all([...new Set(list.value.map((row) => row.postId))].map(loadUsers))
   } finally {
     loading.value = false
   }
@@ -105,6 +155,7 @@ const formData = ref({
   workstationId: undefined as number | undefined,
   postId: undefined as number | undefined,
   quantity: 1,
+  userIds: [] as number[],
   remark: undefined as string | undefined
 })
 const formRules = reactive({
@@ -122,7 +173,8 @@ const openForm = async (type: string, row?: MdWorkstationWorkerVO) => {
   postList.value = await PostApi.getSimplePostList()
   // 修改时，设置数据
   if (type === 'update' && row) {
-    formData.value = { ...row }
+    formData.value = { ...row, userIds: [...(row.userIds || [])] }
+    userList.value = await loadUsers(row.postId)
   }
 }
 
@@ -158,6 +210,7 @@ const resetForm = () => {
     workstationId: props.workstationId,
     postId: undefined,
     quantity: 1,
+    userIds: [],
     remark: undefined
   }
   formRef.value?.resetFields()

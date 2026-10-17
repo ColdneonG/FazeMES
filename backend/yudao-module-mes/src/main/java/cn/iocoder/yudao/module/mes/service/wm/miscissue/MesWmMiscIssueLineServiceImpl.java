@@ -59,6 +59,10 @@ public class MesWmMiscIssueLineServiceImpl implements MesWmMiscIssueLineService 
     @Override
     @Transactional(rollbackFor = Exception.class)
     public void updateMiscIssueLine(MesWmMiscIssueLineSaveReqVO updateReqVO) {
+        // A line cannot be moved out of a completed document by changing the request parent id.
+        var persistedParent=miscIssueLineMapper.selectById(updateReqVO.getId());
+        if(persistedParent==null) throw exception(cn.iocoder.yudao.module.mes.enums.ErrorCodeConstants.WM_MATERIAL_STOCK_SELECTION_MISMATCH);
+        updateReqVO.setIssueId(persistedParent.getIssueId());
         // 1.1 校验存在
         MesWmMiscIssueLineDO line = validateAndGetMiscIssueLine(updateReqVO.getId());
         // 1.2 校验数据

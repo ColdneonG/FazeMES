@@ -57,4 +57,7 @@ public class GanttDataRespVO {
     @Schema(description = "生产时长")
     private Long duration;
 
+    @Schema(description = "是否允许调整排产时间")
+    private Boolean editable;
+
 }

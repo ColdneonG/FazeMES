@@ -112,6 +112,11 @@ public class MesQcTemplateItemServiceImpl implements MesQcTemplateItemService {
 
     @Override
     public MesQcTemplateItemDO getRequiredTemplateByItemIdAndType(Long itemId, Integer qcType) {
+        return getRequiredTemplateByItemIdAndType(itemId, qcType, null);
+    }
+
+    @Override
+    public MesQcTemplateItemDO getRequiredTemplateByItemIdAndType(Long itemId, Integer qcType, Integer ipqcType) {
         // 1. 查出 itemId 关联的所有 templateItem
         List<MesQcTemplateItemDO> templateItems = templateItemMapper.selectListByItemId(itemId);
         if (CollUtil.isEmpty(templateItems)) {
@@ -120,11 +125,20 @@ public class MesQcTemplateItemServiceImpl implements MesQcTemplateItemService {
         // 2. 筛选 types 包含 qcType 且状态为开启的模板
         List<MesQcTemplateDO> templates = templateService.getTemplateList(
                 convertSet(templateItems, MesQcTemplateItemDO::getTemplateId));
-        MesQcTemplateDO matchedTemplate = findFirst(templates,
-                t -> CommonStatusEnum.isEnable(t.getStatus()) && CollUtil.contains(t.getTypes(), qcType));
-        if (matchedTemplate == null) {
+        List<MesQcTemplateDO> candidates = templates.stream()
+                .filter(t -> CommonStatusEnum.isEnable(t.getStatus()) && CollUtil.contains(t.getTypes(), qcType)).toList();
+        if (Objects.equals(qcType, cn.iocoder.yudao.module.mes.enums.qc.MesQcTypeEnum.IPQC.getType())) {
+            List<MesQcTemplateDO> scoped = candidates.stream()
+                    .filter(t -> ipqcType != null && CollUtil.contains(t.getIpqcTypes(), ipqcType)).toList();
+            candidates = scoped.isEmpty() ? candidates.stream().filter(t -> CollUtil.isEmpty(t.getIpqcTypes())).toList() : scoped;
+        }
+        if (candidates.isEmpty()) {
             throw exception(QC_NO_TEMPLATE);
         }
+        if (candidates.size() > 1) {
+            throw exception(QC_TEMPLATE_AMBIGUOUS);
+        }
+        MesQcTemplateDO matchedTemplate = candidates.get(0);
         // 3. 返回对应的 templateItem
         return findFirst(templateItems,
                 item -> Objects.equals(item.getTemplateId(), matchedTemplate.getId()));

@@ -165,7 +165,9 @@ public class MesQcRqcServiceImpl implements MesQcRqcService {
      * @param rqc 退货检验单
      */
     private void writeBackSourceDoc(MesQcRqcDO rqc) {
-        if (rqc.getSourceDocType() == null) {
+        // Legacy schemas default an omitted source type to 0 for manual inspections.
+        if (rqc.getSourceDocType() == null || (Objects.equals(rqc.getSourceDocType(), 0)
+                && rqc.getSourceDocId() == null && rqc.getSourceLineId() == null)) {
             return;
         }
         if (rqc.getSourceLineId() == null) {

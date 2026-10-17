@@ -34,4 +34,18 @@ public interface MesDvRepairMapper extends BaseMapperX<MesDvRepairDO> {
         return selectCount(MesDvRepairDO::getMachineryId, machineryId);
     }
 
+    default MesDvRepairDO selectForUpdate(Long id) {
+        return selectOne(new LambdaQueryWrapperX<MesDvRepairDO>().eq(MesDvRepairDO::getId, id).last("FOR UPDATE"));
+    }
+
+
+    default MesDvRepairDO selectSourceForUpdate(Integer type, Long sourceId) {
+        return selectOne(new LambdaQueryWrapperX<MesDvRepairDO>().eq(MesDvRepairDO::getSourceDocType,type)
+            .eq(MesDvRepairDO::getSourceDocId,sourceId).last("FOR UPDATE"));
+    }
+    default java.util.List<MesDvRepairDO> selectUnfinishedForUpdate(Long machineryId) {
+        return selectList(new LambdaQueryWrapperX<MesDvRepairDO>().eq(MesDvRepairDO::getMachineryId,machineryId)
+            .ne(MesDvRepairDO::getStatus,cn.iocoder.yudao.module.mes.enums.dv.MesDvRepairStatusEnum.FINISHED.getStatus())
+            .orderByAsc(MesDvRepairDO::getId).last("FOR UPDATE"));
+    }
 }

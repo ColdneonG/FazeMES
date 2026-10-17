@@ -21,6 +21,7 @@ import cn.iocoder.yudao.module.mes.dal.dataobject.wm.warehouse.MesWmWarehouseLoc
 import cn.iocoder.yudao.module.mes.service.md.item.MesMdItemService;
 import cn.iocoder.yudao.module.mes.service.md.unitmeasure.MesMdUnitMeasureService;
 import cn.iocoder.yudao.module.mes.service.md.vendor.MesMdVendorService;
+import cn.iocoder.yudao.module.mes.service.pro.workorder.MesProWorkOrderService;
 import cn.iocoder.yudao.module.mes.service.wm.materialstock.MesWmMaterialStockService;
 import cn.iocoder.yudao.module.mes.service.wm.warehouse.MesWmWarehouseAreaService;
 import cn.iocoder.yudao.module.mes.service.wm.warehouse.MesWmWarehouseLocationService;
@@ -64,6 +65,8 @@ public class MesWmMaterialStockController {
     private MesWmWarehouseAreaService areaService;
     @Resource
     private MesMdVendorService vendorService;
+    @Resource
+    private MesProWorkOrderService workOrderService;
 
     @GetMapping("/get")
     @Operation(summary = "获得库存记录")
@@ -126,8 +129,10 @@ public class MesWmMaterialStockController {
                 convertSet(list, MesWmMaterialStockDO::getAreaId));
         Map<Long, MesMdVendorDO> vendorMap = vendorService.getVendorMap(
                 convertSet(list, MesWmMaterialStockDO::getVendorId));
+        var workOrderMap = workOrderService.getWorkOrderMap(convertSet(list, MesWmMaterialStockDO::getWorkOrderId));
         // 2. 构建结果
         return BeanUtils.toBean(list, MesWmMaterialStockRespVO.class, vo -> {
+            MapUtils.findAndThen(workOrderMap, vo.getWorkOrderId(), order -> vo.setWorkOrderCode(order.getCode()));
             MapUtils.findAndThen(itemMap, vo.getItemId(), item -> {
                 vo.setItemCode(item.getCode()).setItemName(item.getName()).setSpecification(item.getSpecification());
                 MapUtils.findAndThen(unitMeasureMap, item.getUnitMeasureId(),

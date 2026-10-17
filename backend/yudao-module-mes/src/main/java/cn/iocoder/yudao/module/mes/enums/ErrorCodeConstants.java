@@ -28,6 +28,9 @@ public interface ErrorCodeConstants {
     ErrorCode MD_UNIT_MEASURE_HAS_TASK_ISSUE = new ErrorCode(1_040_101_004, "该计量单位已被生产投料引用，无法删除");
     ErrorCode MD_UNIT_MEASURE_HAS_QC_TEMPLATE_INDICATOR = new ErrorCode(1_040_101_005, "该计量单位已被质检方案指标项引用，无法删除");
     ErrorCode MD_UNIT_MEASURE_HAS_QC_LINE = new ErrorCode(1_040_101_006, "该计量单位已被质检单据行引用，无法删除");
+    ErrorCode MD_UNIT_MEASURE_PRIMARY_REQUIRED = new ErrorCode(1_040_101_007, "辅单位必须选择已启用的主单位，且不能选择自身");
+    ErrorCode MD_UNIT_MEASURE_RATE_INVALID = new ErrorCode(1_040_101_008, "辅单位换算比例必须大于零，最多14位整数和6位小数");
+    ErrorCode MD_UNIT_MEASURE_PRIMARY_IN_USE = new ErrorCode(1_040_101_009, "该主单位存在辅单位，不能停用或改为辅单位");
 
     // ========== MES 基础数据-物料（1-040-102-000） ==========
     ErrorCode MD_ITEM_NOT_EXISTS = new ErrorCode(1_040_102_000, "物料不存在");
@@ -36,6 +39,7 @@ public interface ErrorCodeConstants {
     ErrorCode MD_ITEM_IMPORT_LIST_IS_EMPTY = new ErrorCode(1_040_102_003, "导入物料数据不能为空");
     ErrorCode MD_ITEM_BATCH_REQUIRED = new ErrorCode(1_040_102_004, "当前物料启用了批次管理，请选择批次");
     ErrorCode MD_ITEM_IS_DISABLE = new ErrorCode(1_040_102_005, "物料已禁用");
+    ErrorCode MD_ITEM_STOCK_RANGE_INVALID = new ErrorCode(1_040_102_006, "库存上下限不能为负，上限启用时不能小于下限");
 
     // ========== MES 基础数据-物料批次属性配置（1-040-102-100） ==========
     ErrorCode MD_ITEM_BATCH_CONFIG_NOT_EXISTS = new ErrorCode(1_040_102_100, "物料批次属性配置不存在");
@@ -90,6 +94,9 @@ public interface ErrorCodeConstants {
     ErrorCode MD_WORKSTATION_CODE_DUPLICATE = new ErrorCode(1_040_106_001, "工作站编码已存在");
     ErrorCode MD_WORKSTATION_NAME_DUPLICATE = new ErrorCode(1_040_106_002, "工作站名称已存在");
     ErrorCode MD_WORKSTATION_IS_DISABLE = new ErrorCode(1_040_106_003, "工作站已禁用");
+    ErrorCode MD_WORKSTATION_RESOURCE_UNAVAILABLE = new ErrorCode(1_040_106_004, "工作站资源不可用：{}");
+    ErrorCode MD_WORKSTATION_RESOURCE_QUANTITY_INVALID = new ErrorCode(1_040_106_005, "资源需求数量必须大于零");
+    ErrorCode MD_WORKSTATION_RESOURCE_BINDING_INVALID = new ErrorCode(1_040_106_006, "资源绑定无效：{}");
     // ========== MES 基础数据-设备资源（1-040-106-100） ==========
     ErrorCode MD_WORKSTATION_MACHINE_NOT_EXISTS = new ErrorCode(1_040_106_100, "设备资源记录不存在");
     ErrorCode MD_WORKSTATION_MACHINE_EXISTS = new ErrorCode(1_040_106_101, "该设备已分配至工作站：{}");
@@ -125,6 +132,7 @@ public interface ErrorCodeConstants {
 
     // ========== MES 日历排班-计划班次（1-040-200-000） ==========
     ErrorCode CAL_PLAN_SHIFT_NOT_EXISTS = new ErrorCode(1_040_200_000, "计划班次不存在");
+    ErrorCode CAL_PLAN_SHIFT_TIME_INVALID = new ErrorCode(1_040_200_002, "班次时间须为HH:mm且起止时间不能相同");
     ErrorCode CAL_PLAN_SHIFT_COUNT_EXCEED = new ErrorCode(1_040_200_001, "班次数量已达到轮班方式的上限");
 
     // ========== MES 日历排班-班组（1-040-201-000） ==========
@@ -145,6 +153,7 @@ public interface ErrorCodeConstants {
     ErrorCode CAL_PLAN_NOT_EXISTS = new ErrorCode(1_040_202_000, "排班计划不存在");
     ErrorCode CAL_PLAN_CODE_DUPLICATE = new ErrorCode(1_040_202_001, "排班计划编码已存在");
     ErrorCode CAL_PLAN_NOT_PREPARE = new ErrorCode(1_040_202_002, "排班计划已确认，不允许修改或删除");
+    ErrorCode CAL_PLAN_DATE_INVALID = new ErrorCode(1_040_202_004, "排班日期和轮班方式不合法");
     ErrorCode CAL_PLAN_TEAM_COUNT_NOT_MATCH = new ErrorCode(1_040_202_003, "确认排班计划时，分配的班组数量与轮班方式不匹配");
     // ========== MES 日历排班-计划班组关联（1-040-202-100） ==========
     ErrorCode CAL_PLAN_TEAM_NOT_EXISTS = new ErrorCode(1_040_202_100, "计划班组关联不存在");
@@ -189,6 +198,13 @@ public interface ErrorCodeConstants {
     ErrorCode DV_CHECK_PLAN_TYPE_MISMATCH = new ErrorCode(1_040_302_006, "点检保养方案类型与当前业务不匹配");
     ErrorCode DV_CHECK_PLAN_NOT_ENABLED_FOR_RECORD = new ErrorCode(1_040_302_007, "点检保养方案未启用，不允许创建记录");
     // ========== MES 设备管理-点检方案设备（1-040-302-100） ==========
+    ErrorCode DV_CHECK_PLAN_CYCLE_INVALID = new ErrorCode(1_040_302_008, "请填写有效的计划起止日期、周期类型和正整数周期数量");
+    ErrorCode DV_CHECK_PLAN_HAS_TASK = new ErrorCode(1_040_302_009, "方案已有设备任务，请停用保留历史，不能删除");
+    ErrorCode DV_TASK_NOT_EXISTS = new ErrorCode(1_040_302_300, "设备任务不存在");
+    ErrorCode DV_TASK_STATE_INVALID = new ErrorCode(1_040_302_301, "任务已被领用或完成，不能重复领用");
+    ErrorCode DV_TASK_NOT_OWNER = new ErrorCode(1_040_302_302, "请先由当前人员领用任务");
+    ErrorCode DV_TASK_RESULTS_INVALID = new ErrorCode(1_040_302_303, "请逐项填写结果，异常项目必须填写异常描述");
+
     ErrorCode DV_CHECK_PLAN_MACHINERY_NOT_EXISTS = new ErrorCode(1_040_302_100, "点检保养方案设备不存在");
     ErrorCode DV_CHECK_PLAN_MACHINERY_DUPLICATE = new ErrorCode(1_040_302_101, "该设备已关联到当前方案，请勿重复添加");
     ErrorCode DV_CHECK_PLAN_MACHINERY_EXISTS_IN_SAME_TYPE = new ErrorCode(1_040_302_102, "该设备已存在于同类型的其他启用的或草稿的方案中，不允许同一设备添加多个同类型的方案");
@@ -203,6 +219,11 @@ public interface ErrorCodeConstants {
     ErrorCode DV_REPAIR_NOT_CONFIRMED = new ErrorCode(1_040_303_003, "只有维修中状态的维修工单才能完成维修");
     ErrorCode DV_REPAIR_NOT_APPROVING = new ErrorCode(1_040_303_004, "只有待验收状态的维修工单才能验收");
     // ========== MES 设备管理-维修工单行（1-040-303-100） ==========
+    ErrorCode DV_REPAIR_NOT_EDITABLE = new ErrorCode(1_040_303_005, "只有草稿或维修中的维修单可以更新过程");
+    ErrorCode DV_REPAIR_RESULT_INVALID = new ErrorCode(1_040_303_006, "维修验收结果不合法");
+    ErrorCode DV_REPAIR_AUTO_CANNOT_DELETE = new ErrorCode(1_040_303_008, "自动报修保留来源关联，请完成维修验收而非删除");
+    ErrorCode DV_REPAIR_CHANGED = new ErrorCode(1_040_303_007, "维修设备已变更，请刷新后重试");
+
     ErrorCode DV_REPAIR_LINE_NOT_EXISTS = new ErrorCode(1_040_303_100, "维修工单行不存在");
 
     // ========== MES 设备管理-保养记录（1-040-305-000） ==========
@@ -276,6 +297,10 @@ public interface ErrorCodeConstants {
     ErrorCode PRO_TASK_ROUTE_PROCESS_MISMATCH = new ErrorCode(1_040_503_004, "生产任务与当前工艺路线或工序不一致");
     ErrorCode PRO_TASK_ITEM_MISMATCH = new ErrorCode(1_040_503_005, "生产任务产品与当前产品物料不一致");
     ErrorCode PRO_WORKSTATION_PROCESS_MISMATCH = new ErrorCode(1_040_503_006, "工作站所属工序与当前工序不一致");
+    ErrorCode PRO_TASK_ROUTE_DISABLED = new ErrorCode(1_040_503_007, "工艺路线未启用，不能排产");
+    ErrorCode PRO_TASK_ROUTE_PRODUCT_MISMATCH = new ErrorCode(1_040_503_008, "产品未配置当前工艺路线");
+    ErrorCode PRO_TASK_SCHEDULE_INVALID = new ErrorCode(1_040_503_009, "排产需填写工单、工作站、路线、工序、产品及正数数量");
+    ErrorCode PRO_TASK_TIME_INVALID = new ErrorCode(1_040_503_010, "排产需填写开始时间和正整数工作日，结束时间必须等于开始时间加工作日数乘8小时");
     // ========== MES 生产管理-生产任务投料（1-040-503-100） ==========
     ErrorCode PRO_TASK_ISSUE_NOT_EXISTS = new ErrorCode(1_040_503_100, "生产任务投料记录不存在");
 
@@ -302,6 +327,7 @@ public interface ErrorCodeConstants {
     ErrorCode PRO_FEEDBACK_QUANTITY_MUST_POSITIVE = new ErrorCode(1_040_506_010, "报工数量必须大于 0");
     ErrorCode PRO_FEEDBACK_QUALIFIED_UNQUALIFIED_REQUIRED = new ErrorCode(1_040_506_011, "请输入合格品和不良品数量，且合计须大于 0");
     ErrorCode PRO_FEEDBACK_UNCHECK_QUANTITY_EXISTS = new ErrorCode(1_040_506_012, "当前报工单未完成检验（待检数量：{}），无法执行报工");
+    ErrorCode PRO_FEEDBACK_APPROVER_MISMATCH = new ErrorCode(1_040_506_013, "只有指定审核人才能审批或驳回该报工单");
 
     // ========== MES 生产管理-生产流转卡（1-040-507-000） ==========
     ErrorCode PRO_CARD_NOT_EXISTS = new ErrorCode(1_040_507_000, "生产流转卡不存在");
@@ -319,6 +345,9 @@ public interface ErrorCodeConstants {
     // ========== MES 质量管理-质检方案（1-040-600-000） ==========
     ErrorCode QC_TEMPLATE_NOT_EXISTS = new ErrorCode(1_040_600_000, "质检方案不存在");
     ErrorCode QC_TEMPLATE_CODE_DUPLICATE = new ErrorCode(1_040_600_001, "质检方案编号已存在");
+    ErrorCode QC_TEMPLATE_IPQC_TYPE_INVALID = new ErrorCode(1_040_600_002, "过程检验子阶段配置无效");
+    ErrorCode QC_TEMPLATE_AMBIGUOUS = new ErrorCode(1_040_600_003, "当前物料和检验阶段匹配到多个模板，请调整模板适用范围");
+    ErrorCode QC_ANALYSIS_PERIOD_INVALID = new ErrorCode(1_040_600_004, "质量比较日期范围无效（最多366天）或比较方式不支持");
     // ========== MES 质量管理-质检方案检测指标项（1-040-600-100） ==========
     ErrorCode QC_TEMPLATE_INDICATOR_NOT_EXISTS = new ErrorCode(1_040_600_100, "质检方案检测指标项不存在");
     // ========== MES 质量管理-质检方案产品关联（1-040-600-200） ==========
@@ -359,6 +388,7 @@ public interface ErrorCodeConstants {
     ErrorCode QC_IPQC_SOURCE_LINE_NOT_BELONG = new ErrorCode(1_040_604_009, "来源单据行不属于该报工单");
     ErrorCode QC_IPQC_SOURCE_LINE_REQUIRED = new ErrorCode(1_040_604_010, "来源单据类型为报工时，来源产出行 ID 不能为空");
     ErrorCode QC_IPQC_SOURCE_LINE_NOT_PENDING = new ErrorCode(1_040_604_011, "来源产出行不是待检验状态");
+    ErrorCode QC_IPQC_TYPE_LOCKED = new ErrorCode(1_040_604_012, "检验阶段创建后不可修改，请新建对应阶段的检验单");
     // ========== MES 质量管理-过程检验行（1-040-604-100） ==========
     ErrorCode QC_IPQC_LINE_NOT_EXISTS = new ErrorCode(1_040_604_100, "过程检验行不存在");
 
@@ -462,6 +492,8 @@ public interface ErrorCodeConstants {
     ErrorCode WM_ITEM_RECEIPT_DETAIL_QUANTITY_MISMATCH = new ErrorCode(1_040_705_004, "明细上架总数与行入库数量不匹配");
     ErrorCode WM_ITEM_RECEIPT_STATUS_ERROR = new ErrorCode(1_040_705_005, "入库单状态不正确");
     ErrorCode WM_ITEM_RECEIPT_CANCEL_NOT_ALLOWED = new ErrorCode(1_040_705_006, "已完成或已取消的入库单不允许取消");
+    ErrorCode WM_ITEM_RECEIPT_IQC_VENDOR_MISMATCH = new ErrorCode(1_040_705_007, "来料检验单的供应商与入库单不一致");
+    ErrorCode WM_ITEM_RECEIPT_IQC_NOT_FINISHED = new ErrorCode(1_040_705_008, "只能关联已完成的来料检验单");
     ErrorCode WM_ITEM_RECEIPT_LINE_NOT_EXISTS = new ErrorCode(1_040_705_100, "采购入库单行不存在");
     ErrorCode WM_ITEM_RECEIPT_LINE_ARRIVAL_NOTICE_LINE_REQUIRED = new ErrorCode(1_040_705_101,
             "入库单关联了到货通知单，必须选择到货通知单行");
@@ -565,6 +597,8 @@ public interface ErrorCodeConstants {
     ErrorCode WM_RETURN_VENDOR_DETAIL_NOT_EXISTS = new ErrorCode(1_040_711_200, "供应商退货单明细不存在");
     ErrorCode WM_RETURN_VENDOR_DETAIL_QUANTITY_INVALID = new ErrorCode(1_040_711_201, "退货明细数量必须大于 0");
     ErrorCode WM_RETURN_VENDOR_DETAIL_LINE_NOT_MATCH = new ErrorCode(1_040_711_202, "拣货明细不属于指定的供应商退货单");
+    ErrorCode WM_RETURN_VENDOR_STOCK_VENDOR_MISMATCH = new ErrorCode(1_040_711_203, "所选库存不属于退货单供应商");
+    ErrorCode WM_RETURN_VENDOR_DETAIL_BATCH_MISMATCH = new ErrorCode(1_040_711_204, "拣货明细批次必须与退货单行批次一致");
 
     // ========== MES 仓库管理-产品收货单（1-040-712-000） ==========
     ErrorCode WM_PRODUCT_RECPT_NOT_EXISTS = new ErrorCode(1_040_712_000, "产品收货单不存在");
@@ -653,6 +687,8 @@ public interface ErrorCodeConstants {
             "出库行批次号与发货通知单行批次号不一致");
     ErrorCode WM_PRODUCT_SALES_LINE_NOTICE_LINE_OQC_MISMATCH = new ErrorCode(1_040_714_033,
             "出库行 OQC 检验标识与发货通知单行不一致");
+    ErrorCode WM_PRODUCT_SALES_OQC_CLIENT_MISMATCH = new ErrorCode(1_040_714_034, "出货检验单的客户与出库单不一致");
+    ErrorCode WM_PRODUCT_SALES_OQC_NOT_FINISHED = new ErrorCode(1_040_714_035, "只能关联已完成的出货检验单");
 
     // ========== MES 仓库管理-杂项出库单（1-040-715-000） ==========
     ErrorCode WM_MISC_ISSUE_NOT_EXISTS = new ErrorCode(1_040_715_000, "杂项出库单不存在");

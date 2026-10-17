@@ -17,6 +17,7 @@ import cn.iocoder.yudao.module.mes.service.wm.warehouse.MesWmWarehouseAreaServic
 import jakarta.annotation.Resource;
 import org.springframework.context.annotation.Lazy;
 import org.springframework.stereotype.Service;
+import org.springframework.transaction.annotation.Transactional;
 import org.springframework.validation.annotation.Validated;
 
 import java.math.BigDecimal;
@@ -52,6 +53,7 @@ public class MesWmReturnSalesDetailServiceImpl implements MesWmReturnSalesDetail
     private MesWmMaterialStockService materialStockService;
 
     @Override
+    @Transactional(rollbackFor=Exception.class)
     public Long createReturnSalesDetail(MesWmReturnSalesDetailSaveReqVO createReqVO) {
         // 校验保存数据
         validateReturnSalesDetailSaveData(createReqVO);
@@ -63,6 +65,7 @@ public class MesWmReturnSalesDetailServiceImpl implements MesWmReturnSalesDetail
     }
 
     @Override
+    @Transactional(rollbackFor=Exception.class)
     public void updateReturnSalesDetail(MesWmReturnSalesDetailSaveReqVO updateReqVO) {
         // 校验存在
         validateReturnSalesDetailExists(updateReqVO.getId());
@@ -75,6 +78,7 @@ public class MesWmReturnSalesDetailServiceImpl implements MesWmReturnSalesDetail
     }
 
     @Override
+    @Transactional(rollbackFor=Exception.class)
     public void deleteReturnSalesDetail(Long id) {
         // 校验存在
         MesWmReturnSalesDetailDO detail = validateReturnSalesDetailExists(id);

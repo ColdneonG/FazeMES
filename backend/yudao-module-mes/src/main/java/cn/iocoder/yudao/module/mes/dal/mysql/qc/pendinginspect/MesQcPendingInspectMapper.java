@@ -16,6 +16,9 @@ public interface MesQcPendingInspectMapper {
     IPage<MesQcPendingInspectRespVO> selectQcPendingPage(IPage<MesQcPendingInspectRespVO> page,
                                                          @Param("sourceDocCode") String sourceDocCode,
                                                          @Param("qcType") Integer qcType,
-                                                         @Param("itemId") Long itemId);
+                                                         @Param("itemId") Long itemId,
+                                                         @Param("workstationId") Long workstationId,
+                                                         @Param("workOrderId") Long workOrderId,
+                                                         @Param("taskId") Long taskId);
 
 }

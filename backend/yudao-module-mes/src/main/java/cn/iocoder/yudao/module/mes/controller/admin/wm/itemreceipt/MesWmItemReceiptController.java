@@ -53,6 +53,19 @@ public class MesWmItemReceiptController {
     @Resource
     private MesWmArrivalNoticeService arrivalNoticeService;
 
+    @GetMapping("/qc-options")
+    @PreAuthorize("@ss.hasAnyPermissions('mes:wm-item-receipt:query', 'mes:wm-item-receipt:create', 'mes:wm-item-receipt:update')")
+    public CommonResult<List<cn.iocoder.yudao.module.mes.controller.admin.wm.common.MesWmQcReferenceRespVO>> getQcOptions(
+            @RequestParam("vendorId") Long vendorId) {
+        cn.iocoder.yudao.module.mes.controller.admin.qc.iqc.vo.MesQcIqcPageReqVO query =
+                new cn.iocoder.yudao.module.mes.controller.admin.qc.iqc.vo.MesQcIqcPageReqVO();
+        query.setVendorId(vendorId);
+        query.setPageSize(PageParam.PAGE_SIZE_NONE);
+        return success(iqcService.getIqcPage(query).getList().stream()
+                .filter(iqc -> cn.iocoder.yudao.module.mes.enums.qc.MesQcStatusEnum.FINISHED.getStatus().equals(iqc.getStatus()))
+                .map(iqc -> BeanUtils.toBean(iqc, cn.iocoder.yudao.module.mes.controller.admin.wm.common.MesWmQcReferenceRespVO.class)).toList());
+    }
+
     @PostMapping("/create")
     @Operation(summary = "创建采购入库单")
     @PreAuthorize("@ss.hasPermission('mes:wm-item-receipt:create')")

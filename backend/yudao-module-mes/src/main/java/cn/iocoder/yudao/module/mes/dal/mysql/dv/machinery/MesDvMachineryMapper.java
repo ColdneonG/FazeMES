@@ -36,4 +36,8 @@ public interface MesDvMachineryMapper extends BaseMapperX<MesDvMachineryDO> {
         return selectCount(MesDvMachineryDO::getMachineryTypeId, machineryTypeId);
     }
 
+    default MesDvMachineryDO selectForUpdate(Long id) {
+        return selectOne(new LambdaQueryWrapperX<MesDvMachineryDO>().eq(MesDvMachineryDO::getId, id).last("FOR UPDATE"));
+    }
+
 }

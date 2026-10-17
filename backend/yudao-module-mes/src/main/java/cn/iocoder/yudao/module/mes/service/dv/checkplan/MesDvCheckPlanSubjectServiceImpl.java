@@ -8,6 +8,7 @@ import cn.iocoder.yudao.module.mes.service.dv.subject.MesDvSubjectService;
 import jakarta.annotation.Resource;
 import org.springframework.context.annotation.Lazy;
 import org.springframework.stereotype.Service;
+import org.springframework.transaction.annotation.Transactional;
 import org.springframework.validation.annotation.Validated;
 
 import java.util.List;
@@ -34,6 +35,7 @@ public class MesDvCheckPlanSubjectServiceImpl implements MesDvCheckPlanSubjectSe
     private MesDvSubjectService subjectService;
 
     @Override
+    @Transactional(rollbackFor=Exception.class)
     public Long createCheckPlanSubject(MesDvCheckPlanSubjectSaveReqVO createReqVO) {
         // 1.1 校验方案草稿状态
         checkPlanService.validateCheckPlanPrepare(createReqVO.getPlanId());
@@ -51,6 +53,7 @@ public class MesDvCheckPlanSubjectServiceImpl implements MesDvCheckPlanSubjectSe
     }
 
     @Override
+    @Transactional(rollbackFor=Exception.class)
     public void deleteCheckPlanSubject(Long id) {
         // 1.1 校验存在
         MesDvCheckPlanSubjectDO existRecord = checkPlanSubjectMapper.selectById(id);

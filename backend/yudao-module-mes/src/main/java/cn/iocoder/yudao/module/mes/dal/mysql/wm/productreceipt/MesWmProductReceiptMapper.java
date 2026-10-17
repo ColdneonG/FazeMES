@@ -13,6 +13,11 @@ import org.apache.ibatis.annotations.Mapper;
 @Mapper
 public interface MesWmProductReceiptMapper extends BaseMapperX<MesWmProductReceiptDO> {
 
+    default MesWmProductReceiptDO selectByIdForUpdate(Long id) {
+        return selectOne(new LambdaQueryWrapperX<MesWmProductReceiptDO>()
+                .eq(MesWmProductReceiptDO::getId, id).last("FOR UPDATE"));
+    }
+
     default PageResult<MesWmProductReceiptDO> selectPage(MesWmProductReceiptPageReqVO reqVO) {
         return selectPage(reqVO, new LambdaQueryWrapperX<MesWmProductReceiptDO>()
                 .likeIfPresent(MesWmProductReceiptDO::getCode, reqVO.getCode())

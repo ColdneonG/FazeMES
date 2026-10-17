@@ -713,6 +713,7 @@ CREATE TABLE IF NOT EXISTS "mes_wm_material_stock" (
     "warehouse_id" bigint DEFAULT NULL,
     "location_id" bigint DEFAULT NULL,
     "area_id" bigint DEFAULT NULL,
+    "work_order_id" bigint DEFAULT NULL,
     "vendor_id" bigint DEFAULT NULL,
     "quantity" decimal(14,2) DEFAULT NULL,
     "receipt_time" timestamp DEFAULT NULL,
@@ -830,3 +831,17 @@ CREATE TABLE IF NOT EXISTS "mes_qc_indicator_result" (
     "tenant_id" bigint NOT NULL DEFAULT 0,
     PRIMARY KEY ("id")
 );
+
+ALTER TABLE IF EXISTS "mes_dv_check_plan" ADD COLUMN IF NOT EXISTS "next_task_time" timestamp DEFAULT NULL;
+
+ALTER TABLE IF EXISTS "mes_qc_template" ADD COLUMN IF NOT EXISTS "ipqc_types" varchar(255) DEFAULT NULL;
+
+ALTER TABLE IF EXISTS "mes_qc_defect_record" ADD COLUMN IF NOT EXISTS "defect_id" bigint DEFAULT NULL;
+
+ALTER TABLE IF EXISTS "mes_wm_transaction" ADD COLUMN IF NOT EXISTS "work_order_id" bigint DEFAULT NULL;
+
+ALTER TABLE IF EXISTS "mes_wm_product_sales" ADD COLUMN IF NOT EXISTS "oqc_id" bigint DEFAULT NULL;
+
+ALTER TABLE IF EXISTS "mes_md_workstation_worker" ADD COLUMN IF NOT EXISTS "user_ids" varchar(2048) DEFAULT NULL;
+
+ALTER TABLE IF EXISTS "mes_md_workstation_tool" ADD COLUMN IF NOT EXISTS "tool_ids" varchar(2048) DEFAULT NULL;

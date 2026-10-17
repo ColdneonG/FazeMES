@@ -18,6 +18,8 @@ import cn.iocoder.yudao.module.mes.enums.wm.MesWmItemReceiptStatusEnum;
 import cn.iocoder.yudao.module.mes.enums.wm.MesWmTransactionTypeEnum;
 import cn.iocoder.yudao.module.mes.service.md.vendor.MesMdVendorService;
 import cn.iocoder.yudao.module.mes.service.qc.iqc.MesQcIqcService;
+import cn.iocoder.yudao.module.mes.dal.dataobject.qc.iqc.MesQcIqcDO;
+import cn.iocoder.yudao.module.mes.enums.qc.MesQcStatusEnum;
 import cn.iocoder.yudao.module.mes.service.wm.arrivalnotice.MesWmArrivalNoticeService;
 import cn.iocoder.yudao.module.mes.service.wm.transaction.MesWmTransactionService;
 import cn.iocoder.yudao.module.mes.service.wm.transaction.dto.MesWmTransactionSaveReqDTO;
@@ -73,6 +75,7 @@ public class MesWmItemReceiptServiceImpl implements MesWmItemReceiptService {
     }
 
     @Override
+    @Transactional(rollbackFor=Exception.class)
     public void updateItemReceipt(MesWmItemReceiptSaveReqVO updateReqVO) {
         // 校验存在 + 草稿状态
         validateItemReceiptExistsAndDraft(updateReqVO.getId());
@@ -81,7 +84,10 @@ public class MesWmItemReceiptServiceImpl implements MesWmItemReceiptService {
 
         // 更新
         MesWmItemReceiptDO updateObj = BeanUtils.toBean(updateReqVO, MesWmItemReceiptDO.class);
-        itemReceiptMapper.updateById(updateObj);
+        // 显式处理可选关联的清空；全局 NOT_NULL 更新策略会忽略 null。
+        updateObj.setIqcId(null);
+        itemReceiptMapper.update(updateObj, new com.baomidou.mybatisplus.core.conditions.update.LambdaUpdateWrapper<MesWmItemReceiptDO>()
+                .eq(MesWmItemReceiptDO::getId, updateReqVO.getId()).set(MesWmItemReceiptDO::getIqcId, updateReqVO.getIqcId()));
     }
 
     private void validateItemReceiptSaveData(MesWmItemReceiptSaveReqVO reqVO) {
@@ -98,7 +104,13 @@ public class MesWmItemReceiptServiceImpl implements MesWmItemReceiptService {
         }
         // 校验来料检验单存在
         if (reqVO.getIqcId() != null) {
-            iqcService.validateIqcExists(reqVO.getIqcId());
+            MesQcIqcDO iqc = iqcService.validateIqcExists(reqVO.getIqcId());
+            if (ObjUtil.notEqual(iqc.getVendorId(), reqVO.getVendorId())) {
+                throw exception(WM_ITEM_RECEIPT_IQC_VENDOR_MISMATCH);
+            }
+            if (ObjUtil.notEqual(iqc.getStatus(), MesQcStatusEnum.FINISHED.getStatus())) {
+                throw exception(WM_ITEM_RECEIPT_IQC_NOT_FINISHED);
+            }
         }
     }
 
@@ -163,6 +175,8 @@ public class MesWmItemReceiptServiceImpl implements MesWmItemReceiptService {
             }
         }
 
+        validateFinalQuantities(id);
+
         // 执行上架（待上架 → 待入库）
         itemReceiptMapper.updateById(new MesWmItemReceiptDO()
                 .setId(id).setStatus(MesWmItemReceiptStatusEnum.APPROVED.getStatus()));
@@ -176,6 +190,8 @@ public class MesWmItemReceiptServiceImpl implements MesWmItemReceiptService {
         if (ObjUtil.notEqual(MesWmItemReceiptStatusEnum.APPROVED.getStatus(), receipt.getStatus())) {
             throw exception(WM_ITEM_RECEIPT_STATUS_ERROR);
         }
+
+        validateFinalQuantities(id);
 
         // 2. 遍历所有明细，创建库存事务（增加库存 + 记录流水）
         createTransactionList(receipt);
@@ -229,7 +245,7 @@ public class MesWmItemReceiptServiceImpl implements MesWmItemReceiptService {
     }
 
     private MesWmItemReceiptDO validateItemReceiptExists(Long id) {
-        MesWmItemReceiptDO receipt = itemReceiptMapper.selectById(id);
+        MesWmItemReceiptDO receipt = itemReceiptMapper.selectForUpdate(id);
         if (receipt == null) {
             throw exception(WM_ITEM_RECEIPT_NOT_EXISTS);
         }
@@ -272,4 +288,24 @@ public class MesWmItemReceiptServiceImpl implements MesWmItemReceiptService {
         return itemReceiptMapper.selectByIds(ids);
     }
 
+    /** Final invariant under the document lock, before any stock movement. */
+    private void validateFinalQuantities(Long id) {
+        var lines=itemReceiptLineService.getItemReceiptLineListByReceiptId(id);
+        if(lines.isEmpty()) throw exception(cn.iocoder.yudao.module.mes.enums.ErrorCodeConstants.WM_ITEM_RECEIPT_DETAIL_QUANTITY_MISMATCH);
+        var details=itemReceiptDetailService.getItemReceiptDetailListByReceiptId(id);
+        java.util.Map<Long,MesWmItemReceiptLineDO> byId=new java.util.HashMap<>();
+        java.util.Map<Long,java.math.BigDecimal> totals=new java.util.HashMap<>();
+        for(var line:lines) byId.put(line.getId(),line);
+        for(var detail:details) {
+            var line=byId.get(detail.getLineId());
+            if(line==null || !java.util.Objects.equals(detail.getReceiptId(),id)
+                || !java.util.Objects.equals(line.getItemId(),detail.getItemId())
+                || detail.getQuantity()==null || detail.getQuantity().signum()<=0)
+                throw exception(cn.iocoder.yudao.module.mes.enums.ErrorCodeConstants.WM_ITEM_RECEIPT_DETAIL_QUANTITY_MISMATCH);
+            totals.merge(line.getId(),detail.getQuantity(),java.math.BigDecimal::add);
+        }
+        for(var line:lines) if(line.getReceivedQuantity()==null || line.getReceivedQuantity().signum()<=0
+            || line.getReceivedQuantity().compareTo(totals.getOrDefault(line.getId(),java.math.BigDecimal.ZERO))!=0)
+            throw exception(cn.iocoder.yudao.module.mes.enums.ErrorCodeConstants.WM_ITEM_RECEIPT_DETAIL_QUANTITY_MISMATCH);
+    }
 }

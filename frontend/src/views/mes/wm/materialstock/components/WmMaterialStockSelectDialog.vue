@@ -35,10 +35,18 @@
           />
           <el-form :inline="true" :model="queryParams" label-width="68px">
             <el-form-item label="物料">
-              <MdItemSelect v-model="queryParams.itemId" class="!w-220px" />
+              <MdItemSelect
+                v-model="queryParams.itemId"
+                :disabled="props.itemId != null"
+                class="!w-220px"
+              />
             </el-form-item>
             <el-form-item label="供应商">
-              <MdVendorSelect v-model="queryParams.vendorId" class="!w-220px" />
+              <MdVendorSelect
+                v-model="queryParams.vendorId"
+                :disabled="props.vendorId != null"
+                class="!w-220px"
+              />
             </el-form-item>
             <el-form-item label="批次号">
               <el-input
@@ -119,6 +127,7 @@
             <el-table-column label="产品物料名称" align="center" prop="itemName" min-width="140" />
             <el-table-column label="规格型号" align="center" prop="specification" min-width="120" />
             <el-table-column label="单位" align="center" prop="unitMeasureName" min-width="80" />
+            <el-table-column label="所属工单" prop="workOrderCode" min-width="140" />
             <el-table-column label="入库批次号" align="center" prop="batchCode" min-width="120" />
             <el-table-column label="仓库" align="center" prop="warehouseName" min-width="100" />
             <el-table-column label="库区" align="center" prop="locationName" min-width="100" />
@@ -165,6 +174,8 @@ defineOptions({ name: 'WmMaterialStockSelectDialog' })
 const props = withDefaults(
   defineProps<{
     multiple?: boolean // true 多选（checkbox），false 单选（radio）
+    workOrderId?: number // 固定工单归属
+    vendorId?: number // 固定供应商
     itemId?: number // 按物料 ID 过滤
     batchId?: number // 按批次 ID 过滤
     warehouseId?: number // 按仓库 ID 过滤
@@ -236,6 +247,7 @@ const handleNodeClick = (data: MdItemTypeVO | undefined) => {
 
 // ==================== 库存查询 ====================
 const queryParams = reactive({
+  workOrderId: undefined as number | undefined,
   pageNo: 1, // 页码
   pageSize: 10, // 每页条数
   itemTypeId: undefined as number | undefined, // 物料分类编号
@@ -265,7 +277,13 @@ const handleLocationChange = () => {
 const getList = async () => {
   loading.value = true
   try {
-    const data = await WmMaterialStockApi.getMaterialStockPage(queryParams)
+    const data = await WmMaterialStockApi.getMaterialStockPage({
+      ...queryParams,
+      workOrderId: props.workOrderId,
+      vendorId: props.vendorId ?? queryParams.vendorId,
+      itemId: props.itemId ?? queryParams.itemId,
+      batchId: props.batchId ?? queryParams.batchId
+    })
     list.value = data.list
     total.value = data.total
     await nextTick()
@@ -309,7 +327,8 @@ const handleQuery = () => {
 const resetQuery = () => {
   queryParams.itemTypeId = undefined
   queryParams.itemId = props.itemId // 保持 props 传入的物料过滤
-  queryParams.vendorId = undefined
+  queryParams.vendorId = props.vendorId
+  queryParams.workOrderId = props.workOrderId
   queryParams.batchCode = undefined
   queryParams.batchId = props.batchId // 保持 props 传入的批次过滤
   queryParams.warehouseId = props.warehouseId // 保持 props 传入的仓库过滤
@@ -345,7 +364,8 @@ const open = async (selectedIds?: number[]) => {
   dialogVisible.value = true
   // 重置查询条件 + 页码，避免二次打开继承上次过滤上下文
   queryParams.itemTypeId = undefined
-  queryParams.vendorId = undefined
+  queryParams.vendorId = props.vendorId
+  queryParams.workOrderId = props.workOrderId
   queryParams.batchCode = undefined
   queryParams.locationId = undefined
   queryParams.areaId = undefined
@@ -376,6 +396,8 @@ defineExpose({ open })
 /** 拼装 el-alert 提示文字 */
 const alertTitle = computed(() => {
   const parts: string[] = []
+  if (props.workOrderId != null) parts.push('当前工单')
+  if (props.vendorId != null) parts.push('当前供应商')
   if (props.batchId != null) {
     parts.push('批次')
   }
@@ -390,7 +412,13 @@ const alertTitle = computed(() => {
 
 /** 是否显示 alert 提示 */
 const showAlert = computed(() => {
-  return props.batchId != null || props.warehouseId != null || props.virtualFilter === 'only'
+  return (
+    props.workOrderId != null ||
+    props.vendorId != null ||
+    props.batchId != null ||
+    props.warehouseId != null ||
+    props.virtualFilter === 'only'
+  )
 })
 </script>
 

@@ -32,4 +32,9 @@ public interface OAuth2RefreshTokenMapper extends BaseMapperX<OAuth2RefreshToken
      */
     @Delete("DELETE FROM system_oauth2_refresh_token WHERE expires_time < #{expiresTime} LIMIT #{limit}")
     Integer deleteByExpiresTimeLt(@Param("expiresTime") LocalDateTime expiresTime, @Param("limit") Integer limit);
+    @TenantIgnore
+    default OAuth2RefreshTokenDO selectByRefreshTokenForUpdate(String refreshToken) {
+        return selectOne(new LambdaQueryWrapperX<OAuth2RefreshTokenDO>()
+            .eq(OAuth2RefreshTokenDO::getRefreshToken,refreshToken).last("FOR UPDATE"));
+    }
 }

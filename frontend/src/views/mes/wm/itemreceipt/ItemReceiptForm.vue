@@ -57,7 +57,11 @@
         </el-col>
         <el-col :span="8">
           <el-form-item label="供应商" prop="vendorId">
-            <MdVendorSelect v-model="formData.vendorId" :disabled="isHeaderReadonly" />
+            <MdVendorSelect
+              v-model="formData.vendorId"
+              :disabled="isHeaderReadonly"
+              @change="formData.iqcId = undefined"
+            />
           </el-form-item>
         </el-col>
         <el-col :span="8">
@@ -67,6 +71,30 @@
               placeholder="请输入采购订单号"
               :disabled="isHeaderReadonly"
             />
+          </el-form-item>
+        </el-col>
+      </el-row>
+      <el-row>
+        <el-col :span="24">
+          <el-form-item label="参考来料检验" prop="iqcId">
+            <el-select
+              v-model="formData.iqcId"
+              filterable
+              clearable
+              :disabled="isHeaderReadonly || !formData.vendorId"
+              placeholder="选择已完成的同供应商来料检验单"
+              class="!w-1/1"
+            >
+              <el-option
+                v-for="qc in iqcOptions"
+                :key="qc.id"
+                :value="qc.id"
+                :label="`${qc.code} · ${qc.name}`"
+              />
+            </el-select>
+            <div class="text-12px text-gray-500"
+              >参考关联；到货通知与各物料的必检要求仍逐项执行。</div
+            >
           </el-form-item>
         </el-col>
       </el-row>
@@ -154,9 +182,9 @@ const formData = ref({
   code: undefined,
   name: undefined,
   status: undefined as number | undefined,
-  vendorId: undefined,
+  vendorId: undefined as number | undefined,
   noticeId: undefined,
-  iqcId: undefined,
+  iqcId: undefined as number | undefined,
   purchaseOrderCode: undefined,
   receiptDate: undefined,
   remark: undefined
@@ -179,10 +207,26 @@ const generateCode = async () => {
 /** 到货通知单变化时，自动填充供应商和采购订单号 */
 const handleNoticeChange = (notice: any) => {
   if (notice) {
+    if (formData.value.vendorId !== notice.vendorId) formData.value.iqcId = undefined
     formData.value.vendorId = notice.vendorId
     formData.value.purchaseOrderCode = notice.purchaseOrderCode
   }
 }
+
+const iqcOptions = ref<{ id: number; code: string; name: string }[]>([])
+watch(
+  () => formData.value.vendorId,
+  async (vendorId) => {
+    iqcOptions.value = []
+    if (!vendorId) return
+    try {
+      const options = await WmItemReceiptApi.getQcOptions(vendorId)
+      if (formData.value.vendorId === vendorId) iqcOptions.value = options
+    } catch {
+      message.error('来料检验列表加载失败，请重试')
+    }
+  }
+)
 
 /** 打开弹窗 */
 const open = async (type: string, id?: number) => {

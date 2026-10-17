@@ -56,6 +56,7 @@ public class MesWmMiscIssueServiceImpl implements MesWmMiscIssueService {
     }
 
     @Override
+    @Transactional(rollbackFor=Exception.class)
     public void updateMiscIssue(MesWmMiscIssueSaveReqVO updateReqVO) {
         // 校验存在 + 草稿状态
         validateMiscIssueExistsAndDraft(updateReqVO.getId());
@@ -119,6 +120,8 @@ public class MesWmMiscIssueServiceImpl implements MesWmMiscIssueService {
             throw exception(WM_MISC_ISSUE_NO_LINE);
         }
 
+        validateFinalQuantities(id);
+
         // 2. 遍历所有行，创建库存事务（扣减库存 + 记录流水）
         createTransactionList(issue);
 
@@ -131,6 +134,7 @@ public class MesWmMiscIssueServiceImpl implements MesWmMiscIssueService {
         List<MesWmMiscIssueLineDO> lines = miscIssueLineService.getMiscIssueLineListByIssueId(issue.getId());
         wmTransactionService.createTransactionList(convertList(lines, line -> new MesWmTransactionSaveReqDTO()
                 .setType(MesWmTransactionTypeEnum.OUT.getType()).setItemId(line.getItemId())
+                .setMaterialStockId(line.getMaterialStockId())
                 .setQuantity(line.getQuantity().negate()) // 出库数量为负数
                 .setBatchId(line.getBatchId()).setBatchCode(line.getBatchCode())
                 .setWarehouseId(line.getWarehouseId()).setLocationId(line.getLocationId()).setAreaId(line.getAreaId())
@@ -163,7 +167,7 @@ public class MesWmMiscIssueServiceImpl implements MesWmMiscIssueService {
     }
 
     private MesWmMiscIssueDO validateMiscIssueExists(Long id) {
-        MesWmMiscIssueDO issue = miscIssueMapper.selectById(id);
+        MesWmMiscIssueDO issue = miscIssueMapper.selectForUpdate(id);
         if (issue == null) {
             throw exception(WM_MISC_ISSUE_NOT_EXISTS);
         }
@@ -191,4 +195,10 @@ public class MesWmMiscIssueServiceImpl implements MesWmMiscIssueService {
         }
     }
 
+    private void validateFinalQuantities(Long id) {
+        var lines=miscIssueLineService.getMiscIssueLineListByIssueId(id);
+        if(lines.isEmpty()) throw exception(cn.iocoder.yudao.module.mes.enums.ErrorCodeConstants.WM_MISC_ISSUE_DETAIL_QUANTITY_MISMATCH);
+        if(lines.stream().anyMatch(l->l.getQuantity()==null || l.getQuantity().signum()<=0))
+            throw exception(cn.iocoder.yudao.module.mes.enums.ErrorCodeConstants.WM_MISC_ISSUE_DETAIL_QUANTITY_MISMATCH);
+    }
 }

@@ -1,6 +1,6 @@
 <!-- MES 过程检验单表单 -->
 <template>
-  <Dialog :title="dialogTitle" v-model="dialogVisible" width="1080px">
+  <Dialog :title="dialogTitle" v-model="dialogVisible" :default-fullscreen="props.terminal" class="mes-qc-responsive" width="1080px">
     <!-- 基本信息表单 -->
     <el-form
       ref="formRef"
@@ -27,7 +27,7 @@
         </el-col>
         <el-col :span="8">
           <el-form-item label="检验类型" prop="type">
-            <el-select v-model="formData.type" placeholder="请选择检验类型" class="!w-1/1">
+            <el-select v-model="formData.type" placeholder="请选择检验类型" class="!w-1/1" :disabled="formType !== 'create'">
               <el-option
                 v-for="dict in getIntDictOptions(DICT_TYPE.MES_IPQC_TYPE)"
                 :key="dict.value"
@@ -278,6 +278,7 @@
       </el-button>
       <el-button
         @click="handleFinish"
+        v-hasPermi="['mes:qc-ipqc:finish']"
         type="success"
         :disabled="formLoading"
         v-if="formType === 'update' && formData.status === MesQcStatusEnum.DRAFT"
@@ -306,6 +307,8 @@ import {
   MesProTaskStatusEnum,
   MesProWorkOrderStatusEnum
 } from '@/views/mes/utils/constants'
+
+const props = withDefaults(defineProps<{ terminal?: boolean }>(), { terminal: false })
 
 defineOptions({ name: 'IpqcForm' })
 
@@ -417,6 +420,7 @@ const open = async (type: string, id?: number, data?: QcIpqcVO) => {
     // 预填模式：来自待检任务（pending inspect）
     Object.assign(formData.value, data)
   }
+  if (props.terminal && type === 'create') await generateCode()
   // 保存原始数据快照
   originalFormData.value = JSON.stringify(formData.value)
 }
@@ -434,7 +438,16 @@ const submitForm = async () => {
   try {
     const data = formData.value as unknown as QcIpqcVO
     if (formType.value === 'create') {
-      await QcIpqcApi.createIpqc(data)
+      const createdId = await QcIpqcApi.createIpqc(data)
+      if (props.terminal) {
+        formData.value = await QcIpqcApi.getIpqc(createdId)
+        formType.value = 'update'
+        activeTab.value = 'line'
+        originalFormData.value = JSON.stringify(formData.value)
+        message.success('已建立检验单，请继续填写检测值和缺陷后完成')
+        emit('success')
+        return
+      }
       message.success(t('common.createSuccess'))
     } else {
       await QcIpqcApi.updateIpqc(data)

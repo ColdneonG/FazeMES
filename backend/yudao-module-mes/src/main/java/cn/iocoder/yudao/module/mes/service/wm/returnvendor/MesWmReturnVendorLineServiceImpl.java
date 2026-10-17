@@ -42,6 +42,7 @@ public class MesWmReturnVendorLineServiceImpl implements MesWmReturnVendorLineSe
     private MesWmBatchService batchService;
 
     @Override
+    @Transactional(rollbackFor=Exception.class)
     public Long createReturnVendorLine(MesWmReturnVendorLineSaveReqVO createReqVO) {
         // 校验数据
         validateReturnVendorLineSaveData(createReqVO);
@@ -53,7 +54,12 @@ public class MesWmReturnVendorLineServiceImpl implements MesWmReturnVendorLineSe
     }
 
     @Override
+    @Transactional(rollbackFor=Exception.class)
     public void updateReturnVendorLine(MesWmReturnVendorLineSaveReqVO updateReqVO) {
+        // A line cannot be moved out of a completed document by changing the request parent id.
+        var persistedParent=returnVendorLineMapper.selectById(updateReqVO.getId());
+        if(persistedParent==null) throw exception(cn.iocoder.yudao.module.mes.enums.ErrorCodeConstants.WM_MATERIAL_STOCK_SELECTION_MISMATCH);
+        updateReqVO.setReturnId(persistedParent.getReturnId());
         // 校验存在
         MesWmReturnVendorLineDO oldLine = validateReturnVendorLineExists(updateReqVO.getId());
         // 固定父单 ID，防止通过接口篡改

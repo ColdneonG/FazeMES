@@ -14,6 +14,7 @@ import cn.iocoder.yudao.module.mes.service.pro.workorder.MesProWorkOrderBomServi
 import jakarta.annotation.Resource;
 import org.springframework.context.annotation.Lazy;
 import org.springframework.stereotype.Service;
+import org.springframework.transaction.annotation.Transactional;
 import org.springframework.validation.annotation.Validated;
 
 import java.util.List;
@@ -26,6 +27,7 @@ import static cn.iocoder.yudao.module.mes.enums.ErrorCodeConstants.WM_PRODUCT_IS
  * MES 领料出库单行 Service 实现类
  */
 @Service
+@Transactional(rollbackFor = Exception.class)
 @Validated
 public class MesWmProductIssueLineServiceImpl implements MesWmProductIssueLineService {
 

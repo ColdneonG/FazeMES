@@ -25,9 +25,9 @@ export interface ProTaskVO {
   changedQuantity: number // 调整数量
   clientId: number // 客户编号
   clientName: string // 客户名称
-  startTime: Date // 开始生产时间
+  startTime: Date | number | string // 开始生产时间
   duration: number // 生产时长（工作日，1=8小时）
-  endTime: Date | number // 结束生产时间
+  endTime: Date | number | string // 结束生产时间
   colorCode: string // 甘特图显示颜色
   requestDate: Date // 需求日期（从工单查）
   finishDate: Date // 完成日期
@@ -55,7 +55,7 @@ export const ProTaskApi = {
   },
 
   // 修改生产任务
-  updateTask: async (data: ProTaskVO) => {
+  updateTask: async (data: Partial<ProTaskVO> & Pick<ProTaskVO, 'id'>) => {
     return await request.put({ url: `/mes/pro/task/update`, data })
   },
 

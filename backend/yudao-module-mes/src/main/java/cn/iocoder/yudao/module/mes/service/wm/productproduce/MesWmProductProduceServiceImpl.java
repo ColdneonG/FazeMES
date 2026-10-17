@@ -86,6 +86,7 @@ public class MesWmProductProduceServiceImpl implements MesWmProductProduceServic
     }
 
     private void createTransactionList(Long produceId, List<MesWmProductProduceLineDO> lines) {
+        MesWmProductProduceDO produce = productProduceMapper.selectById(produceId);
         for (MesWmProductProduceLineDO line : lines) {
             // 1. 校验每行明细数量之和等于行数量
             List<MesWmProductProduceDetailDO> details = productProduceDetailService.getProductProduceDetailListByLineId(
@@ -99,6 +100,7 @@ public class MesWmProductProduceServiceImpl implements MesWmProductProduceServic
             for (MesWmProductProduceDetailDO detail : details) {
                 wmTransactionService.createTransaction(new MesWmTransactionSaveReqDTO()
                         .setType(MesWmTransactionTypeEnum.IN.getType()).setItemId(detail.getItemId())
+                        .setWorkOrderId(produce.getWorkOrderId())
                         .setQuantity(detail.getQuantity())
                         .setBatchId(detail.getBatchId()).setBatchCode(detail.getBatchCode())
                         .setWarehouseId(detail.getWarehouseId()).setLocationId(detail.getLocationId()).setAreaId(detail.getAreaId())

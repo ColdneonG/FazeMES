@@ -1,5 +1,6 @@
 <!-- MES 来料检验单（IQC）列表 -->
 <template>
+  <ContentWrap><QualityComparison /></ContentWrap>
 
   <ContentWrap>
     <!-- 搜索工作栏 -->
@@ -198,6 +199,7 @@
 </template>
 
 <script setup lang="ts">
+import QualityComparison from '../analysis/QualityComparison.vue'
 import { dateFormatter2 } from '@/utils/formatTime'
 import download from '@/utils/download'
 import { QcIqcApi, QcIqcVO } from '@/api/mes/qc/iqc'

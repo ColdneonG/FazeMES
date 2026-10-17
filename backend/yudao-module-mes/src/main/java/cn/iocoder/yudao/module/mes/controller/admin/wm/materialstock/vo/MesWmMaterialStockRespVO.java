@@ -73,6 +73,14 @@ public class MesWmMaterialStockRespVO {
     @Schema(description = "供应商编号", example = "1")
     private Long vendorId;
 
+    @Schema(description = "线边库存所属工单；历史未核对库存为空")
+    @ExcelProperty("工单ID")
+    private Long workOrderId;
+
+    @Schema(description = "所属工单编码")
+    @ExcelProperty("工单编码")
+    private String workOrderCode;
+
     @Schema(description = "供应商名称", example = "某供应商")
     @ExcelProperty("供应商")
     private String vendorName;

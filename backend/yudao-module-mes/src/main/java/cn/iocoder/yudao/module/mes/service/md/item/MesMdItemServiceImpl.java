@@ -95,6 +95,13 @@ public class MesMdItemServiceImpl implements MesMdItemService {
     }
 
     private void validateItemSaveData(MesMdItemSaveReqVO reqVO) {
+        if (Boolean.TRUE.equals(reqVO.getSafeStockFlag())) {
+            BigDecimal min = reqVO.getMinStock() == null ? BigDecimal.ZERO : reqVO.getMinStock();
+            BigDecimal max = reqVO.getMaxStock() == null ? BigDecimal.ZERO : reqVO.getMaxStock();
+            if (min.signum() < 0 || max.signum() < 0 || (max.signum() > 0 && max.compareTo(min) < 0)) {
+                throw exception(MD_ITEM_STOCK_RANGE_INVALID);
+            }
+        }
         // 校验物料编码的唯一性
         validateItemCodeUnique(reqVO.getId(), reqVO.getCode());
         // 校验物料名称的唯一性

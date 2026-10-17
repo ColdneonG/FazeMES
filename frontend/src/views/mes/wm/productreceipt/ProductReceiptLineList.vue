@@ -85,6 +85,8 @@
               placeholder="请选择库存"
               class="!w-1/1"
               virtual-filter="only"
+              :work-order-id="props.workOrderId"
+              :disabled="props.workOrderId == null"
               @change="handleStockChange"
             />
           </el-form-item>
@@ -152,6 +154,7 @@ defineOptions({ name: 'ProductReceiptLineList' })
 
 const props = defineProps<{
   receiptId: number
+  workOrderId?: number
   formType: string
 }>()
 

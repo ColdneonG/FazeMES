@@ -75,6 +75,7 @@ public class MesWmOutsourceReceiptServiceImpl implements MesWmOutsourceReceiptSe
     }
 
     @Override
+    @Transactional(rollbackFor=Exception.class)
     public void updateOutsourceReceipt(MesWmOutsourceReceiptSaveReqVO updateReqVO) {
         // 校验存在 + 草稿状态
         validateOutsourceReceiptExistsAndDraft(updateReqVO.getId());
@@ -167,6 +168,8 @@ public class MesWmOutsourceReceiptServiceImpl implements MesWmOutsourceReceiptSe
             }
         }
 
+        validateFinalQuantities(id);
+
         // 2. 入库上架（待上架 → 已审批）
         outsourceReceiptMapper.updateById(new MesWmOutsourceReceiptDO()
                 .setId(id).setStatus(MesWmOutsourceReceiptStatusEnum.APPROVED.getStatus()));
@@ -185,6 +188,8 @@ public class MesWmOutsourceReceiptServiceImpl implements MesWmOutsourceReceiptSe
         if (CollUtil.isEmpty(lines)) {
             throw exception(WM_OUTSOURCE_RECEIPT_NO_LINE);
         }
+
+        validateFinalQuantities(id);
 
         // 3. 遍历所有明细，创建库存事务（增加库存 + 记录流水）
         createTransactionList(receipt);
@@ -273,7 +278,7 @@ public class MesWmOutsourceReceiptServiceImpl implements MesWmOutsourceReceiptSe
     }
 
     private MesWmOutsourceReceiptDO validateOutsourceReceiptExists(Long id) {
-        MesWmOutsourceReceiptDO receipt = outsourceReceiptMapper.selectById(id);
+        MesWmOutsourceReceiptDO receipt = outsourceReceiptMapper.selectForUpdate(id);
         if (receipt == null) {
             throw exception(WM_OUTSOURCE_RECEIPT_NOT_EXISTS);
         }
@@ -331,4 +336,23 @@ public class MesWmOutsourceReceiptServiceImpl implements MesWmOutsourceReceiptSe
         return outsourceReceiptMapper.selectCountByVendorId(vendorId);
     }
 
+    private void validateFinalQuantities(Long id) {
+        var lines=outsourceReceiptLineService.getOutsourceReceiptLineListByReceiptId(id);
+        if(lines.isEmpty()) throw exception(cn.iocoder.yudao.module.mes.enums.ErrorCodeConstants.WM_OUTSOURCE_RECEIPT_DETAIL_QUANTITY_MISMATCH);
+        var details=outsourceReceiptDetailService.getOutsourceReceiptDetailListByReceiptId(id);
+        java.util.Map<Long,MesWmOutsourceReceiptLineDO> byId=new java.util.HashMap<>();
+        java.util.Map<Long,java.math.BigDecimal> totals=new java.util.HashMap<>();
+        for(var line:lines) byId.put(line.getId(),line);
+        for(var detail:details) {
+            var line=byId.get(detail.getLineId());
+            if(line==null || !java.util.Objects.equals(detail.getReceiptId(),id)
+                || !java.util.Objects.equals(line.getItemId(),detail.getItemId())
+                || detail.getQuantity()==null || detail.getQuantity().signum()<=0)
+                throw exception(cn.iocoder.yudao.module.mes.enums.ErrorCodeConstants.WM_OUTSOURCE_RECEIPT_DETAIL_QUANTITY_MISMATCH);
+            totals.merge(line.getId(),detail.getQuantity(),java.math.BigDecimal::add);
+        }
+        for(var line:lines) if(line.getQuantity()==null || line.getQuantity().signum()<=0
+            || line.getQuantity().compareTo(totals.getOrDefault(line.getId(),java.math.BigDecimal.ZERO))!=0)
+            throw exception(cn.iocoder.yudao.module.mes.enums.ErrorCodeConstants.WM_OUTSOURCE_RECEIPT_DETAIL_QUANTITY_MISMATCH);
+    }
 }

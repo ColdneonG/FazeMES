@@ -29,6 +29,7 @@ public class MesQcIpqcSaveReqVO {
 
     @Schema(description = "IPQC 检验类型", requiredMode = Schema.RequiredMode.REQUIRED, example = "1")
     @NotNull(message = "检验类型不能为空")
+    @cn.iocoder.yudao.framework.common.validation.InEnum(cn.iocoder.yudao.module.mes.enums.qc.MesQcIpqcTypeEnum.class)
     private Integer type;
 
     // ========== 来源单据 ==========

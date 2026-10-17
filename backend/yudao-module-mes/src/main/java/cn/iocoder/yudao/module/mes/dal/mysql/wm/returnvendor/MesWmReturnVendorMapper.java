@@ -30,4 +30,7 @@ public interface MesWmReturnVendorMapper extends BaseMapperX<MesWmReturnVendorDO
         return selectOne(MesWmReturnVendorDO::getCode, code);
     }
 
+    default MesWmReturnVendorDO selectForUpdate(Long id) {
+        return selectOne(new LambdaQueryWrapperX<MesWmReturnVendorDO>().eq(MesWmReturnVendorDO::getId,id).last("FOR UPDATE"));
+    }
 }

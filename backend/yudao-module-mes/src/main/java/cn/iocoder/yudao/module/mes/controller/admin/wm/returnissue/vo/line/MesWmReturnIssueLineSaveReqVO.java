@@ -28,6 +28,7 @@ public class MesWmReturnIssueLineSaveReqVO {
     private BigDecimal quantity;
 
     @Schema(description = "库存记录 ID", example = "1")
+    @NotNull(message = "请选择本工单线边库存")
     private Long materialStockId;
 
     @Schema(description = "批次 ID", example = "1")

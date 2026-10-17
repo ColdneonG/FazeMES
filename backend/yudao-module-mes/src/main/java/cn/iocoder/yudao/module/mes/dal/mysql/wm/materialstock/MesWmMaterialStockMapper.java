@@ -8,6 +8,8 @@ import cn.iocoder.yudao.module.mes.controller.admin.wm.materialstock.vo.MesWmMat
 import cn.iocoder.yudao.module.mes.dal.dataobject.wm.materialstock.MesWmMaterialStockDO;
 import com.baomidou.mybatisplus.core.conditions.update.LambdaUpdateWrapper;
 import org.apache.ibatis.annotations.Mapper;
+import org.apache.ibatis.annotations.Param;
+import org.apache.ibatis.annotations.Select;
 
 import java.math.BigDecimal;
 import java.util.Collection;
@@ -18,6 +20,10 @@ import java.util.List;
  */
 @Mapper
 public interface MesWmMaterialStockMapper extends BaseMapperX<MesWmMaterialStockDO> {
+
+    // 锁定稳定存在的库位行，串行化同库位的首次建账，避免并发产生重复库存维度。
+    @Select("SELECT id FROM mes_wm_warehouse_area WHERE id = #{areaId} AND deleted = 0 FOR UPDATE")
+    Long lockStockArea(@Param("areaId") Long areaId);
 
     default PageResult<MesWmMaterialStockDO> selectPage(MesWmMaterialStockPageReqVO reqVO,
                                                          Collection<Long> itemTypeIds,
@@ -32,6 +38,7 @@ public interface MesWmMaterialStockMapper extends BaseMapperX<MesWmMaterialStock
                 .eqIfPresent(MesWmMaterialStockDO::getLocationId, reqVO.getLocationId())
                 .eqIfPresent(MesWmMaterialStockDO::getAreaId, reqVO.getAreaId())
                 .eqIfPresent(MesWmMaterialStockDO::getVendorId, reqVO.getVendorId())
+                .eqIfPresent(MesWmMaterialStockDO::getWorkOrderId, reqVO.getWorkOrderId())
                 .eqIfPresent(MesWmMaterialStockDO::getFrozen, reqVO.getFrozen());
         wrapper.ne(MesWmMaterialStockDO::getQuantity, BigDecimal.ZERO)
                 .orderByAsc(MesWmMaterialStockDO::getReceiptTime);
@@ -87,6 +94,11 @@ public interface MesWmMaterialStockMapper extends BaseMapperX<MesWmMaterialStock
 
     default MesWmMaterialStockDO selectByCompositeKey(Long itemId, Long warehouseId, Long locationId,
                                                        Long areaId, Long batchId) {
+        return selectByCompositeKey(itemId, warehouseId, locationId, areaId, batchId, null, null);
+    }
+
+    default MesWmMaterialStockDO selectByCompositeKey(Long itemId, Long warehouseId, Long locationId,
+            Long areaId, Long batchId, Long vendorId, Long workOrderId) {
         LambdaQueryWrapperX<MesWmMaterialStockDO> wrapper = new LambdaQueryWrapperX<MesWmMaterialStockDO>()
                 .eqIfPresent(MesWmMaterialStockDO::getItemId, itemId)
                 .eqIfPresent(MesWmMaterialStockDO::getWarehouseId, warehouseId)
@@ -98,7 +110,18 @@ public interface MesWmMaterialStockMapper extends BaseMapperX<MesWmMaterialStock
         } else {
             wrapper.isNull(MesWmMaterialStockDO::getBatchId);
         }
-        return selectOne(wrapper);
+        if (vendorId == null) {
+            wrapper.isNull(MesWmMaterialStockDO::getVendorId);
+        } else {
+            wrapper.eq(MesWmMaterialStockDO::getVendorId, vendorId);
+        }
+        if (workOrderId == null) {
+            wrapper.isNull(MesWmMaterialStockDO::getWorkOrderId);
+        } else {
+            wrapper.eq(MesWmMaterialStockDO::getWorkOrderId, workOrderId);
+        }
+        // 历史版本可能已有重复维度，保留全部记录；新增入库固定累加到最早一条。
+        return selectOne(wrapper.orderByAsc(MesWmMaterialStockDO::getId).last("LIMIT 1 FOR UPDATE"));
     }
 
     default List<MesWmMaterialStockDO> selectList(MesWmMaterialStockListReqVO reqVO) {
@@ -107,6 +130,7 @@ public interface MesWmMaterialStockMapper extends BaseMapperX<MesWmMaterialStock
                 .eqIfPresent(MesWmMaterialStockDO::getLocationId, reqVO.getLocationId())
                 .eqIfPresent(MesWmMaterialStockDO::getAreaId, reqVO.getAreaId())
                 .eqIfPresent(MesWmMaterialStockDO::getItemId, reqVO.getItemId())
+                .eqIfPresent(MesWmMaterialStockDO::getWorkOrderId, reqVO.getWorkOrderId())
                 .eqIfPresent(MesWmMaterialStockDO::getBatchId, reqVO.getBatchId())
                 .likeIfPresent(MesWmMaterialStockDO::getBatchCode, reqVO.getBatchCode())
                 .geIfPresent(MesWmMaterialStockDO::getUpdateTime, reqVO.getStartTime())

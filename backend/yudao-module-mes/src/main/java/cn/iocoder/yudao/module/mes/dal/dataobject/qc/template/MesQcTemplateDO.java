@@ -46,6 +46,9 @@ public class MesQcTemplateDO extends BaseDO {
      */
     @TableField(typeHandler = IntegerListTypeHandler.class)
     private List<Integer> types;
+    /** 适用IPQC子阶段；空列表表示兼容历史的通用过程检验模板。 */
+    @TableField(typeHandler = IntegerListTypeHandler.class)
+    private List<Integer> ipqcTypes;
     /**
      * 状态
      *

@@ -56,6 +56,8 @@ public class MesWmProductSalesDO extends BaseDO {
      * 关联 {@link MesWmSalesNoticeDO#getId()}
      */
     private Long noticeId;
+    /** 已完成出货检验单的头部参考关联，不代替各物料行的必检。 */
+    private Long oqcId;
     /**
      * 出库日期
      */

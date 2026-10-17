@@ -36,4 +36,7 @@ public interface MesWmProductSalesMapper extends BaseMapperX<MesWmProductSalesDO
         return selectList(MesWmProductSalesDO::getClientId, clientId);
     }
 
+    default MesWmProductSalesDO selectForUpdate(Long id) {
+        return selectOne(new LambdaQueryWrapperX<MesWmProductSalesDO>().eq(MesWmProductSalesDO::getId,id).last("FOR UPDATE"));
+    }
 }

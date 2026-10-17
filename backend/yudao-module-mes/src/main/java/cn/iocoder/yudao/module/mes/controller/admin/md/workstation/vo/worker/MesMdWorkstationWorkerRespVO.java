@@ -2,6 +2,7 @@ package cn.iocoder.yudao.module.mes.controller.admin.md.workstation.vo.worker;
 
 import io.swagger.v3.oas.annotations.media.Schema;
 import lombok.Data;
+import java.util.List;
 
 import java.time.LocalDateTime;
 
@@ -23,6 +24,9 @@ public class MesMdWorkstationWorkerRespVO {
 
     @Schema(description = "数量", example = "1")
     private Integer quantity;
+
+    @Schema(description = "绑定实际人员编号；空列表表示未限制")
+    private List<Long> userIds;
 
     @Schema(description = "备注")
     private String remark;

@@ -147,7 +147,7 @@ public class MesProFeedbackController {
     @PutMapping("/reject")
     @Operation(summary = "驳回报工")
     @Parameter(name = "id", description = "编号", required = true)
-    @PreAuthorize("@ss.hasPermission('mes:pro-feedback:update')")
+    @PreAuthorize("@ss.hasPermission('mes:pro-feedback:approve')")
     public CommonResult<Boolean> rejectFeedback(@RequestParam("id") Long id) {
         feedbackService.rejectFeedback(id);
         return success(true);

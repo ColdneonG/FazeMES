@@ -39,6 +39,9 @@ public class MesWmReturnIssueLineServiceImplTest extends BaseDbUnitTest {
     @MockitoBean
     private MesMdItemService itemService;
 
+    @MockitoBean
+    private cn.iocoder.yudao.module.mes.service.wm.materialstock.MesWmMaterialStockService materialStockService;
+
     @Test
     public void testUpdateReturnIssueLineWhenRqcFinish_allPass() {
         // 准备参数：全部合格

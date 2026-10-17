@@ -6,6 +6,8 @@ import cn.iocoder.yudao.module.mes.controller.admin.md.workstation.vo.tool.MesMd
 import cn.iocoder.yudao.module.mes.dal.dataobject.md.workstation.MesMdWorkstationToolDO;
 import cn.iocoder.yudao.module.mes.dal.mysql.md.workstation.MesMdWorkstationToolMapper;
 import cn.iocoder.yudao.module.mes.service.tm.tool.MesTmToolTypeService;
+import cn.iocoder.yudao.module.mes.dal.mysql.tm.tool.MesTmToolMapper;
+import java.util.HashSet;
 import jakarta.annotation.Resource;
 import org.springframework.stereotype.Service;
 import org.springframework.validation.annotation.Validated;
@@ -29,6 +31,8 @@ public class MesMdWorkstationToolServiceImpl implements MesMdWorkstationToolServ
 
     @Resource
     private MesTmToolTypeService toolTypeService;
+    @Resource
+    private MesTmToolMapper toolLedgerMapper;
 
     @Override
     public Long createWorkstationTool(MesMdWorkstationToolSaveReqVO createReqVO) {
@@ -54,8 +58,22 @@ public class MesMdWorkstationToolServiceImpl implements MesMdWorkstationToolServ
     }
 
     private void validateWorkstationToolSaveData(Long id, MesMdWorkstationToolSaveReqVO reqVO) {
+        if (reqVO.getQuantity() == null || reqVO.getQuantity() < 1) {
+            throw exception(MD_WORKSTATION_RESOURCE_QUANTITY_INVALID);
+        }
         // 校验工具类型是否存在
         toolTypeService.validateToolTypeExists(reqVO.getToolTypeId());
+        if (reqVO.getToolIds() != null && !reqVO.getToolIds().isEmpty()) {
+            if (reqVO.getToolIds().stream().anyMatch(java.util.Objects::isNull) || new HashSet<>(reqVO.getToolIds()).size() != reqVO.getToolIds().size()) {
+                throw exception(MD_WORKSTATION_RESOURCE_BINDING_INVALID, "工装不可为空或重复");
+            }
+            for (Long toolId : reqVO.getToolIds()) {
+                var tool = toolLedgerMapper.selectById(toolId);
+                if (tool == null || ObjUtil.notEqual(tool.getToolTypeId(), reqVO.getToolTypeId())) {
+                    throw exception(MD_WORKSTATION_RESOURCE_BINDING_INVALID, "工装台账不存在或类型不匹配");
+                }
+            }
+        }
         // 校验同一工作站下工具类型不重复（排除自身）
         MesMdWorkstationToolDO existing = workstationToolMapper.selectByWorkstationIdAndToolTypeId(
                 reqVO.getWorkstationId(), reqVO.getToolTypeId());

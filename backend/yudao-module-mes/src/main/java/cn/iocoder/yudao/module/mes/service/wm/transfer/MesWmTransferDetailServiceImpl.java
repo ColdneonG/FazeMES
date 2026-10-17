@@ -11,6 +11,7 @@ import cn.iocoder.yudao.module.mes.service.wm.warehouse.MesWmWarehouseAreaServic
 import jakarta.annotation.Resource;
 import org.springframework.context.annotation.Lazy;
 import org.springframework.stereotype.Service;
+import org.springframework.transaction.annotation.Transactional;
 import org.springframework.validation.annotation.Validated;
 
 import java.math.BigDecimal;
@@ -28,6 +29,8 @@ import static cn.iocoder.yudao.module.mes.enums.ErrorCodeConstants.WM_TRANSFER_D
 @Validated
 public class MesWmTransferDetailServiceImpl implements MesWmTransferDetailService {
 
+    @Resource private cn.iocoder.yudao.module.mes.dal.mysql.wm.transfer.MesWmTransferMapper documentMapper;
+
     @Resource
     private MesWmTransferDetailMapper transferDetailMapper;
 
@@ -41,7 +44,9 @@ public class MesWmTransferDetailServiceImpl implements MesWmTransferDetailServic
     private MesWmWarehouseAreaService warehouseAreaService;
 
     @Override
+    @Transactional(rollbackFor=Exception.class)
     public Long createTransferDetail(MesWmTransferDetailSaveReqVO createReqVO) {
+        lockDocumentForEdit(createReqVO.getTransferId());
         // 校验
         validateDetailSaveData(createReqVO, null);
 
@@ -52,7 +57,13 @@ public class MesWmTransferDetailServiceImpl implements MesWmTransferDetailServic
     }
 
     @Override
+    @Transactional(rollbackFor=Exception.class)
     public void updateTransferDetail(MesWmTransferDetailSaveReqVO updateReqVO) {
+        var persisted=transferDetailMapper.selectById(updateReqVO.getId());
+        if(persisted==null) throw exception(cn.iocoder.yudao.module.mes.enums.ErrorCodeConstants.WM_TRANSFER_NOT_EDITABLE);
+        lockDocumentForEdit(persisted.getTransferId());
+        if(!java.util.Objects.equals(persisted.getTransferId(),updateReqVO.getTransferId()))
+            throw exception(cn.iocoder.yudao.module.mes.enums.ErrorCodeConstants.WM_TRANSFER_NOT_EDITABLE);
         // 校验存在
         validateTransferDetailExists(updateReqVO.getId());
         // 校验
@@ -64,7 +75,11 @@ public class MesWmTransferDetailServiceImpl implements MesWmTransferDetailServic
     }
 
     @Override
+    @Transactional(rollbackFor=Exception.class)
     public void deleteTransferDetail(Long id) {
+        var persisted=transferDetailMapper.selectById(id);
+        if(persisted==null) throw exception(cn.iocoder.yudao.module.mes.enums.ErrorCodeConstants.WM_TRANSFER_NOT_EDITABLE);
+        lockDocumentForEdit(persisted.getTransferId());
         // 校验存在
         MesWmTransferDetailDO detail = transferDetailMapper.selectById(id);
         if (detail == null) {
@@ -190,4 +205,10 @@ public class MesWmTransferDetailServiceImpl implements MesWmTransferDetailServic
         }
     }
 
+    private void lockDocumentForEdit(Long id) {
+        var document=documentMapper.selectForUpdate(id);
+        if(document==null || (!java.util.Objects.equals(document.getStatus(),cn.iocoder.yudao.module.mes.enums.MesOrderStatusConstants.PREPARE)
+            && !java.util.Objects.equals(document.getStatus(),cn.iocoder.yudao.module.mes.enums.MesOrderStatusConstants.APPROVING)))
+            throw exception(cn.iocoder.yudao.module.mes.enums.ErrorCodeConstants.WM_TRANSFER_NOT_EDITABLE);
+    }
 }

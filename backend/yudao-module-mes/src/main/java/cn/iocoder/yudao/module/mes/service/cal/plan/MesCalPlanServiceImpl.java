@@ -50,6 +50,7 @@ public class MesCalPlanServiceImpl implements MesCalPlanService {
     @Override
     @Transactional(rollbackFor = Exception.class)
     public Long createPlan(MesCalPlanSaveReqVO createReqVO) {
+        validateDates(BeanUtils.toBean(createReqVO,MesCalPlanDO.class));
         // 1. 校验编码唯一
         validatePlanCodeUnique(null, createReqVO.getCode());
 
@@ -68,6 +69,7 @@ public class MesCalPlanServiceImpl implements MesCalPlanService {
     @Override
     @Transactional(rollbackFor = Exception.class)
     public void updatePlan(MesCalPlanSaveReqVO updateReqVO) {
+        validateDates(BeanUtils.toBean(updateReqVO,MesCalPlanDO.class));
         // 1.1 校验存在
         MesCalPlanDO existPlan = validatePlanExists(updateReqVO.getId());
         // 1.2 校验计划未确认（已确认不允许编辑）
@@ -98,6 +100,9 @@ public class MesCalPlanServiceImpl implements MesCalPlanService {
     public void confirmPlan(Long id) {
         // 1.1 校验存在 + 校验状态为草稿
         MesCalPlanDO plan = validatePlanPrepare(id);
+        validateDates(plan);
+        for(var shift:planShiftService.getPlanShiftListByPlanId(id))
+            MesCalShiftTimeRange.resolve(plan.getStartDate().toLocalDate(),shift.getStartTime(),shift.getEndTime());
         // 1.2 校验班组数量与轮班方式匹配
         validateTeamCountForConfirm(id, plan.getShiftType());
 
@@ -152,7 +157,7 @@ public class MesCalPlanServiceImpl implements MesCalPlanService {
     }
 
     private MesCalPlanDO validatePlanExists(Long id) {
-        MesCalPlanDO plan = planMapper.selectById(id);
+        MesCalPlanDO plan = planMapper.selectForUpdate(id);
         if (plan == null) {
             throw exception(CAL_PLAN_NOT_EXISTS);
         }
@@ -180,4 +185,13 @@ public class MesCalPlanServiceImpl implements MesCalPlanService {
         }
     }
 
+    private void validateDates(MesCalPlanDO p) {
+        if(p.getStartDate()==null || p.getEndDate()==null || p.getEndDate().isBefore(p.getStartDate())
+            || p.getShiftType()==null || p.getShiftType()<1 || p.getShiftType()>3) throw exception(CAL_PLAN_DATE_INVALID);
+        if(!MesCalShiftTypeEnum.SINGLE.getType().equals(p.getShiftType())) {
+            if(p.getShiftMethod()==null || p.getShiftMethod()<1 || p.getShiftMethod()>4) throw exception(CAL_PLAN_DATE_INVALID);
+            if(MesCalShiftMethodEnum.DAY.getMethod().equals(p.getShiftMethod()) && (p.getShiftCount()==null || p.getShiftCount()<=0))
+                throw exception(CAL_TEAM_SHIFT_GENERATE_SHIFT_COUNT_INVALID);
+        }
+    }
 }

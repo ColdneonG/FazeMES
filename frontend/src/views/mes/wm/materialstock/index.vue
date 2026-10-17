@@ -1,6 +1,5 @@
 <!-- MES 库存台账列表 -->
 <template>
-
   <el-row :gutter="20">
     <!-- 左侧分类树 -->
     <el-col :span="4" :xs="24">
@@ -89,6 +88,15 @@
                 {{ scope.row.batchCode }}
               </el-button>
               <span v-else>-</span>
+            </template>
+          </el-table-column>
+          <el-table-column label="所属工单" align="center" min-width="160">
+            <template #default="{ row }">
+              <span v-if="row.workOrderId">{{ row.workOrderCode || row.workOrderId }}</span>
+              <el-tag v-else-if="row.warehouseCode === 'WIP_VIRTUAL_WAREHOUSE'" type="warning"
+                >历史待核对</el-tag
+              >
+              <span v-else>—</span>
             </template>
           </el-table-column>
           <el-table-column label="仓库" align="center" prop="warehouseName" min-width="100" />

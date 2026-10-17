@@ -20,7 +20,6 @@
               v-model="formData.materialStockId"
               :item-id="formData.itemId"
               virtual-filter="only"
-              @change="handleStockChange"
             />
           </el-form-item>
         </el-col>
@@ -40,7 +39,7 @@
       <el-row>
         <el-col :span="8">
           <el-form-item label="入库仓库" prop="warehouseId">
-            <WmWarehouseSelect v-model="formData.warehouseId" disabled />
+            <WmWarehouseSelect v-model="formData.warehouseId" />
           </el-form-item>
         </el-col>
         <el-col :span="8">
@@ -48,17 +47,12 @@
             <WmWarehouseLocationSelect
               v-model="formData.locationId"
               :warehouse-id="formData.warehouseId"
-              disabled
             />
           </el-form-item>
         </el-col>
         <el-col :span="8">
           <el-form-item label="库位" prop="areaId">
-            <WmWarehouseAreaSelect
-              v-model="formData.areaId"
-              :location-id="formData.locationId"
-              disabled
-            />
+            <WmWarehouseAreaSelect v-model="formData.areaId" :location-id="formData.locationId" />
           </el-form-item>
         </el-col>
       </el-row>
@@ -79,7 +73,8 @@
 
 <script setup lang="ts">
 import { WmReturnIssueDetailApi, WmReturnIssueDetailVO } from '@/api/mes/wm/returnissue/detail'
-import { WmMaterialStockVO } from '@/api/mes/wm/materialstock'
+import { WmMaterialStockApi } from '@/api/mes/wm/materialstock'
+import { WmReturnIssueLineApi } from '@/api/mes/wm/returnissue/line'
 import MdItemSelect from '@/views/mes/md/item/components/MdItemSelect.vue'
 import WmMaterialStockSelect from '@/views/mes/wm/materialstock/components/WmMaterialStockSelect.vue'
 import WmWarehouseSelect from '@/views/mes/wm/warehouse/components/WmWarehouseSelect.vue'
@@ -120,32 +115,30 @@ const formData = ref({
 const formRules = reactive({
   itemId: [{ required: true, message: '物料不能为空', trigger: 'change' }],
   materialStockId: [{ required: true, message: '请选择库存记录', trigger: 'change' }],
+  warehouseId: [{ required: true, message: '请选择目标仓库', trigger: 'change' }],
+  locationId: [{ required: true, message: '请选择目标库区', trigger: 'change' }],
+  areaId: [{ required: true, message: '请选择目标库位', trigger: 'change' }],
   quantity: [{ required: true, message: '数量不能为空', trigger: 'blur' }]
 })
 
-/** 库存选中回调 —— 自动回填仓库/库区/库位/批次/数量 */
-const handleStockChange = (stock: WmMaterialStockVO | undefined) => {
-  if (!stock) {
-    formData.value.warehouseId = undefined
+watch(
+  () => formData.value.warehouseId,
+  () => {
     formData.value.locationId = undefined
     formData.value.areaId = undefined
-    formData.value.batchId = undefined
-    formData.value.batchCode = undefined
-    formData.value.quantity = undefined
-    quantityMax.value = undefined
-    return
-  }
-  formData.value.warehouseId = stock.warehouseId
-  formData.value.locationId = stock.locationId
-  formData.value.areaId = stock.areaId
-  formData.value.batchId = stock.batchId
-  formData.value.batchCode = stock.batchCode
-  formData.value.quantity = stock.quantity
-  quantityMax.value = stock.quantity
-}
+  },
+  { flush: 'sync' }
+)
+watch(
+  () => formData.value.locationId,
+  () => {
+    formData.value.areaId = undefined
+  },
+  { flush: 'sync' }
+)
 
 /** 打开弹窗 */
-const open = async (type: string, lineId: number, itemId?: number, detailId?: number) => {
+const open = async (type: string, lineId: number, _itemId?: number, detailId?: number) => {
   dialogVisible.value = true
   dialogTitle.value = type === 'create' ? '添加上架明细' : '编辑上架明细'
   formType.value = type
@@ -159,8 +152,15 @@ const open = async (type: string, lineId: number, itemId?: number, detailId?: nu
     } finally {
       formLoading.value = false
     }
-  } else if (itemId) {
-    formData.value.itemId = itemId
+  } else {
+    const line = await WmReturnIssueLineApi.getReturnIssueLine(lineId)
+    formData.value.itemId = line.itemId
+    formData.value.materialStockId = line.materialStockId
+    formData.value.batchId = line.batchId
+    formData.value.batchCode = line.batchCode
+    const stock = await WmMaterialStockApi.getMaterialStock(line.materialStockId)
+    quantityMax.value = Math.min(line.quantity, stock.quantity)
+    formData.value.quantity = quantityMax.value
   }
 }
 defineExpose({ open })

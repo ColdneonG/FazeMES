@@ -17,6 +17,9 @@ import java.util.List;
  */
 public interface MesWmMaterialStockService {
 
+    /** 在业务事务内锁定库位，串行化建账和混放规则校验。 */
+    void lockStockArea(Long areaId);
+
     /**
      * 获得库存记录
      *
@@ -111,6 +114,13 @@ public interface MesWmMaterialStockService {
      */
     MesWmMaterialStockDO getOrCreateMaterialStock(Long itemId, Long warehouseId, Long locationId, Long areaId,
                                                   Long batchId, String batchCode, Long vendorId, LocalDateTime receiptTime);
+
+    MesWmMaterialStockDO getOrCreateMaterialStock(Long itemId, Long warehouseId, Long locationId, Long areaId,
+            Long batchId, String batchCode, Long vendorId, LocalDateTime receiptTime, Long workOrderId);
+
+    /** 验证该记录确为指定工单的线边库存，排除历史未归属库存。 */
+    MesWmMaterialStockDO validateWorkOrderStock(Long stockId, Long workOrderId, Long itemId,
+            Long batchId, BigDecimal quantity);
 
     /**
      * 更新库存数量

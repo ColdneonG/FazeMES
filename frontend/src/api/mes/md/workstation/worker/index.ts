@@ -6,12 +6,16 @@ export interface MdWorkstationWorkerVO {
   workstationId: number // 工作站 ID
   postId: number // 岗位 ID
   postName: string // 岗位名称
+  userIds?: number[] // 空绑定表示未限制
   quantity: number // 数量
   remark: string // 备注
 }
 
 // MES 人力资源 API
 export const MdWorkstationWorkerApi = {
+  getWorkerCandidates: async (postId: number): Promise<{ id: number; nickname: string }[]> => {
+    return await request.get({ url: `/mes/md-workstation/worker-candidates`, params: { postId } })
+  },
   // 查询人力资源列表
   getWorkstationWorkerList: async (workstationId: number) => {
     return await request.get({

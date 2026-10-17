@@ -46,6 +46,7 @@ public class MesWmItemReceiptLineServiceImpl implements MesWmItemReceiptLineServ
     private MesWmBatchService batchService;
 
     @Override
+    @Transactional(rollbackFor=Exception.class)
     public Long createItemReceiptLine(MesWmItemReceiptLineSaveReqVO createReqVO) {
         // 1. 校验父单据存在且为可编辑状态
         MesWmItemReceiptDO receipt = itemReceiptService.validateItemReceiptEditable(createReqVO.getReceiptId());
@@ -66,7 +67,12 @@ public class MesWmItemReceiptLineServiceImpl implements MesWmItemReceiptLineServ
     }
 
     @Override
+    @Transactional(rollbackFor=Exception.class)
     public void updateItemReceiptLine(MesWmItemReceiptLineSaveReqVO updateReqVO) {
+        // A line cannot be moved out of a completed document by changing the request parent id.
+        var persistedParent=itemReceiptLineMapper.selectById(updateReqVO.getId());
+        if(persistedParent==null) throw exception(cn.iocoder.yudao.module.mes.enums.ErrorCodeConstants.WM_MATERIAL_STOCK_SELECTION_MISMATCH);
+        updateReqVO.setReceiptId(persistedParent.getReceiptId());
         // 1.1 校验存在
         MesWmItemReceiptLineDO line = validateItemReceiptLineExists(updateReqVO.getId());
         // 1.2 校验父单据存在且为可编辑状态

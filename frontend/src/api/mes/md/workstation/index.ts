@@ -13,12 +13,24 @@ export interface MdWorkstationVO {
   warehouseId: number // 线边库 ID
   locationId: number // 库区 ID
   areaId: number // 库位 ID
+  available?: boolean
+  availabilityReasons?: string[]
+  availabilityNotes?: string[]
   status: number // 状态
   remark: string // 备注
 }
 
 // MES 工作站 API
 export const MdWorkstationApi = {
+  getAvailability: async (id: number) => {
+    return await request.get<{
+      workstationId: number
+      checkedAt: string
+      available: boolean
+      reasons: string[]
+      notes: string[]
+    }>({ url: `/mes/md-workstation/availability`, params: { id } })
+  },
   // 查询工作站分页
   getWorkstationPage: async (params: any) => {
     return await request.get({ url: `/mes/md-workstation/page`, params })

@@ -10,6 +10,7 @@ import cn.iocoder.yudao.module.mes.service.dv.subject.MesDvSubjectService;
 import jakarta.annotation.Resource;
 import org.springframework.context.annotation.Lazy;
 import org.springframework.stereotype.Service;
+import org.springframework.transaction.annotation.Transactional;
 import org.springframework.validation.annotation.Validated;
 
 import java.util.List;
@@ -36,6 +37,7 @@ public class MesDvMaintenRecordLineServiceImpl implements MesDvMaintenRecordLine
     private MesDvSubjectService subjectService;
 
     @Override
+    @Transactional(rollbackFor=Exception.class)
     public Long createMaintenRecordLine(MesDvMaintenRecordLineSaveReqVO createReqVO) {
         // 1. 校验关联数据
         validateMaintenRecordLineRelation(createReqVO);
@@ -47,7 +49,11 @@ public class MesDvMaintenRecordLineServiceImpl implements MesDvMaintenRecordLine
     }
 
     @Override
+    @Transactional(rollbackFor=Exception.class)
     public void updateMaintenRecordLine(MesDvMaintenRecordLineSaveReqVO updateReqVO) {
+        MesDvMaintenRecordLineDO original=maintenRecordLineMapper.selectById(updateReqVO.getId());
+        if(original==null || !java.util.Objects.equals(original.getRecordId(),updateReqVO.getRecordId()))
+            throw exception(DV_TASK_RESULTS_INVALID);
         // 1.1 校验存在
         validateMaintenRecordLineExists(updateReqVO.getId());
         // 1.2 校验关联数据
@@ -59,6 +65,7 @@ public class MesDvMaintenRecordLineServiceImpl implements MesDvMaintenRecordLine
     }
 
     @Override
+    @Transactional(rollbackFor=Exception.class)
     public void deleteMaintenRecordLine(Long id) {
         // 1.1 校验存在
         MesDvMaintenRecordLineDO line = validateMaintenRecordLineExists(id);

@@ -68,4 +68,7 @@ public interface MesQcTemplateItemService {
      */
     MesQcTemplateItemDO getRequiredTemplateByItemIdAndType(Long itemId, Integer qcType);
 
+    /** 显式子阶段模板优先于历史通用模板；同优先级重叠时拒绝任意选取。 */
+    MesQcTemplateItemDO getRequiredTemplateByItemIdAndType(Long itemId, Integer qcType, Integer ipqcType);
+
 }

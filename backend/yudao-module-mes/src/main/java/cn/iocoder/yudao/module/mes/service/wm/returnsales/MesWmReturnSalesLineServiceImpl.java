@@ -17,6 +17,7 @@ import cn.iocoder.yudao.module.mes.service.wm.batch.MesWmBatchService;
 import jakarta.annotation.Resource;
 import org.springframework.context.annotation.Lazy;
 import org.springframework.stereotype.Service;
+import org.springframework.transaction.annotation.Transactional;
 import org.springframework.validation.annotation.Validated;
 
 import java.math.BigDecimal;
@@ -51,6 +52,7 @@ public class MesWmReturnSalesLineServiceImpl implements MesWmReturnSalesLineServ
     private MesWmReturnSalesDetailService returnSalesDetailService;
 
     @Override
+    @Transactional(rollbackFor=Exception.class)
     public Long createReturnSalesLine(MesWmReturnSalesLineSaveReqVO createReqVO) {
         validateLineSaveData(createReqVO);
 
@@ -63,7 +65,12 @@ public class MesWmReturnSalesLineServiceImpl implements MesWmReturnSalesLineServ
     }
 
     @Override
+    @Transactional(rollbackFor=Exception.class)
     public void updateReturnSalesLine(MesWmReturnSalesLineSaveReqVO updateReqVO) {
+        // A line cannot be moved out of a completed document by changing the request parent id.
+        var persistedParent=returnSalesLineMapper.selectById(updateReqVO.getId());
+        if(persistedParent==null) throw exception(cn.iocoder.yudao.module.mes.enums.ErrorCodeConstants.WM_MATERIAL_STOCK_SELECTION_MISMATCH);
+        updateReqVO.setReturnId(persistedParent.getReturnId());
         // 校验存在
         MesWmReturnSalesLineDO oldLine = validateReturnSalesLineExists(updateReqVO.getId());
         // 固定父单 ID，防止通过接口篡改
@@ -88,6 +95,7 @@ public class MesWmReturnSalesLineServiceImpl implements MesWmReturnSalesLineServ
     }
 
     @Override
+    @Transactional(rollbackFor=Exception.class)
     public void deleteReturnSalesLine(Long id) {
         // 校验存在
         MesWmReturnSalesLineDO line = validateReturnSalesLineExists(id);

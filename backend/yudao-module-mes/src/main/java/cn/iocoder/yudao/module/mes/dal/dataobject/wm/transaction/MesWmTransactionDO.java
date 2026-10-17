@@ -74,6 +74,8 @@ public class MesWmTransactionDO extends BaseDO {
      * 关联 {@link MesWmMaterialStockDO#getId()}
      */
     private Long materialStockId;
+    /** 本次变动所属生产工单，保留完整追溯。 */
+    private Long workOrderId;
     /**
      * 关联的事务 ID
      *

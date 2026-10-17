@@ -13,6 +13,10 @@ import jakarta.validation.Valid;
  * @author 芋道源码
  */
 public interface MesDvRepairService {
+    /** Idempotent automatic repair; source types 101=check record, 102=maintenance record. */
+    Long createAbnormalRepair(Long machineryId, Integer sourceType, Long sourceId,
+        java.util.List<cn.iocoder.yudao.module.mes.dal.dataobject.dv.repair.MesDvRepairLineDO> lines);
+
 
     /**
      * 创建维修工单

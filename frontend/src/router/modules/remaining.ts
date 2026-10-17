@@ -1146,6 +1146,30 @@ const remainingRouter: AppRouteRecordRaw[] = [
     },
     children: [
       {
+        path: 'workbench',
+        component: () => import('@/views/mes/pro/workbench/index.vue'),
+        name: 'MesProWorkbench',
+        meta: {
+          title: '工位工作台',
+          hidden: true,
+          canTo: true,
+          noCache: true,
+          activeMenu: '/mes/workbench'
+        }
+      },
+      {
+        path: 'quality-workbench',
+        component: () => import('@/views/mes/qc/mobile/QualityWorkbench.vue'),
+        name: 'MesQualityWorkbench',
+        meta: {
+          title: '工位质检',
+          hidden: true,
+          canTo: true,
+          noCache: true,
+          activeMenu: '/mes/workbench'
+        }
+      },
+      {
         path: 'wm/warehouse/location',
         component: () => import('@/views/mes/wm/warehouse/location/index.vue'),
         name: 'MesWmLocation',

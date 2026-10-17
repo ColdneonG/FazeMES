@@ -9,9 +9,12 @@ import cn.iocoder.yudao.module.mes.dal.mysql.dv.checkrecord.MesDvCheckRecordLine
 import jakarta.annotation.Resource;
 import org.springframework.context.annotation.Lazy;
 import org.springframework.stereotype.Service;
+import org.springframework.transaction.annotation.Transactional;
 import org.springframework.validation.annotation.Validated;
 
 import java.util.List;
+
+import static cn.iocoder.yudao.module.mes.enums.ErrorCodeConstants.DV_TASK_RESULTS_INVALID;
 
 import static cn.iocoder.yudao.framework.common.exception.util.ServiceExceptionUtil.exception;
 import static cn.iocoder.yudao.module.mes.enums.ErrorCodeConstants.DV_CHECK_RECORD_LINE_NOT_EXISTS;
@@ -33,6 +36,7 @@ public class MesDvCheckRecordLineServiceImpl implements MesDvCheckRecordLineServ
     private MesDvCheckRecordService checkRecordService;
 
     @Override
+    @Transactional(rollbackFor=Exception.class)
     public Long createCheckRecordLine(MesDvCheckRecordLineSaveReqVO createReqVO) {
         // 1. 校验点检记录存在且为草稿状态
         checkRecordService.validateCheckRecordDraft(createReqVO.getRecordId());
@@ -44,7 +48,11 @@ public class MesDvCheckRecordLineServiceImpl implements MesDvCheckRecordLineServ
     }
 
     @Override
+    @Transactional(rollbackFor=Exception.class)
     public void updateCheckRecordLine(MesDvCheckRecordLineSaveReqVO updateReqVO) {
+        MesDvCheckRecordLineDO original=checkRecordLineMapper.selectById(updateReqVO.getId());
+        if(original==null || !java.util.Objects.equals(original.getRecordId(),updateReqVO.getRecordId()))
+            throw exception(DV_TASK_RESULTS_INVALID);
         // 1.1 校验行存在
         validateCheckRecordLineExists(updateReqVO.getId());
         // 1.2 校验点检记录存在且为草稿状态
@@ -56,6 +64,7 @@ public class MesDvCheckRecordLineServiceImpl implements MesDvCheckRecordLineServ
     }
 
     @Override
+    @Transactional(rollbackFor=Exception.class)
     public void deleteCheckRecordLine(Long id) {
         // 1. 校验存在
         validateCheckRecordLineExists(id);

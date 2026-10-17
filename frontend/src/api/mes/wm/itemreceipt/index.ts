@@ -26,6 +26,8 @@ export interface WmItemReceiptVO {
 
 // MES 采购入库单 API
 export const WmItemReceiptApi = {
+  getQcOptions: (vendorId: number): Promise<{ id: number; code: string; name: string }[]> =>
+    request.get({ url: '/mes/wm/item-receipt/qc-options', params: { vendorId } }),
   // 查询采购入库单分页
   getItemReceiptPage: async (params: any) => {
     return await request.get({ url: '/mes/wm/item-receipt/page', params })

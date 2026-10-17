@@ -29,6 +29,9 @@ public class MesQcTemplateRespVO {
     @ExcelProperty("检测种类")
     private List<Integer> types;
 
+    @Schema(description = "适用过程检验子阶段，空表示通用")
+    private List<Integer> ipqcTypes;
+
     @Schema(description = "状态", requiredMode = Schema.RequiredMode.REQUIRED, example = "0")
     @ExcelProperty("状态")
     private Integer status;

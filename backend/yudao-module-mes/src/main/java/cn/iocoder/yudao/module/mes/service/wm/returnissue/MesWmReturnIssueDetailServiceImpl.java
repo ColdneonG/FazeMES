@@ -9,9 +9,12 @@ import cn.iocoder.yudao.module.mes.dal.dataobject.wm.returnissue.MesWmReturnIssu
 import cn.iocoder.yudao.module.mes.dal.mysql.wm.returnissue.MesWmReturnIssueDetailMapper;
 import cn.iocoder.yudao.module.mes.service.wm.materialstock.MesWmMaterialStockService;
 import cn.iocoder.yudao.module.mes.service.wm.warehouse.MesWmWarehouseAreaService;
+import cn.iocoder.yudao.module.mes.service.wm.warehouse.MesWmWarehouseService;
+import cn.iocoder.yudao.module.mes.dal.dataobject.wm.warehouse.MesWmWarehouseDO;
 import jakarta.annotation.Resource;
 import org.springframework.context.annotation.Lazy;
 import org.springframework.stereotype.Service;
+import org.springframework.transaction.annotation.Transactional;
 import org.springframework.validation.annotation.Validated;
 
 import java.math.BigDecimal;
@@ -24,6 +27,7 @@ import static cn.iocoder.yudao.module.mes.enums.ErrorCodeConstants.*;
  * MES 生产退料明细 Service 实现类
  */
 @Service
+@Transactional(rollbackFor = Exception.class)
 @Validated
 public class MesWmReturnIssueDetailServiceImpl implements MesWmReturnIssueDetailService {
 
@@ -38,6 +42,11 @@ public class MesWmReturnIssueDetailServiceImpl implements MesWmReturnIssueDetail
     @Resource
     @Lazy
     private MesWmMaterialStockService materialStockService;
+    @Resource
+    private MesWmWarehouseService warehouseService;
+    @Resource
+    @Lazy
+    private MesWmReturnIssueService issueService;
 
     @Override
     public Long createReturnIssueDetail(MesWmReturnIssueDetailSaveReqVO createReqVO) {
@@ -64,6 +73,12 @@ public class MesWmReturnIssueDetailServiceImpl implements MesWmReturnIssueDetail
     public void deleteReturnIssueDetail(Long id) {
         // 校验存在
         validateReturnIssueDetailExists(id);
+        var detail = issueDetailMapper.selectById(id);
+        var issue = issueService.getReturnIssue(detail.getIssueId());
+        if (issue == null || !java.util.Objects.equals(issue.getStatus(),
+                cn.iocoder.yudao.module.mes.enums.wm.MesWmReturnIssueStatusEnum.APPROVING.getStatus())) {
+            throw exception(WM_RETURN_ISSUE_NOT_APPROVING);
+        }
         // 删除
         issueDetailMapper.deleteById(id);
     }
@@ -111,15 +126,25 @@ public class MesWmReturnIssueDetailServiceImpl implements MesWmReturnIssueDetail
         if (ObjUtil.notEqual(line.getItemId(), reqVO.getItemId())) {
             throw exception(WM_RETURN_ISSUE_DETAIL_ITEM_MISMATCH);
         }
+        var issue = issueService.getReturnIssue(reqVO.getIssueId());
+        if (issue == null || !java.util.Objects.equals(issue.getStatus(),
+                cn.iocoder.yudao.module.mes.enums.wm.MesWmReturnIssueStatusEnum.APPROVING.getStatus())
+                || ObjUtil.notEqual(line.getMaterialStockId(), reqVO.getMaterialStockId())
+                || ObjUtil.notEqual(line.getBatchId(), reqVO.getBatchId())) {
+            throw exception(WM_MATERIAL_STOCK_SELECTION_MISMATCH);
+        }
+        materialStockService.validateWorkOrderStock(line.getMaterialStockId(), issue.getWorkOrderId(),
+                line.getItemId(), line.getBatchId(), reqVO.getQuantity());
+        if (MesWmWarehouseDO.WIP_VIRTUAL_WAREHOUSE.equals(
+                warehouseService.validateWarehouseExists(reqVO.getWarehouseId()).getCode())) {
+            throw exception(WM_MATERIAL_STOCK_SELECTION_MISMATCH);
+        }
         // 校验仓库、库区、库位的关联关系
         warehouseAreaService.validateWarehouseAreaExists(
                 reqVO.getWarehouseId(), reqVO.getLocationId(), reqVO.getAreaId());
         // 校验库位物料/批次混放规则
         materialStockService.checkAreaMixingRule(reqVO.getAreaId(), reqVO.getItemId(), reqVO.getBatchId());
         // 校验库存记录
-        materialStockService.validateSelectedStock(
-                reqVO.getMaterialStockId(), reqVO.getItemId(), reqVO.getBatchId(), reqVO.getBatchCode(),
-                reqVO.getWarehouseId(), reqVO.getLocationId(), reqVO.getAreaId(), reqVO.getQuantity());
         // 校验明细总数量不超过行数量（排除自身）
         validateDetailQuantityNotExceed(reqVO.getLineId(), reqVO.getQuantity(), reqVO.getId(), line);
     }

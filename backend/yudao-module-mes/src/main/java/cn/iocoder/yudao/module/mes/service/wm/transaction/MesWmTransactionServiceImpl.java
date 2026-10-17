@@ -68,22 +68,42 @@ public class MesWmTransactionServiceImpl implements MesWmTransactionService {
         checkQuantity(reqDTO, inbound);
         // 1.3 入库事务：批次号校验 + batchId/batchCode 互补
         checkBatch(reqDTO, inbound);
+        areaService.validateWarehouseAreaExists(reqDTO.getWarehouseId(), reqDTO.getLocationId(), reqDTO.getAreaId());
+        materialStockService.lockStockArea(reqDTO.getAreaId());
         // 1.4 入库事务：库位混放规则校验
         if (inbound) {
             materialStockService.checkAreaMixingRule(reqDTO.getAreaId(), reqDTO.getItemId(), reqDTO.getBatchId());
         }
         // 1.5 关联事务校验
         checkRelatedTransaction(reqDTO);
+        MesWmWarehouseDO warehouse = warehouseService.validateWarehouseExists(reqDTO.getWarehouseId());
+        boolean workInProcess = MesWmWarehouseDO.WIP_VIRTUAL_WAREHOUSE.equals(warehouse.getCode());
+        if (workInProcess && reqDTO.getWorkOrderId() == null) {
+            throw exception(WM_MATERIAL_STOCK_SELECTION_MISMATCH);
+        }
 
-        // 2.1 获取或创建库存记录
-        MesWmMaterialStockDO materialStock = materialStockService.getOrCreateMaterialStock(
-                reqDTO.getItemId(), reqDTO.getWarehouseId(), reqDTO.getLocationId(), reqDTO.getAreaId(),
-                reqDTO.getBatchId(), reqDTO.getBatchCode(), reqDTO.getVendorId(), reqDTO.getReceiptTime());
+        // 2.1 入库按完整维度建账；出库仅扣实际选中记录，禁止重新匹配别的工单或供应商。
+        MesWmMaterialStockDO materialStock;
+        if (inbound) {
+            materialStock = materialStockService.getOrCreateMaterialStock(
+                    reqDTO.getItemId(), reqDTO.getWarehouseId(), reqDTO.getLocationId(), reqDTO.getAreaId(),
+                    reqDTO.getBatchId(), reqDTO.getBatchCode(), reqDTO.getVendorId(), reqDTO.getReceiptTime(),
+                    workInProcess ? reqDTO.getWorkOrderId() : null);
+        } else {
+            materialStock = materialStockService.validateSelectedStock(reqDTO.getMaterialStockId(),
+                    reqDTO.getItemId(), reqDTO.getBatchId(), reqDTO.getBatchCode(), reqDTO.getWarehouseId(),
+                    reqDTO.getLocationId(), reqDTO.getAreaId(), reqDTO.getQuantity().abs());
+            if (workInProcess) {
+                materialStockService.validateWorkOrderStock(materialStock.getId(), reqDTO.getWorkOrderId(),
+                        reqDTO.getItemId(), reqDTO.getBatchId(), reqDTO.getQuantity().abs());
+            } else if (materialStock.getWorkOrderId() != null) {
+                throw exception(WM_MATERIAL_STOCK_SELECTION_MISMATCH);
+            }
+        }
         // 2.2 冻结校验（仓库、库区、库位、库存记录）
         checkFrozen(reqDTO, materialStock);
         // 2.3 更新库存数量
-        boolean checkFlag = ObjUtil.defaultIfNull(reqDTO.getCheckFlag(), true);
-        materialStockService.updateMaterialStockQuantity(materialStock.getId(), reqDTO.getQuantity(), checkFlag);
+        materialStockService.updateMaterialStockQuantity(materialStock.getId(), reqDTO.getQuantity(), true);
 
         // 3. 插入事务流水
         MesWmTransactionDO transaction = MesWmTransactionDO.builder()
@@ -91,7 +111,8 @@ public class MesWmTransactionServiceImpl implements MesWmTransactionService {
                 .itemId(reqDTO.getItemId()).batchId(reqDTO.getBatchId()).batchCode(reqDTO.getBatchCode())
                 .warehouseId(reqDTO.getWarehouseId()).locationId(reqDTO.getLocationId()).areaId(reqDTO.getAreaId())
                 .bizType(reqDTO.getBizType()).bizId(reqDTO.getBizId()).bizCode(reqDTO.getBizCode()).bizLineId(reqDTO.getBizLineId())
-                .materialStockId(materialStock.getId()).relatedTransactionId(reqDTO.getRelatedTransactionId())
+                .materialStockId(materialStock.getId()).workOrderId(reqDTO.getWorkOrderId())
+                .relatedTransactionId(reqDTO.getRelatedTransactionId())
                 .build();
         transactionMapper.insert(transaction);
         return transaction.getId();
@@ -163,6 +184,19 @@ public class MesWmTransactionServiceImpl implements MesWmTransactionService {
         MesWmTransactionDO relatedTransaction = transactionMapper.selectById(reqDTO.getRelatedTransactionId());
         if (relatedTransaction == null) {
             throw exception(WM_TRANSACTION_RELATED_NOT_EXISTS);
+        }
+        // 成对调拨保留供应商来源，避免退料/调拨后供应商归属丢失。
+        if (MesWmTransactionTypeEnum.valueOf(reqDTO.getType()).isInbound()) {
+            if (ObjUtil.notEqual(relatedTransaction.getItemId(), reqDTO.getItemId())
+                    || ObjUtil.notEqual(relatedTransaction.getBatchId(), reqDTO.getBatchId())
+                    || relatedTransaction.getQuantity().add(reqDTO.getQuantity()).signum() != 0) {
+                throw exception(WM_MATERIAL_STOCK_SELECTION_MISMATCH);
+            }
+            MesWmMaterialStockDO source = materialStockService.getMaterialStock(relatedTransaction.getMaterialStockId());
+            if (source == null) {
+                throw exception(WM_MATERIAL_STOCK_NOT_EXISTS);
+            }
+            reqDTO.setVendorId(source.getVendorId());
         }
     }
 

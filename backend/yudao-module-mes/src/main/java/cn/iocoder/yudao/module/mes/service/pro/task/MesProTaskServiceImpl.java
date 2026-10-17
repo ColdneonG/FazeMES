@@ -1,23 +1,30 @@
 package cn.iocoder.yudao.module.mes.service.pro.task;
 
 import cn.hutool.core.collection.CollUtil;
+import cn.iocoder.yudao.framework.common.enums.CommonStatusEnum;
 import cn.iocoder.yudao.framework.common.pojo.PageResult;
 import cn.iocoder.yudao.framework.common.util.object.BeanUtils;
 import cn.iocoder.yudao.module.mes.controller.admin.pro.task.vo.MesProTaskPageReqVO;
 import cn.iocoder.yudao.module.mes.controller.admin.pro.task.vo.MesProTaskSaveReqVO;
 import cn.iocoder.yudao.module.mes.dal.dataobject.md.item.MesMdItemDO;
+import cn.iocoder.yudao.module.mes.dal.dataobject.md.workstation.MesMdWorkstationDO;
 import cn.iocoder.yudao.module.mes.dal.dataobject.md.unitmeasure.MesMdUnitMeasureDO;
 import cn.iocoder.yudao.module.mes.dal.dataobject.pro.task.MesProTaskDO;
 import cn.iocoder.yudao.module.mes.dal.dataobject.pro.workorder.MesProWorkOrderDO;
+import cn.iocoder.yudao.module.mes.dal.dataobject.pro.route.MesProRouteDO;
+import cn.iocoder.yudao.module.mes.dal.dataobject.pro.route.MesProRouteProductDO;
 import cn.iocoder.yudao.module.mes.dal.mysql.pro.task.MesProTaskMapper;
 import cn.iocoder.yudao.module.mes.enums.md.autocode.MesMdAutoCodeRuleCodeEnum;
 import cn.iocoder.yudao.module.mes.enums.pro.MesProTaskStatusEnum;
+import cn.iocoder.yudao.module.mes.enums.pro.MesProWorkOrderStatusEnum;
 import cn.iocoder.yudao.module.mes.service.md.autocode.MesMdAutoCodeRecordService;
 import cn.iocoder.yudao.module.mes.service.md.item.MesMdItemService;
 import cn.iocoder.yudao.module.mes.service.md.unitmeasure.MesMdUnitMeasureService;
 import cn.iocoder.yudao.module.mes.service.md.workstation.MesMdWorkstationService;
 import cn.iocoder.yudao.module.mes.service.pro.process.MesProProcessService;
 import cn.iocoder.yudao.module.mes.service.pro.route.MesProRouteService;
+import cn.iocoder.yudao.module.mes.service.pro.route.MesProRouteProductService;
+import cn.iocoder.yudao.module.mes.service.pro.route.MesProRouteProcessService;
 import cn.iocoder.yudao.module.mes.service.pro.workorder.MesProWorkOrderService;
 import jakarta.annotation.Resource;
 import org.springframework.context.annotation.Lazy;
@@ -37,9 +44,7 @@ import java.util.Objects;
 
 import static cn.iocoder.yudao.framework.common.exception.util.ServiceExceptionUtil.exception;
 import static cn.iocoder.yudao.framework.common.util.collection.CollectionUtils.convertList;
-import static cn.iocoder.yudao.module.mes.enums.ErrorCodeConstants.PRO_TASK_ALREADY_FINISHED;
-import static cn.iocoder.yudao.module.mes.enums.ErrorCodeConstants.PRO_TASK_NOT_EXISTS;
-import static cn.iocoder.yudao.module.mes.enums.ErrorCodeConstants.PRO_TASK_WORK_ORDER_MISMATCH;
+import static cn.iocoder.yudao.module.mes.enums.ErrorCodeConstants.*;
 
 /**
  * MES 生产任务 Service 实现类
@@ -67,17 +72,20 @@ public class MesProTaskServiceImpl implements MesProTaskService {
     @Resource
     private MesProRouteService routeService;
     @Resource
+    private MesProRouteProductService routeProductService;
+    @Resource
+    private MesProRouteProcessService routeProcessService;
+    @Resource
     private MesMdAutoCodeRecordService autoCodeRecordService;
 
     @Override
     @Transactional(rollbackFor = Exception.class)
     public Long createTask(MesProTaskSaveReqVO createReqVO) {
-        // 1. 校验关联数据存在
+        // 1. 锁定工单后验证整组排产数据，不能依赖页面的筛选条件。
+        validateScheduleFields(createReqVO);
         MesProWorkOrderDO workOrder = workOrderService.validateWorkOrderExistsForUpdate(createReqVO.getWorkOrderId());
-        workstationService.validateWorkstationExists(createReqVO.getWorkstationId());
-        routeService.validateRouteExists(createReqVO.getRouteId());
-        processService.validateProcessExistsAndEnable(createReqVO.getProcessId());
-        MesMdItemDO item = itemService.validateItemExists(createReqVO.getItemId());
+        MesMdItemDO item = validateScheduleRelations(createReqVO, workOrder);
+        validateScheduleTime(createReqVO);
 
         // 2.1 构建任务 DO：自动填充客户信息
         MesProTaskDO task = BeanUtils.toBean(createReqVO, MesProTaskDO.class)
@@ -102,32 +110,84 @@ public class MesProTaskServiceImpl implements MesProTaskService {
         lockWorkOrders(task.getWorkOrderId(), workOrderId);
         // 等锁前的对象只是定位工单的快照，不能用于后续状态、归属或数量判断。
         task = validateTaskNotFinishedForUpdate(task.getId(), task.getWorkOrderId());
-        // 1.2 校验关联数据存在（工单已在加锁时校验）
-        if (updateReqVO.getWorkstationId() != null) {
-            workstationService.validateWorkstationExists(updateReqVO.getWorkstationId());
-        }
-        if (updateReqVO.getRouteId() != null) {
-            routeService.validateRouteExists(updateReqVO.getRouteId());
-        }
-        if (updateReqVO.getProcessId() != null) {
-            processService.validateProcessExistsAndEnable(updateReqVO.getProcessId());
-        }
-        MesMdItemDO item;
-        if (updateReqVO.getItemId() != null) {
-            item = itemService.validateItemExists(updateReqVO.getItemId());
-        } else {
-            item = itemService.validateItemExists(task.getItemId());
-        }
-        BigDecimal quantity = updateReqVO.getQuantity() != null ? updateReqVO.getQuantity() : task.getQuantity();
+        // 1.2 甘特图允许仅传时间字段，合并当前值后执行与新增相同的约束。
+        MesProTaskSaveReqVO effective = BeanUtils.toBean(task, MesProTaskSaveReqVO.class);
+        if (updateReqVO.getWorkOrderId() != null) effective.setWorkOrderId(updateReqVO.getWorkOrderId());
+        if (updateReqVO.getWorkstationId() != null) effective.setWorkstationId(updateReqVO.getWorkstationId());
+        if (updateReqVO.getRouteId() != null) effective.setRouteId(updateReqVO.getRouteId());
+        if (updateReqVO.getProcessId() != null) effective.setProcessId(updateReqVO.getProcessId());
+        if (updateReqVO.getItemId() != null) effective.setItemId(updateReqVO.getItemId());
+        if (updateReqVO.getQuantity() != null) effective.setQuantity(updateReqVO.getQuantity());
+        if (updateReqVO.getStartTime() != null) effective.setStartTime(updateReqVO.getStartTime());
+        if (updateReqVO.getDuration() != null) effective.setDuration(updateReqVO.getDuration());
+        // 起始时间/时长变化时重算结束时间；显式传结束时间则须一致。
+        effective.setEndTime(updateReqVO.getEndTime());
+        validateScheduleFields(effective);
+        MesMdItemDO item = validateScheduleRelations(effective,
+                workOrderService.validateWorkOrderExistsForUpdate(workOrderId));
+        validateScheduleTime(effective);
 
         // 2. 更新
         MesProTaskDO updateObj = BeanUtils.toBean(updateReqVO, MesProTaskDO.class)
-                .setName(buildTaskName(item, quantity));
+                .setName(buildTaskName(item, effective.getQuantity()))
+                .setStartTime(effective.getStartTime()).setDuration(effective.getDuration())
+                .setEndTime(effective.getEndTime());
         taskMapper.updateById(updateObj);
         updateWorkOrderScheduledQuantity(task.getWorkOrderId());
         if (!Objects.equals(task.getWorkOrderId(), workOrderId)) {
             updateWorkOrderScheduledQuantity(workOrderId);
         }
+    }
+
+    private void validateScheduleFields(MesProTaskSaveReqVO reqVO) {
+        if (reqVO.getWorkOrderId() == null || reqVO.getWorkstationId() == null || reqVO.getRouteId() == null
+                || reqVO.getProcessId() == null || reqVO.getItemId() == null || reqVO.getQuantity() == null
+                || reqVO.getQuantity().signum() <= 0) {
+            throw exception(PRO_TASK_SCHEDULE_INVALID);
+        }
+    }
+
+    private MesMdItemDO validateScheduleRelations(MesProTaskSaveReqVO reqVO, MesProWorkOrderDO workOrder) {
+        if (!Objects.equals(workOrder.getStatus(), MesProWorkOrderStatusEnum.CONFIRMED.getStatus())) {
+            throw exception(PRO_WORK_ORDER_NOT_CONFIRMED);
+        }
+        if (!Objects.equals(workOrder.getProductId(), reqVO.getItemId())) {
+            throw exception(PRO_WORK_ORDER_PRODUCT_MISMATCH);
+        }
+        MesMdItemDO item = itemService.validateItemExistsAndEnable(reqVO.getItemId());
+        MesMdWorkstationDO workstation = workstationService.validateWorkstationExistsAndEnable(reqVO.getWorkstationId());
+        processService.validateProcessExistsAndEnable(reqVO.getProcessId());
+        if (!Objects.equals(workstation.getProcessId(), reqVO.getProcessId())) {
+            throw exception(PRO_WORKSTATION_PROCESS_MISMATCH);
+        }
+        MesProRouteDO route = routeService.validateRouteExists(reqVO.getRouteId());
+        if (!CommonStatusEnum.isEnable(route.getStatus())) {
+            throw exception(PRO_TASK_ROUTE_DISABLED);
+        }
+        MesProRouteProductDO routeProduct = routeProductService.getRouteProductByItemId(reqVO.getItemId());
+        if (routeProduct == null || !Objects.equals(routeProduct.getRouteId(), reqVO.getRouteId())) {
+            throw exception(PRO_TASK_ROUTE_PRODUCT_MISMATCH);
+        }
+        if (routeProcessService.getRouteProcessByRouteIdAndProcessId(reqVO.getRouteId(), reqVO.getProcessId()) == null) {
+            throw exception(PRO_TASK_ROUTE_PROCESS_MISMATCH);
+        }
+        return item;
+    }
+
+    private void validateScheduleTime(MesProTaskSaveReqVO reqVO) {
+        if (reqVO.getStartTime() == null || reqVO.getDuration() == null || reqVO.getDuration() <= 0) {
+            throw exception(PRO_TASK_TIME_INVALID);
+        }
+        LocalDateTime endTime;
+        try {
+            endTime = reqVO.getStartTime().plusHours(reqVO.getDuration().longValue() * 8);
+        } catch (java.time.DateTimeException ex) {
+            throw exception(PRO_TASK_TIME_INVALID);
+        }
+        if (reqVO.getEndTime() != null && !reqVO.getEndTime().equals(endTime)) {
+            throw exception(PRO_TASK_TIME_INVALID);
+        }
+        reqVO.setEndTime(endTime);
     }
 
     /**

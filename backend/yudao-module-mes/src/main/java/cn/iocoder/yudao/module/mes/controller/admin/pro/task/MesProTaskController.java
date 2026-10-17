@@ -182,6 +182,8 @@ public class MesProTaskController {
                         .setColor(task.getColorCode())
                         .setQuantity(task.getQuantity())
                         .setStartDate(task.getStartTime()).setEndDate(task.getEndTime())
+                        .setEditable(cn.iocoder.yudao.module.mes.enums.pro.MesProWorkOrderStatusEnum.CONFIRMED.getStatus().equals(workOrder.getStatus())
+                                && !cn.iocoder.yudao.module.mes.enums.pro.MesProTaskStatusEnum.isEndStatus(task.getStatus()))
                         .setDuration(task.getDuration() != null ? task.getDuration().longValue() : null)
                         .setProgress(calcProgress(task.getProducedQuantity(), task.getQuantity()));
                 ganttData.add(tData);

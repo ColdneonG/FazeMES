@@ -38,6 +38,11 @@
           </el-form-item>
         </el-col>
       </el-row>
+      <el-form-item v-if="formData.types.includes(MesQcTypeEnum.IPQC)" label="过程子阶段" prop="ipqcTypes">
+        <el-select v-model="formData.ipqcTypes" multiple clearable class="!w-1/1" placeholder="不选表示所有过程阶段通用">
+          <el-option v-for="dict in getIntDictOptions(DICT_TYPE.MES_IPQC_TYPE)" :key="dict.value" :label="dict.label" :value="dict.value" />
+        </el-select>
+      </el-form-item>
       <el-row>
         <el-col :span="24">
           <el-form-item label="检测种类" prop="types">
@@ -95,7 +100,7 @@ import { getIntDictOptions, DICT_TYPE } from '@/utils/dict'
 import { CommonStatusEnum } from '@/utils/constants'
 import { QcTemplateApi, QcTemplateVO } from '@/api/mes/qc/template'
 import { AutoCodeRecordApi } from '@/api/mes/md/autocode/record'
-import { MesAutoCodeRuleCode } from '@/views/mes/utils/constants'
+import { MesAutoCodeRuleCode, MesQcTypeEnum } from '@/views/mes/utils/constants'
 import TemplateIndicatorList from './TemplateIndicatorList.vue'
 import TemplateItemList from './TemplateItemList.vue'
 
@@ -114,6 +119,7 @@ const formData = ref({
   code: undefined,
   name: undefined,
   types: [] as number[],
+  ipqcTypes: [] as number[],
   status: CommonStatusEnum.ENABLE,
   remark: undefined
 })
@@ -149,7 +155,8 @@ const open = async (type: string, id?: number) => {
       const data = await QcTemplateApi.getTemplate(id)
       formData.value = {
         ...data,
-        types: data.types
+        types: data.types,
+        ipqcTypes: data.ipqcTypes || []
       }
     } finally {
       formLoading.value = false
@@ -168,7 +175,7 @@ const submitForm = async () => {
   // 提交请求
   formLoading.value = true
   try {
-    const data = formData.value as unknown as QcTemplateVO
+    const data = { ...formData.value, ipqcTypes: formData.value.types.includes(MesQcTypeEnum.IPQC) ? formData.value.ipqcTypes : [] } as unknown as QcTemplateVO
     if (formType.value === 'create') {
       await QcTemplateApi.createTemplate(data)
       message.success(t('common.createSuccess'))
@@ -191,6 +198,7 @@ const resetForm = () => {
     code: undefined,
     name: undefined,
     types: [],
+    ipqcTypes: [],
     status: CommonStatusEnum.ENABLE,
     remark: undefined
   }

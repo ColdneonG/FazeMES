@@ -42,6 +42,7 @@ public class MesQcTemplateServiceImpl implements MesQcTemplateService {
 
     @Override
     public Long createTemplate(MesQcTemplateSaveReqVO createReqVO) {
+        validateIpqcTypes(createReqVO);
         // 校验编码唯一
         validateTemplateCodeUnique(null, createReqVO.getCode());
 
@@ -53,6 +54,7 @@ public class MesQcTemplateServiceImpl implements MesQcTemplateService {
 
     @Override
     public void updateTemplate(MesQcTemplateSaveReqVO updateReqVO) {
+        validateIpqcTypes(updateReqVO);
         // 校验存在
         validateTemplateExists(updateReqVO.getId());
         // 校验编码唯一
@@ -93,6 +95,17 @@ public class MesQcTemplateServiceImpl implements MesQcTemplateService {
         }
         if (ObjUtil.notEqual(template.getId(), id)) {
             throw exception(QC_TEMPLATE_CODE_DUPLICATE);
+        }
+    }
+
+    private void validateIpqcTypes(MesQcTemplateSaveReqVO reqVO) {
+        if (CollUtil.isEmpty(reqVO.getIpqcTypes())) {
+            reqVO.setIpqcTypes(Collections.emptyList());
+            return;
+        }
+        if (!CollUtil.contains(reqVO.getTypes(), cn.iocoder.yudao.module.mes.enums.qc.MesQcTypeEnum.IPQC.getType())
+                || reqVO.getIpqcTypes().stream().anyMatch(type -> !cn.iocoder.yudao.module.mes.enums.qc.MesQcIpqcTypeEnum.contains(type))) {
+            throw exception(QC_TEMPLATE_IPQC_TYPE_INVALID);
         }
     }
 

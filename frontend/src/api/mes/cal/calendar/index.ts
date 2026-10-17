@@ -7,6 +7,12 @@ export interface CalCalendarTeamShiftItem {
   shiftId: number
   shiftName: string
   sort: number
+  startTime?: string
+  endTime?: string
+  startDateTime?: string | number
+  endDateTime?: string | number
+  workingMinutes?: number
+  crossesMidnight?: boolean
 }
 
 // 排班日历 - 日历天 VO

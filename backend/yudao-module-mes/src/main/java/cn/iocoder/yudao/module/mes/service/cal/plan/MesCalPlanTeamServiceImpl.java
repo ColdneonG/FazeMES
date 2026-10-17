@@ -8,6 +8,7 @@ import cn.iocoder.yudao.module.mes.service.cal.team.MesCalTeamService;
 import jakarta.annotation.Resource;
 import org.springframework.context.annotation.Lazy;
 import org.springframework.stereotype.Service;
+import org.springframework.transaction.annotation.Transactional;
 import org.springframework.validation.annotation.Validated;
 
 import java.util.List;
@@ -35,6 +36,7 @@ public class MesCalPlanTeamServiceImpl implements MesCalPlanTeamService {
     private MesCalTeamService teamService;
 
     @Override
+    @Transactional(rollbackFor=Exception.class)
     public Long createPlanTeam(MesCalPlanTeamSaveReqVO createReqVO) {
         // 校验计划未确认
         planService.validatePlanPrepare(createReqVO.getPlanId());
@@ -50,6 +52,7 @@ public class MesCalPlanTeamServiceImpl implements MesCalPlanTeamService {
     }
 
     @Override
+    @Transactional(rollbackFor=Exception.class)
     public void deletePlanTeam(Long id) {
         // 校验存在
         MesCalPlanTeamDO existPlanTeam = validatePlanTeamExists(id);

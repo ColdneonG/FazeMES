@@ -20,6 +20,9 @@ import org.springframework.transaction.annotation.Transactional;
 import org.springframework.validation.annotation.Validated;
 
 import java.util.List;
+import java.util.Objects;
+import cn.iocoder.yudao.module.mes.dal.dataobject.dv.repair.MesDvRepairLineDO;
+import cn.iocoder.yudao.module.mes.service.dv.repair.MesDvRepairService;
 
 import static cn.iocoder.yudao.framework.common.exception.util.ServiceExceptionUtil.exception;
 import static cn.iocoder.yudao.module.mes.enums.ErrorCodeConstants.*;
@@ -35,6 +38,7 @@ public class MesDvMaintenRecordServiceImpl implements MesDvMaintenRecordService 
 
     @Resource
     private MesDvMaintenRecordMapper maintenRecordMapper;
+    @Resource private MesDvRepairService repairService;
 
     @Resource
     @Lazy
@@ -43,8 +47,11 @@ public class MesDvMaintenRecordServiceImpl implements MesDvMaintenRecordService 
     private MesDvMachineryService machineryService;
     @Resource
     private MesDvCheckPlanService checkPlanService;
+    @Resource private cn.iocoder.yudao.module.mes.service.dv.checkplan.MesDvCheckPlanSubjectService planSubjectService;
+    @Resource private cn.iocoder.yudao.module.mes.dal.mysql.dv.maintenrecord.MesDvMaintenRecordLineMapper lineMapper;
 
     @Override
+    @Transactional(rollbackFor=Exception.class)
     public Long createMaintenRecord(MesDvMaintenRecordSaveReqVO createReqVO) {
         // 1. 校验关联数据
         validateMaintenRecordRelation(createReqVO);
@@ -53,19 +60,25 @@ public class MesDvMaintenRecordServiceImpl implements MesDvMaintenRecordService 
         MesDvMaintenRecordDO maintenRecord = BeanUtils.toBean(createReqVO, MesDvMaintenRecordDO.class);
         maintenRecord.setStatus(MesDvMaintenRecordStatusEnum.PREPARE.getStatus());
         maintenRecordMapper.insert(maintenRecord);
+        generateLines(maintenRecord.getId(),createReqVO.getPlanId());
         return maintenRecord.getId();
     }
 
     @Override
+    @Transactional(rollbackFor=Exception.class)
     public void updateMaintenRecord(MesDvMaintenRecordSaveReqVO updateReqVO) {
         // 1.1 校验存在，且状态为草稿
-        validateMaintenRecordDraft(updateReqVO.getId());
+        MesDvMaintenRecordDO existing=validateMaintenRecordDraft(updateReqVO.getId());
         // 1.2 校验关联数据
         validateMaintenRecordRelation(updateReqVO);
 
         // 2. 更新
         MesDvMaintenRecordDO updateObj = BeanUtils.toBean(updateReqVO, MesDvMaintenRecordDO.class);
         maintenRecordMapper.updateById(updateObj);
+        if(!Objects.equals(existing.getPlanId(),updateReqVO.getPlanId())) {
+            maintenRecordLineService.deleteMaintenRecordLineByRecordId(existing.getId());
+            generateLines(existing.getId(),updateReqVO.getPlanId());
+        }
     }
 
     @Override
@@ -79,8 +92,13 @@ public class MesDvMaintenRecordServiceImpl implements MesDvMaintenRecordService 
             throw exception(MAINTEN_RECORD_NO_LINE);
         }
 
+        if(lines.stream().anyMatch(l -> l.getStatus()==null || (l.getStatus()!=1 && l.getStatus()!=2)
+            || (l.getStatus()==2 && (l.getResult()==null || l.getResult().isBlank())))) {
+            throw exception(DV_TASK_RESULTS_INVALID);
+        }
+
         // 2. 状态改为已提交
-        MesDvMaintenRecordDO record = maintenRecordMapper.selectById(id);
+        MesDvMaintenRecordDO record = maintenRecordMapper.selectForUpdate(id);
         MesDvMaintenRecordDO updateObj = new MesDvMaintenRecordDO();
         updateObj.setId(id);
         updateObj.setStatus(MesDvMaintenRecordStatusEnum.SUBMITTED.getStatus());
@@ -90,6 +108,9 @@ public class MesDvMaintenRecordServiceImpl implements MesDvMaintenRecordService 
         if (record.getMaintenTime() != null) {
             machineryService.updateMachineryLastMaintenTime(record.getMachineryId(), record.getMaintenTime());
         }
+        List<MesDvRepairLineDO> abnormal=lines.stream().filter(l->Objects.equals(l.getStatus(),2))
+            .map(l->new MesDvRepairLineDO().setSubjectId(l.getSubjectId()).setMalfunction(l.getResult())).toList();
+        if(!abnormal.isEmpty()) repairService.createAbnormalRepair(record.getMachineryId(),102,id,abnormal);
     }
 
     @Override
@@ -102,6 +123,12 @@ public class MesDvMaintenRecordServiceImpl implements MesDvMaintenRecordService 
         maintenRecordMapper.deleteById(id);
         // 级联删除子表
         maintenRecordLineService.deleteMaintenRecordLineByRecordId(id);
+    }
+
+    private void generateLines(Long recordId,Long planId) {
+        if(planId==null) return;
+        for(var subject:planSubjectService.getCheckPlanSubjectListByPlanId(planId))
+            lineMapper.insert(new MesDvMaintenRecordLineDO().setRecordId(recordId).setSubjectId(subject.getSubjectId()).setStatus(1));
     }
 
     private void validateMaintenRecordRelation(MesDvMaintenRecordSaveReqVO reqVO) {
@@ -127,7 +154,7 @@ public class MesDvMaintenRecordServiceImpl implements MesDvMaintenRecordService 
 
     @Override
     public MesDvMaintenRecordDO validateMaintenRecordDraft(Long id) {
-        MesDvMaintenRecordDO record = maintenRecordMapper.selectById(id);
+        MesDvMaintenRecordDO record = maintenRecordMapper.selectForUpdate(id);
         if (record == null) {
             throw exception(MAINTEN_RECORD_NOT_EXISTS);
         }

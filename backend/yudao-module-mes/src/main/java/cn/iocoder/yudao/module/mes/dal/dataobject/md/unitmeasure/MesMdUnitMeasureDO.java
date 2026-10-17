@@ -4,6 +4,8 @@ import cn.iocoder.yudao.framework.mybatis.core.dataobject.BaseDO;
 import com.baomidou.mybatisplus.annotation.KeySequence;
 import com.baomidou.mybatisplus.annotation.TableId;
 import com.baomidou.mybatisplus.annotation.TableName;
+import com.baomidou.mybatisplus.annotation.TableField;
+import com.baomidou.mybatisplus.annotation.FieldStrategy;
 import lombok.*;
 
 import java.math.BigDecimal;
@@ -45,10 +47,12 @@ public class MesMdUnitMeasureDO extends BaseDO {
      *
      * 关联 {@link MesMdUnitMeasureDO#getId()}
      */
+    @TableField(updateStrategy = FieldStrategy.ALWAYS)
     private Long primaryId;
     /**
      * 与主单位换算比例
      */
+    @TableField(updateStrategy = FieldStrategy.ALWAYS)
     private BigDecimal changeRate;
     /**
      * 状态

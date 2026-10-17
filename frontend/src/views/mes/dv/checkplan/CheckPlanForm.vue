@@ -105,6 +105,9 @@
       <el-tab-pane label="保养项目" name="subject">
         <CheckPlanSubjectList :plan-id="formData.id!" :form-type="formType" />
       </el-tab-pane>
+      <el-tab-pane label="执行任务" name="tasks">
+        <CheckPlanTaskList :plan-id="formData.id!" />
+      </el-tab-pane>
     </el-tabs>
     <template #footer>
       <el-button v-if="!isDetail" @click="submitForm" type="primary" :disabled="formLoading">
@@ -122,6 +125,7 @@ import { AutoCodeRecordApi } from '@/api/mes/md/autocode/record'
 import { MesAutoCodeRuleCode, MesDvCheckPlanStatusEnum } from '@/views/mes/utils/constants'
 import CheckPlanMachineryList from './CheckPlanMachineryList.vue'
 import CheckPlanSubjectList from './CheckPlanSubjectList.vue'
+import CheckPlanTaskList from './CheckPlanTaskList.vue'
 
 defineOptions({ name: 'CheckPlanForm' })
 

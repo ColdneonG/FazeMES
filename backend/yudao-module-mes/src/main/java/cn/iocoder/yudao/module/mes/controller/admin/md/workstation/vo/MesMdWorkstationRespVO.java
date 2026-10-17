@@ -6,6 +6,7 @@ import io.swagger.v3.oas.annotations.media.Schema;
 import lombok.Data;
 
 import java.time.LocalDateTime;
+import java.util.List;
 
 @Schema(description = "管理后台 - MES 工作站 Response VO")
 @Data
@@ -54,6 +55,13 @@ public class MesMdWorkstationRespVO {
     @Schema(description = "状态", requiredMode = Schema.RequiredMode.REQUIRED, example = "0")
     @ExcelProperty("状态")
     private Integer status;
+
+    @Schema(description = "当前设备、工装、人员和排班是否允许生产")
+    private Boolean available;
+    @Schema(description = "当前不可用原因")
+    private List<String> availabilityReasons;
+    @Schema(description = "未限制资源及检查说明")
+    private List<String> availabilityNotes;
 
     @Schema(description = "备注", example = "备注")
     @ExcelProperty("备注")

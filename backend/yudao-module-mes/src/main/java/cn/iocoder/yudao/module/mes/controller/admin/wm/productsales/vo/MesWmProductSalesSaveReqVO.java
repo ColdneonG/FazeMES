@@ -36,6 +36,9 @@ public class MesWmProductSalesSaveReqVO {
     @Schema(description = "发货通知单ID", example = "1")
     private Long noticeId;
 
+    @Schema(description = "已完成的出货检验单参考ID，不代替行级必检", example = "1")
+    private Long oqcId;
+
     @Schema(description = "收货人", example = "张三")
     private String contactName;
 

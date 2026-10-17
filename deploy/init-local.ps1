@@ -120,20 +120,29 @@ if (-not $CoreOnly) {
         Write-Host "Imported $sqlName"
     }
 }
-$placeholderMigration = Join-Path $projectRoot 'database\migrations\20261017_example_placeholders.sql'
-if (Test-Path -LiteralPath $placeholderMigration) {
-    Invoke-LocalSql "source $($placeholderMigration.Replace('\','/'))" | Out-Null
-    Write-Host 'Applied example display placeholders.'
-}
+& (Join-Path $PSScriptRoot 'apply-migrations.ps1') -MysqlClient $MysqlClient -ClientOptions $clientOptions
 $jdbcUrl = "jdbc:mysql://127.0.0.1:$($taskSecrets.MysqlPort)/yudao_mes?useSSL=false&serverTimezone=Asia/Shanghai&allowPublicKeyRetrieval=true&nullCatalogMeansCurrent=true&rewriteBatchedStatements=true"
 $taskConfig = @"
 server:
   address: 127.0.0.1
   port: 48080
 spring:
+  quartz:
+    auto-startup: true
+    scheduler-name: FazeMESLocal
+    job-store-type: jdbc
+    wait-for-jobs-to-complete-on-shutdown: true
+    jdbc:
+      initialize-schema: never
+    properties:
+      org.quartz.scheduler.instanceId: AUTO
+      org.quartz.jobStore.class: org.springframework.scheduling.quartz.LocalDataSourceJobStore
+      org.quartz.jobStore.driverDelegateClass: org.quartz.impl.jdbcjobstore.StdJDBCDelegate
+      org.quartz.jobStore.isClustered: false
+      org.quartz.jobStore.misfireThreshold: 60000
+      org.quartz.threadPool.threadCount: 3
   autoconfigure:
     exclude:
-      - org.springframework.boot.autoconfigure.quartz.QuartzAutoConfiguration
       - cn.iocoder.yudao.framework.banner.config.YudaoBannerAutoConfiguration
   datasource:
     dynamic:
@@ -145,6 +154,7 @@ spring:
           username: '$($taskSecrets.DbUsername)'
           password: '$($taskSecrets.DbPassword)'
       druid:
+        filters: stat
         initial-size: 1
         min-idle: 1
         max-active: 10

@@ -25,7 +25,8 @@ public class MesQcPendingInspectServiceImpl implements MesQcPendingInspectServic
         // 分页查询
         IPage<MesQcPendingInspectRespVO> page = MyBatisUtils.buildPage(pageReqVO);
         pendingInspectMapper.selectQcPendingPage(page,
-                pageReqVO.getSourceDocCode(), pageReqVO.getQcType(), pageReqVO.getItemId());
+                pageReqVO.getSourceDocCode(), pageReqVO.getQcType(), pageReqVO.getItemId(),
+                pageReqVO.getWorkstationId(), pageReqVO.getWorkOrderId(), pageReqVO.getTaskId());
         // 返回结果
         return new PageResult<>(page.getRecords(), page.getTotal());
     }

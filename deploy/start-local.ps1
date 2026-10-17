@@ -14,6 +14,7 @@ function Test-Port([int]$Port) {
 if ($InitializeDatabase -or -not (Test-Path -LiteralPath (Join-Path $runtimeRoot 'application-meslocal.yaml')) -or -not (Test-Port 3308)) {
     & (Join-Path $PSScriptRoot 'init-local.ps1')
 }
+& (Join-Path $PSScriptRoot 'apply-migrations.ps1')
 function Start-Managed([string]$Name,[int]$Port,[string]$Executable,[string[]]$ProcessArgs,[string]$Directory) {
     $pidPath = Join-Path $runtimeRoot "$Name.pid"
     if (Test-Port $Port) {

@@ -1,6 +1,12 @@
 package cn.iocoder.yudao.module.mes.service.pro.feedback;
 
 import cn.hutool.core.collection.ListUtil;
+import cn.iocoder.yudao.framework.security.core.LoginUser;
+import org.junit.jupiter.api.BeforeEach;
+import org.junit.jupiter.api.AfterEach;
+import org.springframework.security.authentication.UsernamePasswordAuthenticationToken;
+import org.springframework.security.core.context.SecurityContextHolder;
+
 import cn.iocoder.yudao.framework.test.core.ut.BaseDbUnitTest;
 import cn.iocoder.yudao.module.mes.dal.dataobject.pro.feedback.MesProFeedbackDO;
 import cn.iocoder.yudao.module.mes.dal.dataobject.pro.route.MesProRouteProcessDO;
@@ -22,6 +28,7 @@ import org.springframework.context.annotation.Import;
 import org.springframework.test.context.bean.override.mockito.MockitoBean;
 
 import java.math.BigDecimal;
+import java.util.List;
 
 import static cn.iocoder.yudao.framework.test.core.util.RandomUtils.randomLongId;
 import static cn.iocoder.yudao.framework.test.core.util.RandomUtils.randomPojo;
@@ -56,6 +63,17 @@ public class MesProFeedbackServiceImplTest extends BaseDbUnitTest {
     private MesWmProductProduceService productProduceService;
     @MockitoBean
     private MesWmProductProduceLineService produceLineService;
+
+    @BeforeEach
+    void loginApprover() {
+        SecurityContextHolder.getContext().setAuthentication(
+                new UsernamePasswordAuthenticationToken(new LoginUser().setId(1L), null, List.of()));
+    }
+
+    @AfterEach
+    void clearLogin() {
+        SecurityContextHolder.clearContext();
+    }
 
     @Test
     public void testUpdateProFeedbackWhenIpqcFinish_success_withUnqualified() {
@@ -204,6 +222,7 @@ public class MesProFeedbackServiceImplTest extends BaseDbUnitTest {
         Long processId = randomLongId();
         MesProFeedbackDO feedback = randomPojo(MesProFeedbackDO.class, o -> {
             o.setStatus(MesProFeedbackStatusEnum.APPROVING.getStatus());
+            o.setApproveUserId(1L);
             o.setFeedbackQuantity(BigDecimal.valueOf(100));
             o.setQualifiedQuantity(BigDecimal.valueOf(80));
             o.setUnqualifiedQuantity(BigDecimal.valueOf(20));
@@ -258,6 +277,7 @@ public class MesProFeedbackServiceImplTest extends BaseDbUnitTest {
         Long processId = randomLongId();
         MesProFeedbackDO feedback = randomPojo(MesProFeedbackDO.class, o -> {
             o.setStatus(MesProFeedbackStatusEnum.APPROVING.getStatus());
+            o.setApproveUserId(1L);
             o.setFeedbackQuantity(BigDecimal.valueOf(50));
             o.setUncheckQuantity(BigDecimal.valueOf(50)); // 质检工序 uncheckQuantity > 0
             o.setRouteId(routeId);
@@ -298,6 +318,7 @@ public class MesProFeedbackServiceImplTest extends BaseDbUnitTest {
         Long processId = randomLongId();
         MesProFeedbackDO feedback = randomPojo(MesProFeedbackDO.class, o -> {
             o.setStatus(MesProFeedbackStatusEnum.APPROVING.getStatus());
+            o.setApproveUserId(1L);
             o.setFeedbackQuantity(BigDecimal.valueOf(30));
             o.setQualifiedQuantity(BigDecimal.valueOf(25));
             o.setUnqualifiedQuantity(BigDecimal.valueOf(5));
@@ -338,6 +359,7 @@ public class MesProFeedbackServiceImplTest extends BaseDbUnitTest {
         Long processId = randomLongId();
         MesProFeedbackDO feedback = randomPojo(MesProFeedbackDO.class, o -> {
             o.setStatus(MesProFeedbackStatusEnum.APPROVING.getStatus());
+            o.setApproveUserId(1L);
             o.setFeedbackQuantity(BigDecimal.valueOf(10));
             o.setUncheckQuantity(BigDecimal.valueOf(10)); // 非质检工序不应有待检数量
             o.setRouteId(routeId);
@@ -369,6 +391,7 @@ public class MesProFeedbackServiceImplTest extends BaseDbUnitTest {
         Long processId = randomLongId();
         MesProFeedbackDO feedback = randomPojo(MesProFeedbackDO.class, o -> {
             o.setStatus(MesProFeedbackStatusEnum.APPROVING.getStatus());
+            o.setApproveUserId(1L);
             o.setFeedbackQuantity(BigDecimal.valueOf(20));
             o.setUncheckQuantity(BigDecimal.valueOf(20));
             o.setRouteId(routeId);

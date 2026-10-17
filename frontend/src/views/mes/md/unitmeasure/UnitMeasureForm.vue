@@ -28,7 +28,7 @@
       <el-form-item label="主单位" prop="primaryId" v-if="formData.primaryFlag === false">
         <el-select v-model="formData.primaryId" placeholder="请选择主单位" class="w-1/1">
           <el-option
-            v-for="item in primaryUnitList"
+            v-for="item in primaryUnitList.filter((unit) => unit.id !== formData.id)"
             :key="item.id"
             :label="item.name"
             :value="item.id!"
@@ -44,7 +44,7 @@
           v-model="formData.changeRate"
           :step="1"
           :precision="4"
-          :min="0"
+          :min="0.0001"
           class="!w-1/1"
         />
       </el-form-item>
@@ -97,6 +97,12 @@ const formRules = reactive({
   code: [{ required: true, message: '单位编码不能为空', trigger: 'blur' }],
   name: [{ required: true, message: '单位名称不能为空', trigger: 'blur' }],
   primaryFlag: [{ required: true, message: '是否主单位不能为空', trigger: 'blur' }],
+  primaryId: [{ validator: (_rule: any, value: number | undefined, callback: any) => {
+    callback(formData.value.primaryFlag === false && !value ? new Error('辅单位必须选择主单位') : undefined)
+  }, trigger: 'change' }],
+  changeRate: [{ validator: (_rule: any, value: number | undefined, callback: any) => {
+    callback(formData.value.primaryFlag === false && (!value || value <= 0) ? new Error('换算比例必须大于零') : undefined)
+  }, trigger: 'change' }],
   status: [{ required: true, message: '状态不能为空', trigger: 'blur' }]
 })
 const formRef = ref() // 表单 Ref

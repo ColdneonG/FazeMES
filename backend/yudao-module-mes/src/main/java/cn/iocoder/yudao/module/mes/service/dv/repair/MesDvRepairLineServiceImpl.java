@@ -10,6 +10,7 @@ import cn.iocoder.yudao.module.mes.service.dv.subject.MesDvSubjectService;
 import jakarta.annotation.Resource;
 import org.springframework.context.annotation.Lazy;
 import org.springframework.stereotype.Service;
+import org.springframework.transaction.annotation.Transactional;
 import org.springframework.validation.annotation.Validated;
 
 import java.util.List;
@@ -36,6 +37,7 @@ public class MesDvRepairLineServiceImpl implements MesDvRepairLineService {
     private MesDvSubjectService subjectService;
 
     @Override
+    @Transactional(rollbackFor=Exception.class)
     public Long createRepairLine(MesDvRepairLineSaveReqVO createReqVO) {
         // 1.1 校验关联数据
         validateRepairLineRelation(createReqVO);
@@ -49,20 +51,24 @@ public class MesDvRepairLineServiceImpl implements MesDvRepairLineService {
     }
 
     @Override
+    @Transactional(rollbackFor=Exception.class)
     public void updateRepairLine(MesDvRepairLineSaveReqVO updateReqVO) {
-        // 1.1 校验存在
-        validateRepairLineExists(updateReqVO.getId());
-        // 1.2 校验关联数据
-        validateRepairLineRelation(updateReqVO);
-        // 1.3 校验维修工单为草稿状态
-        repairService.validateRepairPrepare(updateReqVO.getRepairId());
-
-        // 2. 更新
-        MesDvRepairLineDO updateObj = BeanUtils.toBean(updateReqVO, MesDvRepairLineDO.class);
-        repairLineMapper.updateById(updateObj);
+        MesDvRepairLineDO original=repairLineMapper.selectById(updateReqVO.getId());
+        if(original==null) throw exception(DV_REPAIR_LINE_NOT_EXISTS);
+        if(!java.util.Objects.equals(original.getRepairId(),updateReqVO.getRepairId())) throw exception(DV_REPAIR_CHANGED);
+        var repair=repairService.validateRepairEditable(original.getRepairId());
+        if(repair.getStatus().equals(cn.iocoder.yudao.module.mes.enums.dv.MesDvRepairStatusEnum.CONFIRMED.getStatus())) {
+            // During repair only the process narrative may change; keep original faults intact.
+            repairLineMapper.updateById(new MesDvRepairLineDO().setId(original.getId())
+                .setDescription(updateReqVO.getDescription()).setRemark(updateReqVO.getRemark()));
+        } else {
+            validateRepairLineRelation(updateReqVO);
+            repairLineMapper.updateById(BeanUtils.toBean(updateReqVO,MesDvRepairLineDO.class));
+        }
     }
 
     @Override
+    @Transactional(rollbackFor=Exception.class)
     public void deleteRepairLine(Long id) {
         // 1.1 校验存在
         MesDvRepairLineDO line = repairLineMapper.selectById(id);

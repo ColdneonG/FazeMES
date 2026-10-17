@@ -13,9 +13,11 @@ import cn.iocoder.yudao.module.mes.enums.wm.MesWmQualityStatusEnum;
 import cn.iocoder.yudao.module.mes.enums.wm.MesWmReturnIssueStatusEnum;
 import cn.iocoder.yudao.module.mes.enums.wm.MesWmReturnIssueTypeEnum;
 import cn.iocoder.yudao.module.mes.service.md.item.MesMdItemService;
+import cn.iocoder.yudao.module.mes.service.wm.materialstock.MesWmMaterialStockService;
 import jakarta.annotation.Resource;
 import org.springframework.context.annotation.Lazy;
 import org.springframework.stereotype.Service;
+import org.springframework.transaction.annotation.Transactional;
 import org.springframework.validation.annotation.Validated;
 
 import java.math.BigDecimal;
@@ -29,6 +31,7 @@ import static cn.iocoder.yudao.module.mes.enums.ErrorCodeConstants.WM_RETURN_ISS
  * MES 生产退料单行 Service 实现类
  */
 @Service
+@Transactional(rollbackFor = Exception.class)
 @Validated
 public class MesWmReturnIssueLineServiceImpl implements MesWmReturnIssueLineService {
 
@@ -40,6 +43,8 @@ public class MesWmReturnIssueLineServiceImpl implements MesWmReturnIssueLineServ
     private MesWmReturnIssueService issueService;
     @Resource
     private MesMdItemService itemService;
+    @Resource
+    private MesWmMaterialStockService materialStockService;
     @Resource
     @Lazy
     private MesWmReturnIssueDetailService issueDetailService;
@@ -118,6 +123,8 @@ public class MesWmReturnIssueLineServiceImpl implements MesWmReturnIssueLineServ
         MesWmReturnIssueDO issue = issueService.validateReturnIssueExistsAndPrepare(reqVO.getIssueId());
         // 校验物料存在
         itemService.validateItemExistsAndEnable(reqVO.getItemId());
+        materialStockService.validateWorkOrderStock(reqVO.getMaterialStockId(), issue.getWorkOrderId(),
+                reqVO.getItemId(), reqVO.getBatchId(), reqVO.getQuantity());
         return issue;
     }
 

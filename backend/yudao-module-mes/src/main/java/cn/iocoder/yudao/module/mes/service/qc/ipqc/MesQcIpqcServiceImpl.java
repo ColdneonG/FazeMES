@@ -101,13 +101,19 @@ public class MesQcIpqcServiceImpl implements MesQcIpqcService {
     @Override
     @Transactional(rollbackFor = Exception.class)
     public Long createIpqc(MesQcIpqcSaveReqVO createReqVO) {
+        if (!cn.iocoder.yudao.module.mes.enums.qc.MesQcIpqcTypeEnum.contains(createReqVO.getType())) {
+            throw exception(QC_TEMPLATE_IPQC_TYPE_INVALID);
+        }
         // 1.1 校验数据
         MesMdWorkstationDO workstation = validateIpqcSaveData(createReqVO);
         // 1.2 校验工单存在
         MesProWorkOrderDO workOrder = workOrderService.validateWorkOrderExists(createReqVO.getWorkOrderId());
         // 1.3 根据产品 + 检验类型自动匹配模板
         MesQcTemplateItemDO templateItem = templateItemService.getRequiredTemplateByItemIdAndType(
-                workOrder.getProductId(), MesQcTypeEnum.IPQC.getType());
+                workOrder.getProductId(), MesQcTypeEnum.IPQC.getType(), createReqVO.getType());
+        if (templateItem == null || templateItem.getTemplateId() == null) {
+            throw exception(QC_IPQC_NO_TEMPLATE);
+        }
         Long templateId = templateItem.getTemplateId();
         // 1.4 获取来源单据编号
         String sourceDocCode = validateAndGetSourceDocCode(
@@ -130,7 +136,10 @@ public class MesQcIpqcServiceImpl implements MesQcIpqcService {
     @Override
     public void updateIpqc(MesQcIpqcSaveReqVO updateReqVO) {
         // 1.1 校验存在 + 草稿状态
-        validateIpqcStatusPrepare(updateReqVO.getId());
+        MesQcIpqcDO existing = validateIpqcStatusPrepare(updateReqVO.getId());
+        if (!Objects.equals(existing.getType(), updateReqVO.getType())) {
+            throw exception(QC_IPQC_TYPE_LOCKED);
+        }
         // 1.2 校验数据
         MesMdWorkstationDO workstation = validateIpqcSaveData(updateReqVO);
 
@@ -212,7 +221,9 @@ public class MesQcIpqcServiceImpl implements MesQcIpqcService {
      * @param ipqc 过程检验单
      */
     private void writeBackSourceDoc(MesQcIpqcDO ipqc) {
-        if (ipqc.getSourceDocType() == null) {
+        // Legacy schemas default an omitted source type to 0 for manual inspections.
+        if (ipqc.getSourceDocType() == null || (Objects.equals(ipqc.getSourceDocType(), 0)
+                && ipqc.getSourceDocId() == null && ipqc.getSourceLineId() == null)) {
             return;
         }
         if (ipqc.getSourceDocId() == null) {

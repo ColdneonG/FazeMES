@@ -47,6 +47,21 @@ public class MesWmProductSalesController {
     private MesMdClientService clientService;
     @Resource
     private MesWmSalesNoticeService salesNoticeService;
+    @Resource
+    private cn.iocoder.yudao.module.mes.service.qc.oqc.MesQcOqcService oqcService;
+
+    @GetMapping("/qc-options")
+    @PreAuthorize("@ss.hasAnyPermissions('mes:wm-product-sales:query', 'mes:wm-product-sales:create', 'mes:wm-product-sales:update')")
+    public CommonResult<List<cn.iocoder.yudao.module.mes.controller.admin.wm.common.MesWmQcReferenceRespVO>> getQcOptions(
+            @RequestParam("clientId") Long clientId) {
+        cn.iocoder.yudao.module.mes.controller.admin.qc.oqc.vo.MesQcOqcPageReqVO query =
+                new cn.iocoder.yudao.module.mes.controller.admin.qc.oqc.vo.MesQcOqcPageReqVO();
+        query.setClientId(clientId);
+        query.setPageSize(PageParam.PAGE_SIZE_NONE);
+        return success(oqcService.getOqcPage(query).getList().stream()
+                .filter(oqc -> cn.iocoder.yudao.module.mes.enums.qc.MesQcStatusEnum.FINISHED.getStatus().equals(oqc.getStatus()))
+                .map(oqc -> BeanUtils.toBean(oqc, cn.iocoder.yudao.module.mes.controller.admin.wm.common.MesWmQcReferenceRespVO.class)).toList());
+    }
 
     @PostMapping("/create")
     @Operation(summary = "创建销售出库单")

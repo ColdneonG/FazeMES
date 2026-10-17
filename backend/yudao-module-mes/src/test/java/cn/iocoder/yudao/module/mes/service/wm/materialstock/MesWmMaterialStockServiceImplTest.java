@@ -21,6 +21,7 @@ import java.util.function.Consumer;
 
 import static cn.iocoder.yudao.framework.test.core.util.RandomUtils.randomPojo;
 import static org.junit.jupiter.api.Assertions.assertEquals;
+import static org.junit.jupiter.api.Assertions.assertNull;
 import static org.mockito.Mockito.when;
 
 /**
@@ -105,6 +106,47 @@ public class MesWmMaterialStockServiceImplTest extends BaseDbUnitTest {
         virtualWarehouse.setId(virtualWarehouseId);
         when(warehouseService.getWarehouseByCode(MesWmWarehouseDO.WIP_VIRTUAL_WAREHOUSE))
                 .thenReturn(virtualWarehouse);
+    }
+
+    @Test
+    public void workOrderFilterExcludesOtherOrdersAndUnassignedStock() {
+        var owned = createMaterialStockPojo(s -> s.setWorkOrderId(101L));
+        var other = createMaterialStockPojo(s -> s.setWorkOrderId(102L));
+        var legacy = createMaterialStockPojo(s -> s.setWorkOrderId(null));
+        materialStockMapper.insert(owned);
+        materialStockMapper.insert(other);
+        materialStockMapper.insert(legacy);
+        var query = new MesWmMaterialStockPageReqVO();
+        query.setWorkOrderId(101L);
+        var result = materialStockService.getMaterialStockPage(query);
+        assertEquals(1L, result.getTotal());
+        assertEquals(owned.getId(), result.getList().get(0).getId());
+    }
+
+    @Test
+    public void sameItemBatchAndLocationRemainSeparateByOrderAndVendor() {
+        var a = MesWmMaterialStockDO.builder().itemId(1L).warehouseId(2L).locationId(3L).areaId(4L)
+                .batchId(null).vendorId(10L).workOrderId(100L).quantity(BigDecimal.TEN).build();
+        var b = MesWmMaterialStockDO.builder().itemId(1L).warehouseId(2L).locationId(3L).areaId(4L)
+                .batchId(null).vendorId(10L).workOrderId(101L).quantity(BigDecimal.TEN).build();
+        var c = MesWmMaterialStockDO.builder().itemId(1L).warehouseId(2L).locationId(3L).areaId(4L)
+                .batchId(null).vendorId(11L).workOrderId(100L).quantity(BigDecimal.TEN).build();
+        materialStockMapper.insert(a);
+        materialStockMapper.insert(b);
+        materialStockMapper.insert(c);
+        assertEquals(a.getId(), materialStockMapper.selectByCompositeKey(1L, 2L, 3L, 4L, null, 10L, 100L).getId());
+        assertEquals(b.getId(), materialStockMapper.selectByCompositeKey(1L, 2L, 3L, 4L, null, 10L, 101L).getId());
+        assertEquals(c.getId(), materialStockMapper.selectByCompositeKey(1L, 2L, 3L, 4L, null, 11L, 100L).getId());
+        assertNull(materialStockMapper.selectByCompositeKey(1L, 2L, 3L, 4L, null, null, 100L));
+    }
+
+    @Test
+    public void competingDeductionsCannotProduceNegativeBalance() {
+        var stock = createMaterialStockPojo(s -> s.setQuantity(BigDecimal.TEN));
+        materialStockMapper.insert(stock);
+        assertEquals(1, materialStockMapper.updateQuantity(stock.getId(), new BigDecimal("-8"), true));
+        assertEquals(0, materialStockMapper.updateQuantity(stock.getId(), new BigDecimal("-8"), true));
+        assertEquals(0, new BigDecimal("2").compareTo(materialStockMapper.selectById(stock.getId()).getQuantity()));
     }
 
 }

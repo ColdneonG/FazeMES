@@ -25,6 +25,10 @@ import cn.iocoder.yudao.module.mes.service.wm.transaction.MesWmTransactionServic
 import cn.iocoder.yudao.module.mes.service.wm.transaction.dto.MesWmTransactionSaveReqDTO;
 import jakarta.annotation.Resource;
 import org.springframework.stereotype.Service;
+import org.springframework.context.annotation.Lazy;
+import cn.iocoder.yudao.module.mes.service.qc.oqc.MesQcOqcService;
+import cn.iocoder.yudao.module.mes.dal.dataobject.qc.oqc.MesQcOqcDO;
+import cn.iocoder.yudao.module.mes.enums.qc.MesQcStatusEnum;
 import org.springframework.transaction.annotation.Transactional;
 import org.springframework.validation.annotation.Validated;
 
@@ -56,6 +60,9 @@ public class MesWmProductSalesServiceImpl implements MesWmProductSalesService {
     @Resource
     private MesWmSalesNoticeService salesNoticeService;
     @Resource
+    @Lazy
+    private MesQcOqcService oqcService;
+    @Resource
     private MesWmTransactionService wmTransactionService;
 
     @Override
@@ -71,6 +78,7 @@ public class MesWmProductSalesServiceImpl implements MesWmProductSalesService {
     }
 
     @Override
+    @Transactional(rollbackFor=Exception.class)
     public void updateProductSales(MesWmProductSalesSaveReqVO updateReqVO) {
         // 校验存在 + 草稿状态
         validateProductSalesExistsAndDraft(updateReqVO.getId());
@@ -79,7 +87,10 @@ public class MesWmProductSalesServiceImpl implements MesWmProductSalesService {
 
         // 更新
         MesWmProductSalesDO updateObj = BeanUtils.toBean(updateReqVO, MesWmProductSalesDO.class);
-        productSalesMapper.updateById(updateObj);
+        // 显式处理可选参考关联清空，状态更新仍保留原有参考关联。
+        updateObj.setOqcId(null);
+        productSalesMapper.update(updateObj, new com.baomidou.mybatisplus.core.conditions.update.LambdaUpdateWrapper<MesWmProductSalesDO>()
+                .eq(MesWmProductSalesDO::getId, updateReqVO.getId()).set(MesWmProductSalesDO::getOqcId, updateReqVO.getOqcId()));
     }
 
     @Override
@@ -176,6 +187,8 @@ public class MesWmProductSalesServiceImpl implements MesWmProductSalesService {
             }
         }
 
+        validateFinalQuantities(id);
+
         // 执行拣货（待拣货 → 待填写运单）
         productSalesMapper.updateById(new MesWmProductSalesDO()
                 .setId(id).setStatus(MesWmProductSalesStatusEnum.SHIPPING.getStatus()));
@@ -207,6 +220,8 @@ public class MesWmProductSalesServiceImpl implements MesWmProductSalesService {
             throw exception(WM_PRODUCT_SALES_CANNOT_FINISH);
         }
 
+        validateFinalQuantities(id);
+
         // 2. 遍历所有明细，创建库存事务（扣减库存 + 记录流水）
         createTransactionList(sales);
 
@@ -219,6 +234,7 @@ public class MesWmProductSalesServiceImpl implements MesWmProductSalesService {
         List<MesWmProductSalesDetailDO> details = productSalesDetailService.getProductSalesDetailListBySalesId(sales.getId());
         wmTransactionService.createTransactionList(convertList(details, detail -> new MesWmTransactionSaveReqDTO()
                 .setType(MesWmTransactionTypeEnum.OUT.getType()).setItemId(detail.getItemId())
+                .setMaterialStockId(detail.getMaterialStockId())
                 .setQuantity(detail.getQuantity().negate()) // 出库数量为负数
                 .setBatchId(detail.getBatchId()).setBatchCode(detail.getBatchCode())
                 .setWarehouseId(detail.getWarehouseId()).setLocationId(detail.getLocationId()).setAreaId(detail.getAreaId())
@@ -264,6 +280,15 @@ public class MesWmProductSalesServiceImpl implements MesWmProductSalesService {
         validateCodeUnique(id, reqVO.getCode());
         // 校验客户存在
         clientService.validateClientExistsAndEnable(reqVO.getClientId());
+        if (reqVO.getOqcId() != null) {
+            MesQcOqcDO oqc = oqcService.validateOqcExists(reqVO.getOqcId());
+            if (ObjUtil.notEqual(oqc.getClientId(), reqVO.getClientId())) {
+                throw exception(WM_PRODUCT_SALES_OQC_CLIENT_MISMATCH);
+            }
+            if (ObjUtil.notEqual(oqc.getStatus(), MesQcStatusEnum.FINISHED.getStatus())) {
+                throw exception(WM_PRODUCT_SALES_OQC_NOT_FINISHED);
+            }
+        }
         // 校验发货通知单
         if (reqVO.getNoticeId() != null) {
             MesWmSalesNoticeDO notice = salesNoticeService.validateSalesNoticeExists(reqVO.getNoticeId());
@@ -277,7 +302,7 @@ public class MesWmProductSalesServiceImpl implements MesWmProductSalesService {
     }
 
     private MesWmProductSalesDO validateProductSalesExists(Long id) {
-        MesWmProductSalesDO sales = productSalesMapper.selectById(id);
+        MesWmProductSalesDO sales = productSalesMapper.selectForUpdate(id);
         if (sales == null) {
             throw exception(WM_PRODUCT_SALES_NOT_EXISTS);
         }
@@ -306,4 +331,24 @@ public class MesWmProductSalesServiceImpl implements MesWmProductSalesService {
         }
     }
 
+    /** Final invariant under the document lock, before any stock movement. */
+    private void validateFinalQuantities(Long id) {
+        var lines=productSalesLineService.getProductSalesLineListBySalesId(id);
+        if(lines.isEmpty()) throw exception(cn.iocoder.yudao.module.mes.enums.ErrorCodeConstants.WM_PRODUCT_SALES_DETAIL_QUANTITY_MISMATCH);
+        var details=productSalesDetailService.getProductSalesDetailListBySalesId(id);
+        java.util.Map<Long,MesWmProductSalesLineDO> byId=new java.util.HashMap<>();
+        java.util.Map<Long,java.math.BigDecimal> totals=new java.util.HashMap<>();
+        for(var line:lines) byId.put(line.getId(),line);
+        for(var detail:details) {
+            var line=byId.get(detail.getLineId());
+            if(line==null || !java.util.Objects.equals(detail.getSalesId(),id)
+                || !java.util.Objects.equals(line.getItemId(),detail.getItemId())
+                || detail.getQuantity()==null || detail.getQuantity().signum()<=0)
+                throw exception(cn.iocoder.yudao.module.mes.enums.ErrorCodeConstants.WM_PRODUCT_SALES_DETAIL_QUANTITY_MISMATCH);
+            totals.merge(line.getId(),detail.getQuantity(),java.math.BigDecimal::add);
+        }
+        for(var line:lines) if(line.getQuantity()==null || line.getQuantity().signum()<=0
+            || line.getQuantity().compareTo(totals.getOrDefault(line.getId(),java.math.BigDecimal.ZERO))!=0)
+            throw exception(cn.iocoder.yudao.module.mes.enums.ErrorCodeConstants.WM_PRODUCT_SALES_DETAIL_QUANTITY_MISMATCH);
+    }
 }

@@ -171,7 +171,7 @@ const formData = ref({
   name: undefined,
   specification: undefined,
   unitMeasureId: undefined,
-  itemTypeId: undefined,
+  itemTypeId: undefined as number | undefined,
   status: CommonStatusEnum.DISABLE,
   safeStockFlag: false,
   minStock: 0,
@@ -213,11 +213,12 @@ const handleBarcode = () => {
 }
 
 /** 打开弹窗 */
-const open = async (type: string, id?: number) => {
+const open = async (type: string, id?: number, itemTypeId?: number) => {
   dialogVisible.value = true
   formType.value = type
   activeTab.value = 'bom'
   resetForm()
+  if (type === 'create') formData.value.itemTypeId = itemTypeId
   // 修改时，设置数据
   if (id) {
     formLoading.value = true

@@ -127,6 +127,7 @@
   <ReturnVendorDetailForm
     ref="detailFormRef"
     :return-id="props.returnId"
+    :vendor-id="props.vendorId"
     @success="onDetailFormSuccess"
   />
 </template>
@@ -292,7 +293,8 @@ const handlePicking = (lineId: number) => {
 
 /** 打开拣货明细表单 */
 const openDetailForm = (type: string, lineId: number, itemId?: number, detailId?: number) => {
-  detailFormRef.value.open(type, lineId, itemId, detailId)
+  const line = list.value.find((entry) => entry.id === lineId)
+  detailFormRef.value.open(type, lineId, itemId, detailId, line?.batchId)
 }
 
 /** 明细表单提交成功后，刷新已展开行的 DetailList */

@@ -46,6 +46,7 @@ import static cn.iocoder.yudao.module.mes.enums.ErrorCodeConstants.*;
  * MES 生产退料单 Service 实现类
  */
 @Service
+@Transactional(rollbackFor = Exception.class)
 @Validated
 public class MesWmReturnIssueServiceImpl implements MesWmReturnIssueService {
 
@@ -184,7 +185,8 @@ public class MesWmReturnIssueServiceImpl implements MesWmReturnIssueService {
     @Transactional(rollbackFor = Exception.class)
     public void finishReturnIssue(Long id) {
         // 1. 校验存在 + 待执行退料状态
-        MesWmReturnIssueDO issue = validateReturnIssueExists(id);
+        MesWmReturnIssueDO issue = issueMapper.selectByIdForUpdate(id);
+        if (issue == null) throw exception(WM_RETURN_ISSUE_NOT_EXISTS);
         if (ObjUtil.notEqual(MesWmReturnIssueStatusEnum.APPROVED.getStatus(), issue.getStatus())) {
             throw exception(WM_RETURN_ISSUE_NOT_APPROVED);
         }
@@ -212,7 +214,8 @@ public class MesWmReturnIssueServiceImpl implements MesWmReturnIssueService {
                     .setQuantity(detail.getQuantity().negate()) // 库存减少
                     .setBatchId(detail.getBatchId()).setBatchCode(detail.getBatchCode())
                     .setWarehouseId(virtualWarehouse.getId()).setLocationId(virtualLocation.getId()).setAreaId(virtualArea.getId())
-                    .setCheckFlag(false) // 线边库允许负库存
+                    .setWorkOrderId(issue.getWorkOrderId())
+                    .setMaterialStockId(detail.getMaterialStockId())
                     .setBizType(MesBizTypeConstants.WM_RETURN_ISSUE).setBizId(issue.getId())
                     .setBizCode(issue.getCode()).setBizLineId(detail.getLineId()));
             // 2.2 再入实际仓库（库存增加）
@@ -246,7 +249,7 @@ public class MesWmReturnIssueServiceImpl implements MesWmReturnIssueService {
 
     @Override
     public MesWmReturnIssueDO validateReturnIssueExists(Long id) {
-        MesWmReturnIssueDO issue = issueMapper.selectById(id);
+        MesWmReturnIssueDO issue = issueMapper.selectByIdForUpdate(id);
         if (issue == null) {
             throw exception(WM_RETURN_ISSUE_NOT_EXISTS);
         }

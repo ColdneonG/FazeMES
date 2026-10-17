@@ -40,6 +40,7 @@ import static cn.iocoder.yudao.module.mes.enums.ErrorCodeConstants.*;
  * MES 产品收货单 Service 实现类
  */
 @Service
+@Transactional(rollbackFor = Exception.class)
 @Validated
 public class MesWmProductReceiptServiceImpl implements MesWmProductReceiptService {
 
@@ -139,6 +140,8 @@ public class MesWmProductReceiptServiceImpl implements MesWmProductReceiptServic
             throw exception(WM_PRODUCT_RECPT_STATUS_ERROR);
         }
 
+        if (!checkProductReceiptQuantity(id)) throw exception(WM_PRODUCT_RECPT_DETAIL_QUANTITY_MISMATCH);
+
         // 执行上架（待上架 → 待入库）
         productReceiptMapper.updateById(new MesWmProductReceiptDO()
                 .setId(id).setStatus(MesWmProductReceiptStatusEnum.APPROVED.getStatus()));
@@ -162,7 +165,8 @@ public class MesWmProductReceiptServiceImpl implements MesWmProductReceiptServic
     @Transactional(rollbackFor = Exception.class)
     public void finishProductReceipt(Long id) {
         // 校验存在
-        MesWmProductReceiptDO receipt = validateProductReceiptExists(id);
+        MesWmProductReceiptDO receipt = productReceiptMapper.selectByIdForUpdate(id);
+        if (receipt == null) throw exception(WM_PRODUCT_RECPT_NOT_EXISTS);
         if (ObjUtil.notEqual(MesWmProductReceiptStatusEnum.APPROVED.getStatus(), receipt.getStatus())) {
             throw exception(WM_PRODUCT_RECPT_STATUS_ERROR);
         }
@@ -171,6 +175,8 @@ public class MesWmProductReceiptServiceImpl implements MesWmProductReceiptServic
         if (CollUtil.isEmpty(details)) {
             throw exception(WM_PRODUCT_RECPT_NO_DETAIL);
         }
+
+        if (!checkProductReceiptQuantity(id)) throw exception(WM_PRODUCT_RECPT_DETAIL_QUANTITY_MISMATCH);
 
         // 创建库存事务
         createTransactionList(receipt, details);
@@ -194,7 +200,8 @@ public class MesWmProductReceiptServiceImpl implements MesWmProductReceiptServic
                     .setQuantity(detail.getQuantity().negate()) // 库存减少
                     .setBatchId(detail.getBatchId())
                     .setWarehouseId(virtualWarehouse.getId()).setLocationId(virtualLocation.getId()).setAreaId(virtualArea.getId())
-                    .setCheckFlag(false) // 线边库允许负库存
+                    .setWorkOrderId(receipt.getWorkOrderId())
+                    .setMaterialStockId(productReceiptLineService.getProductReceiptLine(detail.getLineId()).getMaterialStockId())
                     .setBizType(MesBizTypeConstants.WM_PRODUCT_RECPT).setBizId(receipt.getId())
                     .setBizCode(receipt.getCode()).setBizLineId(detail.getLineId()));
             // 2.2 再入实际仓库（库存增加）
@@ -237,7 +244,7 @@ public class MesWmProductReceiptServiceImpl implements MesWmProductReceiptServic
     }
 
     private MesWmProductReceiptDO validateProductReceiptExists(Long id) {
-        MesWmProductReceiptDO receipt = productReceiptMapper.selectById(id);
+        MesWmProductReceiptDO receipt = productReceiptMapper.selectByIdForUpdate(id);
         if (receipt == null) {
             throw exception(WM_PRODUCT_RECPT_NOT_EXISTS);
         }

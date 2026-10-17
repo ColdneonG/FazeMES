@@ -33,4 +33,7 @@ public interface MesWmOutsourceIssueMapper extends BaseMapperX<MesWmOutsourceIss
         return selectCount(MesWmOutsourceIssueDO::getVendorId, vendorId);
     }
 
+    default MesWmOutsourceIssueDO selectForUpdate(Long id) {
+        return selectOne(new LambdaQueryWrapperX<MesWmOutsourceIssueDO>().eq(MesWmOutsourceIssueDO::getId,id).last("FOR UPDATE"));
+    }
 }

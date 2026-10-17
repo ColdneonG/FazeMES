@@ -6,12 +6,20 @@ export interface MdWorkstationToolVO {
   workstationId: number // 工作站 ID
   toolTypeId: number // 工具类型 ID
   toolTypeName: string // 工具类型名称
+  toolIds?: number[] // 空绑定表示未限制
   quantity: number // 数量
   remark: string // 备注
 }
 
 // MES 工装夹具资源 API
 export const MdWorkstationToolApi = {
+  getToolCandidates: async (
+    toolTypeId: number
+  ): Promise<
+    { id: number; code: string; name: string; availableQuantity: number; status: number }[]
+  > => {
+    return await request.get({ url: `/mes/md-workstation/tool-candidates`, params: { toolTypeId } })
+  },
   // 查询工装夹具资源列表
   getWorkstationToolList: async (workstationId: number) => {
     return await request.get({

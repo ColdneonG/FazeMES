@@ -72,7 +72,10 @@ public class OAuth2TokenServiceImpl implements OAuth2TokenService {
     @Transactional(noRollbackFor = ServiceException.class)
     public OAuth2AccessTokenDO refreshAccessToken(String refreshToken, String clientId) {
         // 查询访问令牌
-        OAuth2RefreshTokenDO refreshTokenDO = oauth2RefreshTokenMapper.selectByRefreshToken(refreshToken);
+        OAuth2RefreshTokenDO refreshTokenDO = oauth2RefreshTokenMapper.selectByRefreshTokenForUpdate(refreshToken);
+        if (oauth2AccessTokenRedisDAO.isRevoked(refreshToken, null)) {
+            throw exception0(GlobalErrorCodeConstants.UNAUTHORIZED.getCode(), "登录会话已撤销");
+        }
         if (refreshTokenDO == null) {
             throw exception0(GlobalErrorCodeConstants.BAD_REQUEST.getCode(), "无效的刷新令牌");
         }
@@ -105,7 +108,7 @@ public class OAuth2TokenServiceImpl implements OAuth2TokenService {
         // 优先从 Redis 中获取
         OAuth2AccessTokenDO accessTokenDO = oauth2AccessTokenRedisDAO.get(accessToken);
         if (accessTokenDO != null) {
-            return accessTokenDO;
+            return oauth2AccessTokenRedisDAO.isRevoked(accessToken, accessTokenDO.getRefreshToken()) ? null : accessTokenDO;
         }
 
         // 获取不到，从 MySQL 中获取访问令牌
@@ -124,7 +127,9 @@ public class OAuth2TokenServiceImpl implements OAuth2TokenService {
         if (accessTokenDO != null && !DateUtils.isExpired(accessTokenDO.getExpiresTime())) {
             oauth2AccessTokenRedisDAO.set(accessTokenDO);
         }
-        return accessTokenDO;
+        // A revocation may have completed while the database read or cache fill was in flight.
+        return accessTokenDO != null && oauth2AccessTokenRedisDAO.isRevoked(accessToken, accessTokenDO.getRefreshToken())
+                ? null : accessTokenDO;
     }
 
     @Override

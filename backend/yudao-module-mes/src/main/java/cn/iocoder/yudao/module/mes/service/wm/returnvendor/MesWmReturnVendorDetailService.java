@@ -71,4 +71,7 @@ public interface MesWmReturnVendorDetailService {
      */
     void deleteReturnVendorDetailByLineId(Long lineId);
 
+    /** 执行前重新检查旧明细的库存、供应商和行批次，防止修改单头/行后绕过。 */
+    void validateReturnVendorDetails(Long returnId);
+
 }

@@ -31,4 +31,7 @@ public interface MesWmMiscReceiptMapper extends BaseMapperX<MesWmMiscReceiptDO> 
         return selectOne(MesWmMiscReceiptDO::getCode, code);
     }
 
+    default MesWmMiscReceiptDO selectForUpdate(Long id) {
+        return selectOne(new LambdaQueryWrapperX<MesWmMiscReceiptDO>().eq(MesWmMiscReceiptDO::getId,id).last("FOR UPDATE"));
+    }
 }

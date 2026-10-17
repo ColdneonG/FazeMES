@@ -2,6 +2,7 @@ package cn.iocoder.yudao.module.system.controller.admin.auth;
 
 import cn.hutool.core.collection.CollUtil;
 import cn.hutool.core.util.StrUtil;
+import cn.iocoder.yudao.framework.apilog.core.annotation.ApiAccessLog;
 import cn.iocoder.yudao.framework.common.enums.CommonStatusEnum;
 import cn.iocoder.yudao.framework.common.enums.UserTypeEnum;
 import cn.iocoder.yudao.framework.common.pojo.CommonResult;
@@ -66,6 +67,7 @@ public class AuthController {
     @PostMapping("/login")
     @PermitAll
     @Operation(summary = "使用账号密码登录")
+    @ApiAccessLog(sanitizeKeys = {"socialCode", "socialState", "captchaVerification"})
     public CommonResult<AuthLoginRespVO> login(@RequestBody @Valid AuthLoginReqVO reqVO) {
         return success(authService.login(reqVO));
     }

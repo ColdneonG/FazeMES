@@ -15,6 +15,8 @@ import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 import org.springframework.validation.annotation.Validated;
 
+import java.time.LocalDateTime;
+import cn.iocoder.yudao.module.mes.service.dv.task.MesDvTaskService;
 import java.util.Collection;
 import java.util.Collections;
 import java.util.List;
@@ -33,6 +35,8 @@ public class MesDvCheckPlanServiceImpl implements MesDvCheckPlanService {
 
     @Resource
     private MesDvCheckPlanMapper checkPlanMapper;
+    @Resource @Lazy private MesDvTaskService taskService;
+    @Resource private cn.iocoder.yudao.module.mes.dal.mysql.dv.task.MesDvTaskMapper taskMapper;
 
     @Resource
     @Lazy
@@ -43,6 +47,7 @@ public class MesDvCheckPlanServiceImpl implements MesDvCheckPlanService {
 
     @Override
     public Long createCheckPlan(MesDvCheckPlanSaveReqVO createReqVO) {
+        MesDvTaskService.validateCycle(BeanUtils.toBean(createReqVO, MesDvCheckPlanDO.class));
         // 1. 校验编码唯一
         validateCheckPlanCodeUnique(null, createReqVO.getCode());
 
@@ -54,9 +59,11 @@ public class MesDvCheckPlanServiceImpl implements MesDvCheckPlanService {
     }
 
     @Override
+    @Transactional(rollbackFor=Exception.class)
     public void updateCheckPlan(MesDvCheckPlanSaveReqVO updateReqVO) {
         // 1.1 校验存在
-        MesDvCheckPlanDO existPlan = doValidateCheckPlanExists(updateReqVO.getId());
+        MesDvCheckPlanDO existPlan = lockPlan(updateReqVO.getId());
+        MesDvTaskService.validateCycle(BeanUtils.toBean(updateReqVO, MesDvCheckPlanDO.class));
         // 1.2 校验草稿状态
         if (ObjUtil.notEqual(MesDvCheckPlanStatusEnum.PREPARE.getStatus(), existPlan.getStatus())) {
             throw exception(DV_CHECK_PLAN_NOT_PREPARE);
@@ -68,12 +75,21 @@ public class MesDvCheckPlanServiceImpl implements MesDvCheckPlanService {
         updateReqVO.setStatus(null); // 不允许通过 update 修改状态
         MesDvCheckPlanDO updateObj = BeanUtils.toBean(updateReqVO, MesDvCheckPlanDO.class);
         checkPlanMapper.updateById(updateObj);
+        checkPlanMapper.update(null,new com.baomidou.mybatisplus.core.conditions.update.LambdaUpdateWrapper<MesDvCheckPlanDO>()
+            .eq(MesDvCheckPlanDO::getId,updateReqVO.getId()).set(MesDvCheckPlanDO::getNextTaskTime,updateReqVO.getStartDate()));
     }
 
     @Override
+    @Transactional(rollbackFor=Exception.class)
     public void enableCheckPlan(Long id) {
         // 1.1 校验存在 + 校验草稿状态
-        validateCheckPlanPrepare(id);
+        MesDvCheckPlanDO plan=lockPlan(id);
+        if(!ObjUtil.equal(plan.getStatus(),MesDvCheckPlanStatusEnum.PREPARE.getStatus())) throw exception(DV_CHECK_PLAN_NOT_PREPARE);
+        MesDvTaskService.validateCycle(plan);
+        if(plan.getStartDate()==null) {
+            plan.setStartDate(LocalDateTime.now().withNano(0));
+            checkPlanMapper.updateById(new MesDvCheckPlanDO().setId(id).setStartDate(plan.getStartDate()));
+        }
         // 1.2 校验至少关联一台设备
         Long machineryCount = checkPlanMachineryService.getCheckPlanMachineryCountByPlanId(id);
         if (machineryCount <= 0) {
@@ -88,12 +104,14 @@ public class MesDvCheckPlanServiceImpl implements MesDvCheckPlanService {
         // 2. 更新状态为已启用
         checkPlanMapper.updateById(new MesDvCheckPlanDO().setId(id)
                 .setStatus(MesDvCheckPlanStatusEnum.ENABLED.getStatus()));
+        taskService.generateDueTasks(id,LocalDateTime.now().withNano(0));
     }
 
     @Override
+    @Transactional(rollbackFor=Exception.class)
     public void disableCheckPlan(Long id) {
         // 1. 校验存在 + 校验已启用状态
-        MesDvCheckPlanDO plan = doValidateCheckPlanExists(id);
+        MesDvCheckPlanDO plan = lockPlan(id);
         if (ObjUtil.notEqual(MesDvCheckPlanStatusEnum.ENABLED.getStatus(), plan.getStatus())) {
             throw exception(DV_CHECK_PLAN_NOT_ENABLED);
         }
@@ -109,6 +127,8 @@ public class MesDvCheckPlanServiceImpl implements MesDvCheckPlanService {
         // 1. 校验存在 + 校验草稿状态
         validateCheckPlanPrepare(id);
 
+        if(taskMapper.selectCount(cn.iocoder.yudao.module.mes.dal.dataobject.dv.task.MesDvTaskDO::getPlanId,id)>0)
+            throw exception(DV_CHECK_PLAN_HAS_TASK);
         // 2.1 级联删除设备关联 + 项目关联
         checkPlanMachineryService.deleteByPlanId(id);
         checkPlanSubjectService.deleteByPlanId(id);
@@ -118,7 +138,7 @@ public class MesDvCheckPlanServiceImpl implements MesDvCheckPlanService {
 
     @Override
     public MesDvCheckPlanDO validateCheckPlanPrepare(Long planId) {
-        MesDvCheckPlanDO plan = doValidateCheckPlanExists(planId);
+        MesDvCheckPlanDO plan = lockPlan(planId);
         if (ObjUtil.notEqual(MesDvCheckPlanStatusEnum.PREPARE.getStatus(), plan.getStatus())) {
             throw exception(DV_CHECK_PLAN_NOT_PREPARE);
         }
@@ -140,6 +160,12 @@ public class MesDvCheckPlanServiceImpl implements MesDvCheckPlanService {
         if (checkPlanMapper.selectById(id) == null) {
             throw exception(DV_CHECK_PLAN_NOT_EXISTS);
         }
+    }
+
+    private MesDvCheckPlanDO lockPlan(Long id) {
+        MesDvCheckPlanDO plan=checkPlanMapper.selectForUpdate(id);
+        if(plan==null) throw exception(DV_CHECK_PLAN_NOT_EXISTS);
+        return plan;
     }
 
     private MesDvCheckPlanDO doValidateCheckPlanExists(Long id) {

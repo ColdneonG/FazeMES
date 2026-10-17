@@ -6,6 +6,9 @@ import cn.iocoder.yudao.module.mes.controller.admin.md.workstation.vo.worker.Mes
 import cn.iocoder.yudao.module.mes.dal.dataobject.md.workstation.MesMdWorkstationWorkerDO;
 import cn.iocoder.yudao.module.mes.dal.mysql.md.workstation.MesMdWorkstationWorkerMapper;
 import cn.iocoder.yudao.module.system.api.dept.PostApi;
+import cn.iocoder.yudao.module.system.api.user.AdminUserApi;
+import java.util.HashSet;
+import java.util.ArrayList;
 import jakarta.annotation.Resource;
 import org.springframework.stereotype.Service;
 import org.springframework.validation.annotation.Validated;
@@ -30,6 +33,8 @@ public class MesMdWorkstationWorkerServiceImpl implements MesMdWorkstationWorker
 
     @Resource
     private PostApi postApi;
+    @Resource
+    private AdminUserApi adminUserApi;
 
     @Override
     public Long createWorkstationWorker(MesMdWorkstationWorkerSaveReqVO createReqVO) {
@@ -55,8 +60,29 @@ public class MesMdWorkstationWorkerServiceImpl implements MesMdWorkstationWorker
     }
 
     private void validateWorkstationWorkerSaveData(Long id, MesMdWorkstationWorkerSaveReqVO reqVO) {
+        if (reqVO.getQuantity() == null || reqVO.getQuantity() < 1) {
+            throw exception(MD_WORKSTATION_RESOURCE_QUANTITY_INVALID);
+        }
         // 校验岗位是否存在
         postApi.validPostList(Collections.singleton(reqVO.getPostId()));
+        if (reqVO.getUserIds() != null && !reqVO.getUserIds().isEmpty()) {
+            if (reqVO.getUserIds().stream().anyMatch(java.util.Objects::isNull) || new HashSet<>(reqVO.getUserIds()).size() != reqVO.getUserIds().size()) {
+                throw exception(MD_WORKSTATION_RESOURCE_BINDING_INVALID, "人员不可为空或重复");
+            }
+            for (Long userId : reqVO.getUserIds()) {
+                var user = adminUserApi.validateUser(userId);
+                if (user.getPostIds() == null || !user.getPostIds().contains(reqVO.getPostId())) {
+                    throw exception(MD_WORKSTATION_RESOURCE_BINDING_INVALID, "人员不属于所选岗位");
+                }
+            }
+            for (var other : workstationWorkerMapper.selectListByWorkstationId(reqVO.getWorkstationId())) {
+                if (ObjUtil.notEqual(other.getId(), id) && other.getUserIds() != null
+                        && !Collections.disjoint(other.getUserIds(), reqVO.getUserIds())) {
+                    throw exception(MD_WORKSTATION_RESOURCE_BINDING_INVALID, "同一人员不能在此工作站重复计入其他岗位");
+                }
+            }
+            reqVO.setUserIds(new ArrayList<>(reqVO.getUserIds()));
+        }
         // 校验同一工作站下岗位不重复（排除自身）
         MesMdWorkstationWorkerDO existing = workstationWorkerMapper.selectByWorkstationIdAndPostId(
                 reqVO.getWorkstationId(), reqVO.getPostId());

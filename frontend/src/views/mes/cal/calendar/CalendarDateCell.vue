@@ -28,6 +28,14 @@
         <!-- sort=1 白班：绿色 -->
         <div v-if="item.sort === 1" class="shift-tag bg-#95d475">
           {{ item.shiftName }} · {{ item.teamName }}
+          <div
+            v-if="item.startTime"
+            class="text-10px"
+            :title="`${item.startDateTime} → ${item.endDateTime}`"
+          >
+            {{ item.startTime }}–{{ item.crossesMidnight ? '次日' : '' }}{{ item.endTime }} ·
+            {{ Math.round(((item.workingMinutes || 0) / 60) * 100) / 100 }}小时
+          </div>
         </div>
         <!-- sort=2 中班：三班倒时橙色，两班倒时灰色 -->
         <div
@@ -36,10 +44,26 @@
           :class="shiftType === MesCalShiftTypeEnum.THREE ? 'bg-#f0a020' : 'bg-#909399'"
         >
           {{ item.shiftName }} · {{ item.teamName }}
+          <div
+            v-if="item.startTime"
+            class="text-10px"
+            :title="`${item.startDateTime} → ${item.endDateTime}`"
+          >
+            {{ item.startTime }}–{{ item.crossesMidnight ? '次日' : '' }}{{ item.endTime }} ·
+            {{ Math.round(((item.workingMinutes || 0) / 60) * 100) / 100 }}小时
+          </div>
         </div>
         <!-- sort=3 夜班：灰色 -->
         <div v-else-if="item.sort === 3" class="shift-tag bg-#909399">
           {{ item.shiftName }} · {{ item.teamName }}
+          <div
+            v-if="item.startTime"
+            class="text-10px"
+            :title="`${item.startDateTime} → ${item.endDateTime}`"
+          >
+            {{ item.startTime }}–{{ item.crossesMidnight ? '次日' : '' }}{{ item.endTime }} ·
+            {{ Math.round(((item.workingMinutes || 0) / 60) * 100) / 100 }}小时
+          </div>
         </div>
       </div>
     </div>

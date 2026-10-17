@@ -12,6 +12,7 @@ import cn.iocoder.yudao.module.mes.service.wm.warehouse.MesWmWarehouseAreaServic
 import jakarta.annotation.Resource;
 import org.springframework.context.annotation.Lazy;
 import org.springframework.stereotype.Service;
+import org.springframework.transaction.annotation.Transactional;
 import org.springframework.validation.annotation.Validated;
 
 import java.util.List;
@@ -28,6 +29,8 @@ import static cn.iocoder.yudao.module.mes.enums.ErrorCodeConstants.*;
 @Validated
 public class MesWmProductSalesDetailServiceImpl implements MesWmProductSalesDetailService {
 
+    @Resource private cn.iocoder.yudao.module.mes.dal.mysql.wm.productsales.MesWmProductSalesMapper documentMapper;
+
     @Resource
     private MesWmProductSalesDetailMapper productSalesDetailMapper;
 
@@ -42,7 +45,9 @@ public class MesWmProductSalesDetailServiceImpl implements MesWmProductSalesDeta
     private MesWmWarehouseAreaService warehouseAreaService;
 
     @Override
+    @Transactional(rollbackFor=Exception.class)
     public Long createProductSalesDetail(MesWmProductSalesDetailSaveReqVO createReqVO) {
+        lockDocumentForEdit(createReqVO.getSalesId());
         // 校验数据
         validateProductSalesDetailSaveData(createReqVO);
 
@@ -53,7 +58,13 @@ public class MesWmProductSalesDetailServiceImpl implements MesWmProductSalesDeta
     }
 
     @Override
+    @Transactional(rollbackFor=Exception.class)
     public void updateProductSalesDetail(MesWmProductSalesDetailSaveReqVO updateReqVO) {
+        var persisted=productSalesDetailMapper.selectById(updateReqVO.getId());
+        if(persisted==null) throw exception(cn.iocoder.yudao.module.mes.enums.ErrorCodeConstants.WM_PRODUCT_SALES_CANNOT_PICK);
+        lockDocumentForEdit(persisted.getSalesId());
+        if(!java.util.Objects.equals(persisted.getSalesId(),updateReqVO.getSalesId()))
+            throw exception(cn.iocoder.yudao.module.mes.enums.ErrorCodeConstants.WM_PRODUCT_SALES_CANNOT_PICK);
         // 校验存在
         validateProductSalesDetailExists(updateReqVO.getId());
         // 校验数据
@@ -65,7 +76,11 @@ public class MesWmProductSalesDetailServiceImpl implements MesWmProductSalesDeta
     }
 
     @Override
+    @Transactional(rollbackFor=Exception.class)
     public void deleteProductSalesDetail(Long id) {
+        var persisted=productSalesDetailMapper.selectById(id);
+        if(persisted==null) throw exception(cn.iocoder.yudao.module.mes.enums.ErrorCodeConstants.WM_PRODUCT_SALES_CANNOT_PICK);
+        lockDocumentForEdit(persisted.getSalesId());
         // 校验存在
         validateProductSalesDetailExists(id);
         // 删除
@@ -128,4 +143,10 @@ public class MesWmProductSalesDetailServiceImpl implements MesWmProductSalesDeta
                 reqVO.getWarehouseId(), reqVO.getLocationId(), reqVO.getAreaId(), reqVO.getQuantity());
     }
 
+    private void lockDocumentForEdit(Long id) {
+        var document=documentMapper.selectForUpdate(id);
+        if(document==null || (!java.util.Objects.equals(document.getStatus(),cn.iocoder.yudao.module.mes.enums.MesOrderStatusConstants.PREPARE)
+            && !java.util.Objects.equals(document.getStatus(),cn.iocoder.yudao.module.mes.enums.MesOrderStatusConstants.APPROVING)))
+            throw exception(cn.iocoder.yudao.module.mes.enums.ErrorCodeConstants.WM_PRODUCT_SALES_CANNOT_PICK);
+    }
 }

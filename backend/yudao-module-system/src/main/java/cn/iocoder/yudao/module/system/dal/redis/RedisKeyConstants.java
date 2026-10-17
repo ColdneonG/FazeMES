@@ -67,6 +67,9 @@ public interface RedisKeyConstants {
      */
     String OAUTH2_ACCESS_TOKEN = "oauth2_access_token:%s";
 
+    /** Explicit online-session revocations, keyed by SHA-256 of the access/refresh credential. */
+    String OAUTH2_REVOKED_TOKEN = "oauth2_revoked_token:%s";
+
     /**
      * 站内信模版的缓存
      * <p>

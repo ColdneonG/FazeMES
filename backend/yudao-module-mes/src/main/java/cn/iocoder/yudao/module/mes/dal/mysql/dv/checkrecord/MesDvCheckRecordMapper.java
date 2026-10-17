@@ -29,4 +29,8 @@ public interface MesDvCheckRecordMapper extends BaseMapperX<MesDvCheckRecordDO> 
         return selectCount(MesDvCheckRecordDO::getMachineryId, machineryId);
     }
 
+    default MesDvCheckRecordDO selectForUpdate(Long id) {
+        return selectOne(new LambdaQueryWrapperX<MesDvCheckRecordDO>().eq(MesDvCheckRecordDO::getId, id).last("FOR UPDATE"));
+    }
+
 }

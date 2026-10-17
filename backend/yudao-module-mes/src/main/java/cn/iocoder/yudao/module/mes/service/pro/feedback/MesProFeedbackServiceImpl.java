@@ -34,6 +34,7 @@ import java.math.BigDecimal;
 import java.util.List;
 
 import static cn.iocoder.yudao.framework.common.exception.util.ServiceExceptionUtil.exception;
+import static cn.iocoder.yudao.framework.security.core.util.SecurityFrameworkUtils.getLoginUserId;
 import static cn.iocoder.yudao.module.mes.enums.ErrorCodeConstants.*;
 
 /**
@@ -110,9 +111,18 @@ public class MesProFeedbackServiceImpl implements MesProFeedbackService {
     }
 
     @Override
+    @Transactional(rollbackFor = Exception.class)
     public void submitFeedback(Long id) {
-        // 1. 校验存在 + 草稿状态
-        validateFeedbackStatusPrepare(id);
+        // A delayed duplicate submit must not reopen an already approved report.
+        // Use the same work-order -> feedback lock order as approval, then read
+        // the current status after waiting for those locks.
+        MesProFeedbackDO feedback = lockFeedbackWorkOrder(id);
+        if (ObjUtil.notEqual(feedback.getStatus(), MesProFeedbackStatusEnum.PREPARE.getStatus())) {
+            throw exception(PRO_FEEDBACK_NOT_PREPARE);
+        }
+        // Resources may change while a draft is saved. Enforce availability at
+        // production submission, while allowing later approval across shifts.
+        workstationService.validateWorkstationAvailable(feedback.getWorkstationId());
 
         // 2. 更新状态为审批中（报工人和报工时间由表单保存时确定，提交不覆盖）
         feedbackMapper.updateById(new MesProFeedbackDO().setId(id)
@@ -120,9 +130,14 @@ public class MesProFeedbackServiceImpl implements MesProFeedbackService {
     }
 
     @Override
+    @Transactional(rollbackFor = Exception.class)
     public void rejectFeedback(Long id) {
         // 1. 校验存在 + 审批中状态
-        validateFeedbackStatusApproving(id);
+        MesProFeedbackDO feedback = lockFeedbackWorkOrder(id);
+        if (ObjUtil.notEqual(feedback.getStatus(), MesProFeedbackStatusEnum.APPROVING.getStatus())) {
+            throw exception(PRO_FEEDBACK_NOT_APPROVING);
+        }
+        validateFeedbackApprover(feedback);
 
         // 2. 更新状态为草稿
         feedbackMapper.updateById(new MesProFeedbackDO().setId(id)
@@ -137,6 +152,7 @@ public class MesProFeedbackServiceImpl implements MesProFeedbackService {
         if (ObjUtil.notEqual(feedback.getStatus(), MesProFeedbackStatusEnum.APPROVING.getStatus())) {
             throw exception(PRO_FEEDBACK_NOT_APPROVING);
         }
+        validateFeedbackApprover(feedback);
         // 1.2 校验报工数量 > 0
         if (feedback.getFeedbackQuantity() == null
                 || feedback.getFeedbackQuantity().compareTo(BigDecimal.ZERO) <= 0) {
@@ -261,12 +277,11 @@ public class MesProFeedbackServiceImpl implements MesProFeedbackService {
         return feedback;
     }
 
-    private MesProFeedbackDO validateFeedbackStatusApproving(Long id) {
-        MesProFeedbackDO feedback = validateFeedbackExists(id);
-        if (ObjUtil.notEqual(feedback.getStatus(), MesProFeedbackStatusEnum.APPROVING.getStatus())) {
-            throw exception(PRO_FEEDBACK_NOT_APPROVING);
+    private void validateFeedbackApprover(MesProFeedbackDO feedback) {
+        Long loginUserId = getLoginUserId();
+        if (loginUserId == null || !loginUserId.equals(feedback.getApproveUserId())) {
+            throw exception(PRO_FEEDBACK_APPROVER_MISMATCH);
         }
-        return feedback;
     }
 
     /**

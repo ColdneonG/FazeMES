@@ -16,6 +16,7 @@ import cn.iocoder.yudao.module.mes.dal.dataobject.md.workstation.MesMdWorkstatio
 import cn.iocoder.yudao.module.mes.dal.dataobject.pro.process.MesProProcessDO;
 import cn.iocoder.yudao.module.mes.service.md.workstation.MesMdWorkshopService;
 import cn.iocoder.yudao.module.mes.service.md.workstation.MesMdWorkstationService;
+import cn.iocoder.yudao.module.mes.service.md.workstation.MesMdWorkstationAvailabilityService;
 import cn.iocoder.yudao.module.mes.service.pro.process.MesProProcessService;
 import io.swagger.v3.oas.annotations.Operation;
 import io.swagger.v3.oas.annotations.Parameter;
@@ -45,6 +46,8 @@ public class MesMdWorkstationController {
 
     @Resource
     private MesMdWorkstationService workstationService;
+    @Resource
+    private MesMdWorkstationAvailabilityService availabilityService;
     @Resource
     private MesMdWorkshopService workshopService;
     @Resource
@@ -80,7 +83,10 @@ public class MesMdWorkstationController {
     @PreAuthorize("@ss.hasPermission('mes:md-workstation:query')")
     public CommonResult<MesMdWorkstationRespVO> getWorkstation(@RequestParam("id") Long id) {
         MesMdWorkstationDO workstation = workstationService.getWorkstation(id);
-        return success(BeanUtils.toBean(workstation, MesMdWorkstationRespVO.class));
+        if (workstation == null) return success(null);
+        MesMdWorkstationRespVO vo = BeanUtils.toBean(workstation, MesMdWorkstationRespVO.class);
+        fillAvailability(vo, workstation);
+        return success(vo);
     }
 
     @GetMapping("/page")
@@ -116,13 +122,22 @@ public class MesMdWorkstationController {
                 convertSet(list, MesMdWorkstationDO::getWorkshopId));
         Map<Long, MesProProcessDO> processMap = processService.getProcessMap(
                 convertSet(list, MesMdWorkstationDO::getProcessId));
+        Map<Long, MesMdWorkstationDO> workstationMap = convertMap(list, MesMdWorkstationDO::getId);
         // 2. 拼接 VO
         return BeanUtils.toBean(list, MesMdWorkstationRespVO.class, vo -> {
+            fillAvailability(vo, workstationMap.get(vo.getId()));
             MapUtils.findAndThen(workshopMap, vo.getWorkshopId(),
                     workshop -> vo.setWorkshopName(workshop.getName()));
             MapUtils.findAndThen(processMap, vo.getProcessId(),
                     process -> vo.setProcessName(process.getName()));
         });
+    }
+
+    private void fillAvailability(MesMdWorkstationRespVO vo, MesMdWorkstationDO station) {
+        var availability = availabilityService.check(station);
+        vo.setAvailable(availability.getAvailable());
+        vo.setAvailabilityReasons(availability.getReasons());
+        vo.setAvailabilityNotes(availability.getNotes());
     }
 
 }

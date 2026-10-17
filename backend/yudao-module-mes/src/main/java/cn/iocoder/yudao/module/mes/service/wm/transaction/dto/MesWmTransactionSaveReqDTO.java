@@ -14,6 +14,11 @@ import java.time.LocalDateTime;
 @Accessors(chain = true)
 public class MesWmTransactionSaveReqDTO {
 
+    /** 出库必须扣减实际选中的库存记录，禁止按物料重新猜测批次或供应商。 */
+    private Long materialStockId;
+    /** 线边库存必须归属工单；实物仓交易为空。 */
+    private Long workOrderId;
+
     // ===== 事务核心 =====
 
     /**
@@ -109,7 +114,7 @@ public class MesWmTransactionSaveReqDTO {
     // ===== 可选控制（非存储字段） =====
 
     /**
-     * 是否校验库存充足（默认 true；线边库消耗等场景设 false 允许负库存）
+     * 是否校验库存充足（普通业务出库始终校验，不允许以 false 绕过）
      */
     private Boolean checkFlag;
 

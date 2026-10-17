@@ -25,6 +25,9 @@ import org.springframework.validation.annotation.Validated;
 
 import java.util.ArrayList;
 import java.util.List;
+import java.util.Objects;
+import cn.iocoder.yudao.module.mes.dal.dataobject.dv.repair.MesDvRepairLineDO;
+import cn.iocoder.yudao.module.mes.service.dv.repair.MesDvRepairService;
 
 import static cn.iocoder.yudao.framework.common.exception.util.ServiceExceptionUtil.exception;
 import static cn.iocoder.yudao.module.mes.enums.ErrorCodeConstants.*;
@@ -41,6 +44,7 @@ public class MesDvCheckRecordServiceImpl implements MesDvCheckRecordService {
 
     @Resource
     private MesDvCheckRecordMapper checkRecordMapper;
+    @Resource private MesDvRepairService repairService;
 
     @Resource
     @Lazy
@@ -109,8 +113,13 @@ public class MesDvCheckRecordServiceImpl implements MesDvCheckRecordService {
             throw exception(DV_CHECK_RECORD_NO_LINE);
         }
 
+        if(lines.stream().anyMatch(l -> l.getCheckStatus()==null || (l.getCheckStatus()!=1 && l.getCheckStatus()!=2)
+            || (l.getCheckStatus()==2 && (l.getCheckResult()==null || l.getCheckResult().isBlank())))) {
+            throw exception(DV_TASK_RESULTS_INVALID);
+        }
+
         // 2. 状态改为已完成
-        MesDvCheckRecordDO record = checkRecordMapper.selectById(id);
+        MesDvCheckRecordDO record = checkRecordMapper.selectForUpdate(id);
         MesDvCheckRecordDO updateObj = new MesDvCheckRecordDO()
                 .setId(id).setStatus(MesDvCheckRecordStatusEnum.FINISHED.getStatus());
         checkRecordMapper.updateById(updateObj);
@@ -119,6 +128,9 @@ public class MesDvCheckRecordServiceImpl implements MesDvCheckRecordService {
         if (record.getCheckTime() != null) {
             machineryService.updateMachineryLastCheckTime(record.getMachineryId(), record.getCheckTime());
         }
+        List<MesDvRepairLineDO> abnormal=lines.stream().filter(l->Objects.equals(l.getCheckStatus(),2))
+            .map(l->new MesDvRepairLineDO().setSubjectId(l.getSubjectId()).setMalfunction(l.getCheckResult())).toList();
+        if(!abnormal.isEmpty()) repairService.createAbnormalRepair(record.getMachineryId(),101,id,abnormal);
     }
 
     @Override
@@ -159,7 +171,7 @@ public class MesDvCheckRecordServiceImpl implements MesDvCheckRecordService {
 
     @Override
     public void validateCheckRecordDraft(Long id) {
-        MesDvCheckRecordDO record = checkRecordMapper.selectById(id);
+        MesDvCheckRecordDO record = checkRecordMapper.selectForUpdate(id);
         if (record == null) {
             throw exception(DV_CHECK_RECORD_NOT_EXISTS);
         }

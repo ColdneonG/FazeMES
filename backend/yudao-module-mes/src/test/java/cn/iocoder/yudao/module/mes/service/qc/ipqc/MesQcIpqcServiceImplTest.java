@@ -258,6 +258,7 @@ public class MesQcIpqcServiceImplTest extends BaseDbUnitTest {
         Long templateId = randomLongId();
 
         MesQcIpqcSaveReqVO reqVO = new MesQcIpqcSaveReqVO();
+        reqVO.setType(2); // 首检：模板按实际子阶段匹配
         reqVO.setCode("IPQC-TEST-001");
         reqVO.setWorkstationId(workstationId);
         reqVO.setWorkOrderId(workOrderId);
@@ -277,7 +278,7 @@ public class MesQcIpqcServiceImplTest extends BaseDbUnitTest {
         // mock 模板匹配
         MesQcTemplateItemDO templateItem = new MesQcTemplateItemDO();
         templateItem.setTemplateId(templateId);
-        when(templateItemService.getRequiredTemplateByItemIdAndType(eq(productId), anyInt())).thenReturn(templateItem);
+        when(templateItemService.getRequiredTemplateByItemIdAndType(eq(productId), anyInt(), eq(2))).thenReturn(templateItem);
         // mock 工艺路线
         MesProRouteProductDO routeProduct = new MesProRouteProductDO();
         routeProduct.setRouteId(routeId);
@@ -307,6 +308,7 @@ public class MesQcIpqcServiceImplTest extends BaseDbUnitTest {
         Long templateId = randomLongId();
 
         MesQcIpqcSaveReqVO reqVO = new MesQcIpqcSaveReqVO();
+        reqVO.setType(2); // 首检：模板按实际子阶段匹配
         reqVO.setCode("IPQC-TEST-002");
         reqVO.setWorkstationId(workstationId);
         reqVO.setWorkOrderId(workOrderId);
@@ -334,7 +336,7 @@ public class MesQcIpqcServiceImplTest extends BaseDbUnitTest {
         // mock 模板匹配
         MesQcTemplateItemDO templateItem = new MesQcTemplateItemDO();
         templateItem.setTemplateId(templateId);
-        when(templateItemService.getRequiredTemplateByItemIdAndType(eq(productId), anyInt())).thenReturn(templateItem);
+        when(templateItemService.getRequiredTemplateByItemIdAndType(eq(productId), anyInt(), eq(2))).thenReturn(templateItem);
 
         // 调用
         Long ipqcId = ipqcService.createIpqc(reqVO);
@@ -361,6 +363,7 @@ public class MesQcIpqcServiceImplTest extends BaseDbUnitTest {
         Long templateId = randomLongId();
 
         MesQcIpqcSaveReqVO reqVO = new MesQcIpqcSaveReqVO();
+        reqVO.setType(2); // 首检：模板按实际子阶段匹配
         reqVO.setCode("IPQC-TEST-003");
         reqVO.setWorkstationId(workstationId);
         reqVO.setWorkOrderId(workOrderId);
@@ -380,7 +383,7 @@ public class MesQcIpqcServiceImplTest extends BaseDbUnitTest {
         // mock 模板匹配
         MesQcTemplateItemDO templateItem = new MesQcTemplateItemDO();
         templateItem.setTemplateId(templateId);
-        when(templateItemService.getRequiredTemplateByItemIdAndType(eq(productId), anyInt())).thenReturn(templateItem);
+        when(templateItemService.getRequiredTemplateByItemIdAndType(eq(productId), anyInt(), eq(2))).thenReturn(templateItem);
         // mock 工艺路线存在
         MesProRouteProductDO routeProduct = new MesProRouteProductDO();
         routeProduct.setRouteId(routeId);
@@ -412,6 +415,7 @@ public class MesQcIpqcServiceImplTest extends BaseDbUnitTest {
         Long templateId = randomLongId();
 
         MesQcIpqcSaveReqVO reqVO = new MesQcIpqcSaveReqVO();
+        reqVO.setType(2); // 首检：模板按实际子阶段匹配
         reqVO.setCode("IPQC-SL-001");
         reqVO.setWorkstationId(workstationId);
         reqVO.setWorkOrderId(workOrderId);
@@ -432,7 +436,7 @@ public class MesQcIpqcServiceImplTest extends BaseDbUnitTest {
         when(workOrderService.validateWorkOrderConfirmed(workOrderId)).thenReturn(workOrder);
         MesQcTemplateItemDO templateItem = new MesQcTemplateItemDO();
         templateItem.setTemplateId(templateId);
-        when(templateItemService.getRequiredTemplateByItemIdAndType(eq(productId), anyInt())).thenReturn(templateItem);
+        when(templateItemService.getRequiredTemplateByItemIdAndType(eq(productId), anyInt(), eq(2))).thenReturn(templateItem);
         when(feedbackService.validateFeedbackExists(feedbackId)).thenReturn(new MesProFeedbackDO());
 
         // 调用，断言异常
@@ -454,6 +458,7 @@ public class MesQcIpqcServiceImplTest extends BaseDbUnitTest {
         Long templateId = randomLongId();
 
         MesQcIpqcSaveReqVO reqVO = new MesQcIpqcSaveReqVO();
+        reqVO.setType(2); // 首检：模板按实际子阶段匹配
         reqVO.setCode("IPQC-SL-002");
         reqVO.setWorkstationId(workstationId);
         reqVO.setWorkOrderId(workOrderId);
@@ -474,7 +479,7 @@ public class MesQcIpqcServiceImplTest extends BaseDbUnitTest {
         when(workOrderService.validateWorkOrderConfirmed(workOrderId)).thenReturn(workOrder);
         MesQcTemplateItemDO templateItem = new MesQcTemplateItemDO();
         templateItem.setTemplateId(templateId);
-        when(templateItemService.getRequiredTemplateByItemIdAndType(eq(productId), anyInt())).thenReturn(templateItem);
+        when(templateItemService.getRequiredTemplateByItemIdAndType(eq(productId), anyInt(), eq(2))).thenReturn(templateItem);
         when(feedbackService.validateFeedbackExists(feedbackId)).thenReturn(new MesProFeedbackDO());
         // mock：产出行存在但 feedbackId 不匹配
         MesWmProductProduceLineDO line = new MesWmProductProduceLineDO();
@@ -502,6 +507,7 @@ public class MesQcIpqcServiceImplTest extends BaseDbUnitTest {
         Long templateId = randomLongId();
 
         MesQcIpqcSaveReqVO reqVO = new MesQcIpqcSaveReqVO();
+        reqVO.setType(2); // 首检：模板按实际子阶段匹配
         reqVO.setCode("IPQC-SL-003");
         reqVO.setWorkstationId(workstationId);
         reqVO.setWorkOrderId(workOrderId);
@@ -522,7 +528,7 @@ public class MesQcIpqcServiceImplTest extends BaseDbUnitTest {
         when(workOrderService.validateWorkOrderConfirmed(workOrderId)).thenReturn(workOrder);
         MesQcTemplateItemDO templateItem = new MesQcTemplateItemDO();
         templateItem.setTemplateId(templateId);
-        when(templateItemService.getRequiredTemplateByItemIdAndType(eq(productId), anyInt())).thenReturn(templateItem);
+        when(templateItemService.getRequiredTemplateByItemIdAndType(eq(productId), anyInt(), eq(2))).thenReturn(templateItem);
         when(feedbackService.validateFeedbackExists(feedbackId)).thenReturn(new MesProFeedbackDO());
         // mock：产出行存在且归属正确，但不是 PENDING 状态
         MesWmProductProduceLineDO line = new MesWmProductProduceLineDO();
@@ -550,6 +556,7 @@ public class MesQcIpqcServiceImplTest extends BaseDbUnitTest {
         Long templateId = randomLongId();
 
         MesQcIpqcSaveReqVO reqVO = new MesQcIpqcSaveReqVO();
+        reqVO.setType(2); // 首检：模板按实际子阶段匹配
         reqVO.setCode("IPQC-SL-004");
         reqVO.setWorkstationId(workstationId);
         reqVO.setWorkOrderId(workOrderId);
@@ -570,7 +577,7 @@ public class MesQcIpqcServiceImplTest extends BaseDbUnitTest {
         when(workOrderService.validateWorkOrderConfirmed(workOrderId)).thenReturn(workOrder);
         MesQcTemplateItemDO templateItem = new MesQcTemplateItemDO();
         templateItem.setTemplateId(templateId);
-        when(templateItemService.getRequiredTemplateByItemIdAndType(eq(productId), anyInt())).thenReturn(templateItem);
+        when(templateItemService.getRequiredTemplateByItemIdAndType(eq(productId), anyInt(), eq(2))).thenReturn(templateItem);
         MesProFeedbackDO feedback = new MesProFeedbackDO();
         feedback.setId(feedbackId);
         feedback.setCode("FB-001");

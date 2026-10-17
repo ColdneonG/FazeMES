@@ -25,8 +25,16 @@ public interface MesDvCheckPlanMapper extends BaseMapperX<MesDvCheckPlanDO> {
                 .orderByDesc(MesDvCheckPlanDO::getId));
     }
 
+    default java.util.List<MesDvCheckPlanDO> selectEnabled() {
+        return selectList(MesDvCheckPlanDO::getStatus, 1);
+    }
+
     default MesDvCheckPlanDO selectByCode(String code) {
         return selectOne(MesDvCheckPlanDO::getCode, code);
+    }
+
+    default MesDvCheckPlanDO selectForUpdate(Long id) {
+        return selectOne(new LambdaQueryWrapperX<MesDvCheckPlanDO>().eq(MesDvCheckPlanDO::getId, id).last("FOR UPDATE"));
     }
 
 }

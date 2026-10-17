@@ -32,6 +32,8 @@ import static cn.iocoder.yudao.module.mes.enums.ErrorCodeConstants.WM_OUTSOURCE_
 @Validated
 public class MesWmOutsourceReceiptLineServiceImpl implements MesWmOutsourceReceiptLineService {
 
+    @Resource private cn.iocoder.yudao.module.mes.dal.mysql.wm.outsourcereceipt.MesWmOutsourceReceiptMapper documentMapper;
+
     @Resource
     private MesWmOutsourceReceiptLineMapper lineMapper;
 
@@ -50,7 +52,9 @@ public class MesWmOutsourceReceiptLineServiceImpl implements MesWmOutsourceRecei
     private MesWmBatchService batchService;
 
     @Override
+    @Transactional(rollbackFor=Exception.class)
     public Long createOutsourceReceiptLine(MesWmOutsourceReceiptLineSaveReqVO createReqVO) {
+        lockDocumentForEdit(createReqVO.getReceiptId());
         // 校验物料存在
         itemService.validateItemExistsAndEnable(createReqVO.getItemId());
 
@@ -68,7 +72,13 @@ public class MesWmOutsourceReceiptLineServiceImpl implements MesWmOutsourceRecei
     }
 
     @Override
+    @Transactional(rollbackFor=Exception.class)
     public void updateOutsourceReceiptLine(MesWmOutsourceReceiptLineSaveReqVO updateReqVO) {
+        var persisted=lineMapper.selectById(updateReqVO.getId());
+        if(persisted==null) throw exception(cn.iocoder.yudao.module.mes.enums.ErrorCodeConstants.WM_OUTSOURCE_RECEIPT_STATUS_ERROR);
+        lockDocumentForEdit(persisted.getReceiptId());
+        if(!java.util.Objects.equals(persisted.getReceiptId(),updateReqVO.getReceiptId()))
+            throw exception(cn.iocoder.yudao.module.mes.enums.ErrorCodeConstants.WM_OUTSOURCE_RECEIPT_STATUS_ERROR);
         // 校验存在
         validateOutsourceReceiptLineExists(updateReqVO.getId());
         // 校验物料存在
@@ -89,6 +99,9 @@ public class MesWmOutsourceReceiptLineServiceImpl implements MesWmOutsourceRecei
     @Override
     @Transactional(rollbackFor = Exception.class)
     public void deleteOutsourceReceiptLine(Long id) {
+        var persisted=lineMapper.selectById(id);
+        if(persisted==null) throw exception(cn.iocoder.yudao.module.mes.enums.ErrorCodeConstants.WM_OUTSOURCE_RECEIPT_STATUS_ERROR);
+        lockDocumentForEdit(persisted.getReceiptId());
         // 校验存在
         validateOutsourceReceiptLineExists(id);
 
@@ -173,4 +186,10 @@ public class MesWmOutsourceReceiptLineServiceImpl implements MesWmOutsourceRecei
         return batchService.getOrGenerateBatchCode(batchReqVO);
     }
 
+    private void lockDocumentForEdit(Long id) {
+        var document=documentMapper.selectForUpdate(id);
+        if(document==null || (!java.util.Objects.equals(document.getStatus(),cn.iocoder.yudao.module.mes.enums.MesOrderStatusConstants.PREPARE)
+            && !java.util.Objects.equals(document.getStatus(),cn.iocoder.yudao.module.mes.enums.MesOrderStatusConstants.APPROVING)))
+            throw exception(cn.iocoder.yudao.module.mes.enums.ErrorCodeConstants.WM_OUTSOURCE_RECEIPT_STATUS_ERROR);
+    }
 }

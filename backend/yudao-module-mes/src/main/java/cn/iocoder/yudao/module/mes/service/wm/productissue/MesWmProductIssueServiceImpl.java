@@ -41,6 +41,7 @@ import static cn.iocoder.yudao.module.mes.enums.ErrorCodeConstants.*;
  * MES 领料出库单 Service 实现类
  */
 @Service
+@Transactional(rollbackFor = Exception.class)
 @Validated
 public class MesWmProductIssueServiceImpl implements MesWmProductIssueService {
 
@@ -152,7 +153,8 @@ public class MesWmProductIssueServiceImpl implements MesWmProductIssueService {
     @Transactional(rollbackFor = Exception.class)
     public void finishProductIssue(Long id) {
         // 1. 校验存在
-        MesWmProductIssueDO issue = validateProductIssueExists(id);
+        MesWmProductIssueDO issue = issueMapper.selectByIdForUpdate(id);
+        if (issue == null) throw exception(WM_PRODUCT_ISSUE_NOT_EXISTS);
         if (ObjUtil.notEqual(MesWmProductIssueStatusEnum.APPROVED.getStatus(), issue.getStatus())) {
             throw exception(WM_PRODUCT_ISSUE_STATUS_INVALID);
         }
@@ -187,6 +189,7 @@ public class MesWmProductIssueServiceImpl implements MesWmProductIssueService {
             // 2.1 先从实际仓库出库（库存减少）
             Long outTransactionId = wmTransactionService.createTransaction(new MesWmTransactionSaveReqDTO()
                     .setType(MesWmTransactionTypeEnum.OUT.getType()).setItemId(detail.getItemId())
+                .setMaterialStockId(detail.getMaterialStockId())
                     .setQuantity(detail.getQuantity().negate()) // 库存减少
                     .setBatchId(detail.getBatchId()).setBatchCode(detail.getBatchCode())
                     .setWarehouseId(detail.getWarehouseId()).setLocationId(detail.getLocationId()).setAreaId(detail.getAreaId())
@@ -198,6 +201,7 @@ public class MesWmProductIssueServiceImpl implements MesWmProductIssueService {
                     .setQuantity(detail.getQuantity()) // 库存增加
                     .setBatchId(detail.getBatchId()).setBatchCode(detail.getBatchCode())
                     .setWarehouseId(virtualWarehouse.getId()).setLocationId(virtualLocation.getId()).setAreaId(virtualArea.getId())
+                    .setWorkOrderId(issue.getWorkOrderId())
                     .setBizType(MesBizTypeConstants.WM_ISSUE).setBizId(issue.getId())
                     .setBizCode(issue.getCode()).setBizLineId(detail.getLineId())
                     .setRelatedTransactionId(outTransactionId)); // 关联出库事务
@@ -237,7 +241,7 @@ public class MesWmProductIssueServiceImpl implements MesWmProductIssueService {
 
     @Override
     public MesWmProductIssueDO validateProductIssueExists(Long id) {
-        MesWmProductIssueDO issue = issueMapper.selectById(id);
+        MesWmProductIssueDO issue = issueMapper.selectByIdForUpdate(id);
         if (issue == null) {
             throw exception(WM_PRODUCT_ISSUE_NOT_EXISTS);
         }

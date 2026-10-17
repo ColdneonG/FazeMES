@@ -281,10 +281,12 @@ const handleDelete = async (id: number) => {
 /** 计算结束时间：开始时间 + 生产时长 × 8小时 */
 const handleDurationChange = () => {
   if (formData.value.startTime && formData.value.duration) {
+    const value = formData.value.startTime
     const start =
-      typeof formData.value.startTime === 'number'
-        ? formData.value.startTime
-        : new Date(formData.value.startTime).getTime()
+      typeof value === 'number' || (typeof value === 'string' && /^\d+$/.test(value))
+        ? Number(value)
+        : new Date(value).getTime()
+    if (!Number.isFinite(start)) return
     formData.value.endTime = start + formData.value.duration * 8 * 3600 * 1000
   }
 }

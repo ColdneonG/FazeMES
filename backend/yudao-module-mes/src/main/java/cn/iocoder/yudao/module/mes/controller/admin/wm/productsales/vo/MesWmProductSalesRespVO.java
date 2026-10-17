@@ -42,6 +42,9 @@ public class MesWmProductSalesRespVO {
     @Schema(description = "发货通知单ID", example = "1")
     private Long noticeId;
 
+    @Schema(description = "出货检验单参考ID")
+    private Long oqcId;
+
     @Schema(description = "发货通知单编号", example = "SN2026030001")
     @ExcelProperty("发货通知单编号")
     private String noticeCode;

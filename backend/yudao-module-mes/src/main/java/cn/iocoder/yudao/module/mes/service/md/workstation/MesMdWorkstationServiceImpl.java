@@ -43,6 +43,8 @@ public class MesMdWorkstationServiceImpl implements MesMdWorkstationService {
 
     @Resource
     private MesMdWorkstationMapper workstationMapper;
+    @Resource
+    private MesMdWorkstationAvailabilityService availabilityService;
 
     @Resource
     @Lazy
@@ -132,6 +134,16 @@ public class MesMdWorkstationServiceImpl implements MesMdWorkstationService {
         MesMdWorkstationDO workstation = validateWorkstationExists(id);
         if (ObjUtil.notEqual(CommonStatusEnum.ENABLE.getStatus(), workstation.getStatus())) {
             throw exception(MD_WORKSTATION_IS_DISABLE);
+        }
+        return workstation;
+    }
+
+    @Override
+    public MesMdWorkstationDO validateWorkstationAvailable(Long id) {
+        MesMdWorkstationDO workstation = validateWorkstationExistsAndEnable(id);
+        var availability = availabilityService.check(workstation);
+        if (!availability.getAvailable()) {
+            throw exception(MD_WORKSTATION_RESOURCE_UNAVAILABLE, String.join("；", availability.getReasons()));
         }
         return workstation;
     }

@@ -28,6 +28,9 @@ public class MesQcTemplateSaveReqVO {
     @Size(min = 1, message = "检测种类至少选择一项")
     private List<Integer> types;
 
+    @Schema(description = "适用过程检验子阶段（空表示通用，2首检/3巡检/5成品检验/6末检，兼容历史1/4）")
+    private List<Integer> ipqcTypes;
+
     @Schema(description = "状态", requiredMode = Schema.RequiredMode.REQUIRED, example = "0")
     @NotNull(message = "状态不能为空")
     private Integer status;

@@ -39,4 +39,7 @@ public interface MesCalPlanMapper extends BaseMapperX<MesCalPlanDO> {
                 .set(clearShiftCount, MesCalPlanDO::getShiftCount, null));
     }
 
+    default MesCalPlanDO selectForUpdate(Long id) {
+        return selectOne(new LambdaQueryWrapperX<MesCalPlanDO>().eq(MesCalPlanDO::getId,id).last("FOR UPDATE"));
+    }
 }

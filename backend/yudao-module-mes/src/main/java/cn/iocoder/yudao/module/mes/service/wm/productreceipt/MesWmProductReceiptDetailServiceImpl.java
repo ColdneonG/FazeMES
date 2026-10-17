@@ -5,9 +5,13 @@ import cn.iocoder.yudao.module.mes.controller.admin.wm.productreceipt.vo.detail.
 import cn.iocoder.yudao.module.mes.dal.dataobject.wm.productreceipt.MesWmProductReceiptDetailDO;
 import cn.iocoder.yudao.module.mes.dal.mysql.wm.productreceipt.MesWmProductReceiptDetailMapper;
 import cn.iocoder.yudao.module.mes.service.wm.warehouse.MesWmWarehouseAreaService;
+import cn.iocoder.yudao.module.mes.service.wm.warehouse.MesWmWarehouseService;
+import cn.iocoder.yudao.module.mes.service.wm.materialstock.MesWmMaterialStockService;
+import cn.iocoder.yudao.module.mes.dal.dataobject.wm.warehouse.MesWmWarehouseDO;
 import jakarta.annotation.Resource;
 import org.springframework.context.annotation.Lazy;
 import org.springframework.stereotype.Service;
+import org.springframework.transaction.annotation.Transactional;
 import org.springframework.validation.annotation.Validated;
 
 import java.util.List;
@@ -19,6 +23,7 @@ import static cn.iocoder.yudao.module.mes.enums.ErrorCodeConstants.*;
  * MES 产品收货单明细 Service 实现类
  */
 @Service
+@Transactional(rollbackFor = Exception.class)
 @Validated
 public class MesWmProductReceiptDetailServiceImpl implements MesWmProductReceiptDetailService {
 
@@ -30,6 +35,13 @@ public class MesWmProductReceiptDetailServiceImpl implements MesWmProductReceipt
     private MesWmProductReceiptService productReceiptService;
     @Resource
     private MesWmWarehouseAreaService warehouseAreaService;
+    @Resource
+    private MesWmWarehouseService warehouseService;
+    @Resource
+    @Lazy
+    private MesWmProductReceiptLineService lineService;
+    @Resource
+    private MesWmMaterialStockService materialStockService;
 
     @Override
     public Long createProductReceiptDetail(MesWmProductReceiptDetailSaveReqVO createReqVO) {
@@ -104,7 +116,24 @@ public class MesWmProductReceiptDetailServiceImpl implements MesWmProductReceipt
      */
     private void validateProductReceiptDetailSaveData(MesWmProductReceiptDetailSaveReqVO reqVO) {
         // 校验父单据存在且为可编辑状态
-        productReceiptService.validateProductReceiptEditable(reqVO.getReceiptId());
+        var receipt = productReceiptService.validateProductReceiptEditable(reqVO.getReceiptId());
+        var line = lineService.getProductReceiptLine(reqVO.getLineId());
+        if (line == null || !java.util.Objects.equals(line.getReceiptId(), reqVO.getReceiptId())
+                || !java.util.Objects.equals(line.getItemId(), reqVO.getItemId())) {
+            throw exception(WM_MATERIAL_STOCK_SELECTION_MISMATCH);
+        }
+        reqVO.setBatchId(line.getBatchId());
+        materialStockService.validateWorkOrderStock(line.getMaterialStockId(), receipt.getWorkOrderId(),
+                line.getItemId(), line.getBatchId(), reqVO.getQuantity());
+        java.math.BigDecimal allocated = productReceiptDetailMapper.selectListByLineId(line.getId()).stream()
+                .filter(d -> !java.util.Objects.equals(d.getId(), reqVO.getId()))
+                .map(MesWmProductReceiptDetailDO::getQuantity)
+                .reduce(java.math.BigDecimal.ZERO, java.math.BigDecimal::add);
+        if (allocated.add(reqVO.getQuantity()).compareTo(line.getQuantity()) > 0
+                || MesWmWarehouseDO.WIP_VIRTUAL_WAREHOUSE.equals(
+                warehouseService.validateWarehouseExists(reqVO.getWarehouseId()).getCode())) {
+            throw exception(WM_MATERIAL_STOCK_SELECTION_MISMATCH);
+        }
         // 校验仓库层级关系
         warehouseAreaService.validateWarehouseAreaExists(
                 reqVO.getWarehouseId(), reqVO.getLocationId(), reqVO.getAreaId());

@@ -10,6 +10,8 @@ import cn.iocoder.yudao.module.mes.enums.qc.MesQcTypeEnum;
 import com.baomidou.mybatisplus.annotation.KeySequence;
 import com.baomidou.mybatisplus.annotation.TableId;
 import com.baomidou.mybatisplus.annotation.TableName;
+import com.baomidou.mybatisplus.annotation.TableField;
+import com.baomidou.mybatisplus.annotation.FieldStrategy;
 import lombok.*;
 import cn.iocoder.yudao.module.mes.enums.DictTypeConstants;
 
@@ -56,6 +58,9 @@ public class MesQcDefectRecordDO extends BaseDO {
      * 关联 {@link MesQcIpqcLineDO#getId()}
      */
     private Long lineId;
+    /** 选用的常见缺陷，名称及等级保留登记时快照；历史/手填记录可为空。 */
+    @TableField(updateStrategy = FieldStrategy.ALWAYS)
+    private Long defectId;
     /**
      * 缺陷描述
      */

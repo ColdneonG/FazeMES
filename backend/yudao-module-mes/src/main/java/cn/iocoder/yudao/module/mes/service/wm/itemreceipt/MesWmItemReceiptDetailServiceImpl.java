@@ -13,6 +13,7 @@ import cn.iocoder.yudao.module.mes.service.wm.batch.MesWmBatchService;
 import jakarta.annotation.Resource;
 import org.springframework.context.annotation.Lazy;
 import org.springframework.stereotype.Service;
+import org.springframework.transaction.annotation.Transactional;
 import org.springframework.validation.annotation.Validated;
 
 import java.math.BigDecimal;
@@ -50,6 +51,7 @@ public class MesWmItemReceiptDetailServiceImpl implements MesWmItemReceiptDetail
     private MesWmMaterialStockService materialStockService;
 
     @Override
+    @Transactional(rollbackFor=Exception.class)
     public Long createItemReceiptDetail(MesWmItemReceiptDetailSaveReqVO createReqVO) {
         // 1. 校验数据
         itemReceiptService.validateItemReceiptEditable(createReqVO.getReceiptId());
@@ -65,6 +67,7 @@ public class MesWmItemReceiptDetailServiceImpl implements MesWmItemReceiptDetail
     }
 
     @Override
+    @Transactional(rollbackFor=Exception.class)
     public void updateItemReceiptDetail(MesWmItemReceiptDetailSaveReqVO updateReqVO) {
         // 1.1 校验存在
         MesWmItemReceiptDetailDO detail = validateItemReceiptDetailExists(updateReqVO.getId());
@@ -109,6 +112,7 @@ public class MesWmItemReceiptDetailServiceImpl implements MesWmItemReceiptDetail
     }
 
     @Override
+    @Transactional(rollbackFor=Exception.class)
     public void deleteItemReceiptDetail(Long id) {
         // 1.1 校验存在
         MesWmItemReceiptDetailDO detail = validateItemReceiptDetailExists(id);

@@ -63,6 +63,7 @@ public class MesWmTransferServiceImpl implements MesWmTransferService {
     }
 
     @Override
+    @Transactional(rollbackFor=Exception.class)
     public void updateTransfer(MesWmTransferSaveReqVO updateReqVO) {
         // 校验存在 + 草稿状态
         validateTransferExistsAndDraft(updateReqVO.getId());
@@ -149,6 +150,8 @@ public class MesWmTransferServiceImpl implements MesWmTransferService {
             }
         }
 
+        validateFinalQuantities(id);
+
         // 2. 更新状态：待上架 -> 待执行
         transfer.setStatus(MesWmTransferStatusEnum.APPROVED.getStatus());
         transferMapper.updateById(transfer);
@@ -163,6 +166,8 @@ public class MesWmTransferServiceImpl implements MesWmTransferService {
         if (CollUtil.isEmpty(lines)) {
             throw exception(WM_TRANSFER_NO_LINE);
         }
+
+        validateFinalQuantities(id);
 
         // 2. 创建库存事务（调拨移出 + 调拨移入）
         createTransferTransactions(transfer, lines);
@@ -193,6 +198,7 @@ public class MesWmTransferServiceImpl implements MesWmTransferService {
                 // 2.1 先执行出库：调拨移出（从源仓库扣减库存），出库数量基于当前明细的数量
                 Long outTransactionId = wmTransactionService.createTransaction(new MesWmTransactionSaveReqDTO()
                         .setType(MesWmTransactionTypeEnum.MOVE_OUT.getType()).setItemId(line.getItemId())
+                .setMaterialStockId(line.getMaterialStockId())
                         .setQuantity(detail.getQuantity().negate()) // 库存减少（按 detail 的数量出）
                         .setBatchId(line.getBatchId())
                         .setWarehouseId(line.getFromWarehouseId()).setLocationId(line.getFromLocationId()).setAreaId(line.getFromAreaId())
@@ -229,7 +235,7 @@ public class MesWmTransferServiceImpl implements MesWmTransferService {
 
     @Override
     public MesWmTransferDO validateTransferEditable(Long id) {
-        MesWmTransferDO transfer = transferMapper.selectById(id);
+        MesWmTransferDO transfer = transferMapper.selectForUpdate(id);
         if (transfer == null) {
             throw exception(WM_TRANSFER_NOT_EXISTS);
         }
@@ -257,7 +263,7 @@ public class MesWmTransferServiceImpl implements MesWmTransferService {
     }
 
     private MesWmTransferDO validateTransferExistsAndDraft(Long id) {
-        MesWmTransferDO transfer = transferMapper.selectById(id);
+        MesWmTransferDO transfer = transferMapper.selectForUpdate(id);
         if (transfer == null) {
             throw exception(WM_TRANSFER_NOT_EXISTS);
         }
@@ -268,7 +274,7 @@ public class MesWmTransferServiceImpl implements MesWmTransferService {
     }
 
     private MesWmTransferDO validateTransferExistsAndConfirm(Long id) {
-        MesWmTransferDO transfer = transferMapper.selectById(id);
+        MesWmTransferDO transfer = transferMapper.selectForUpdate(id);
         if (transfer == null) {
             throw exception(WM_TRANSFER_NOT_EXISTS);
         }
@@ -279,7 +285,7 @@ public class MesWmTransferServiceImpl implements MesWmTransferService {
     }
 
     private MesWmTransferDO validateTransferExistsAndApproving(Long id) {
-        MesWmTransferDO transfer = transferMapper.selectById(id);
+        MesWmTransferDO transfer = transferMapper.selectForUpdate(id);
         if (transfer == null) {
             throw exception(WM_TRANSFER_NOT_EXISTS);
         }
@@ -290,7 +296,7 @@ public class MesWmTransferServiceImpl implements MesWmTransferService {
     }
 
     private MesWmTransferDO validateTransferExistsAndApproved(Long id) {
-        MesWmTransferDO transfer = transferMapper.selectById(id);
+        MesWmTransferDO transfer = transferMapper.selectForUpdate(id);
         if (transfer == null) {
             throw exception(WM_TRANSFER_NOT_EXISTS);
         }
@@ -301,7 +307,7 @@ public class MesWmTransferServiceImpl implements MesWmTransferService {
     }
 
     private MesWmTransferDO validateTransferExistsAndNotFinished(Long id) {
-        MesWmTransferDO transfer = transferMapper.selectById(id);
+        MesWmTransferDO transfer = transferMapper.selectForUpdate(id);
         if (transfer == null) {
             throw exception(WM_TRANSFER_NOT_EXISTS);
         }
@@ -322,4 +328,24 @@ public class MesWmTransferServiceImpl implements MesWmTransferService {
         materialStockService.updateMaterialStockFrozen(materialStockIds, frozen);
     }
 
+    /** Final invariant under the document lock, before any stock movement. */
+    private void validateFinalQuantities(Long id) {
+        var lines=transferLineService.getTransferLineListByTransferId(id);
+        if(lines.isEmpty()) throw exception(cn.iocoder.yudao.module.mes.enums.ErrorCodeConstants.WM_TRANSFER_DETAIL_QUANTITY_MISMATCH);
+        var details=transferDetailService.getTransferDetailListByTransferId(id);
+        java.util.Map<Long,MesWmTransferLineDO> byId=new java.util.HashMap<>();
+        java.util.Map<Long,java.math.BigDecimal> totals=new java.util.HashMap<>();
+        for(var line:lines) byId.put(line.getId(),line);
+        for(var detail:details) {
+            var line=byId.get(detail.getLineId());
+            if(line==null || !java.util.Objects.equals(detail.getTransferId(),id)
+                || !java.util.Objects.equals(line.getItemId(),detail.getItemId())
+                || detail.getQuantity()==null || detail.getQuantity().signum()<=0)
+                throw exception(cn.iocoder.yudao.module.mes.enums.ErrorCodeConstants.WM_TRANSFER_DETAIL_QUANTITY_MISMATCH);
+            totals.merge(line.getId(),detail.getQuantity(),java.math.BigDecimal::add);
+        }
+        for(var line:lines) if(line.getQuantity()==null || line.getQuantity().signum()<=0
+            || line.getQuantity().compareTo(totals.getOrDefault(line.getId(),java.math.BigDecimal.ZERO))!=0)
+            throw exception(cn.iocoder.yudao.module.mes.enums.ErrorCodeConstants.WM_TRANSFER_DETAIL_QUANTITY_MISMATCH);
+    }
 }

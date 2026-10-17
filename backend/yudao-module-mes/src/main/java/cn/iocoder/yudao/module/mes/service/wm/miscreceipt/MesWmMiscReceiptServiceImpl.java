@@ -57,6 +57,7 @@ public class MesWmMiscReceiptServiceImpl implements MesWmMiscReceiptService {
     }
 
     @Override
+    @Transactional(rollbackFor=Exception.class)
     public void updateMiscReceipt(MesWmMiscReceiptSaveReqVO updateReqVO) {
         // 校验存在 + 草稿状态
         validateMiscReceiptExistsAndPrepare(updateReqVO.getId());
@@ -115,6 +116,8 @@ public class MesWmMiscReceiptServiceImpl implements MesWmMiscReceiptService {
             throw exception(WM_MISC_RECEIPT_STATUS_NOT_APPROVED);
         }
 
+        validateFinalQuantities(id);
+
         // 2. 遍历所有行，创建库存事务（增加库存 + 记录流水）
         createTransactionList(receipt);
 
@@ -151,7 +154,7 @@ public class MesWmMiscReceiptServiceImpl implements MesWmMiscReceiptService {
 
     @Override
     public MesWmMiscReceiptDO validateMiscReceiptExists(Long id) {
-        MesWmMiscReceiptDO receipt = miscReceiptMapper.selectById(id);
+        MesWmMiscReceiptDO receipt = miscReceiptMapper.selectForUpdate(id);
         if (receipt == null) {
             throw exception(WM_MISC_RECEIPT_NOT_EXISTS);
         }
@@ -185,4 +188,10 @@ public class MesWmMiscReceiptServiceImpl implements MesWmMiscReceiptService {
         validateMiscReceiptExistsAndPrepare(id);
     }
 
+    private void validateFinalQuantities(Long id) {
+        var lines=miscReceiptLineService.getMiscReceiptLineListByReceiptId(id);
+        if(lines.isEmpty()) throw exception(cn.iocoder.yudao.module.mes.enums.ErrorCodeConstants.WM_MISC_RECEIPT_QUANTITY_INVALID);
+        if(lines.stream().anyMatch(l->l.getQuantity()==null || l.getQuantity().signum()<=0))
+            throw exception(cn.iocoder.yudao.module.mes.enums.ErrorCodeConstants.WM_MISC_RECEIPT_QUANTITY_INVALID);
+    }
 }

@@ -112,7 +112,11 @@
     <!-- 非新建模式展示维修项目明细 -->
     <template v-if="formData.id">
       <el-divider content-position="center">维修项目明细</el-divider>
-      <RepairLineList :repair-id="formData.id" :disabled="isHeaderReadonly" />
+      <RepairLineList
+        :repair-id="formData.id"
+        :disabled="isFinish || isDetail"
+        :process-only="isConfirm"
+      />
     </template>
     <template #footer>
       <el-button v-if="isEditable" @click="submitForm" type="primary" :disabled="formLoading">
@@ -194,7 +198,7 @@ const showDetailFields = computed(() => {
   if (status == null) {
     return false
   }
-  return status >= MesDvRepairStatusEnum.FINISHED
+  return formData.value.result != null || status >= MesDvRepairStatusEnum.FINISHED
 }) // 已确认(4)及之后显示
 const dialogTitle = computed(() => {
   const titles: Record<string, string> = {
@@ -327,7 +331,9 @@ const handleConfirm = async () => {
 const handleFinish = async (result: number) => {
   const label = result === MesDvRepairResultEnum.PASS ? '通过' : '不通过'
   try {
-    await message.confirm(`确认验收${label}该维修工单？`)
+    await message.confirm(
+      `确认验收${label}该维修工单？${result === MesDvRepairResultEnum.FAIL ? '不通过将返回维修中。' : '通过后设备转为停机待投产。'}`
+    )
     formLoading.value = true
     await DvRepairApi.finishRepair(formData.value.id!, result)
     message.success(`验收${label}`)

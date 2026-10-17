@@ -38,6 +38,8 @@ public class MesQcDefectRecordServiceImpl implements MesQcDefectRecordService {
 
     @Resource
     private MesQcDefectRecordMapper defectRecordMapper;
+    @Resource
+    private cn.iocoder.yudao.module.mes.service.qc.defect.MesQcDefectService defectService;
 
     @Resource
     @Lazy
@@ -67,6 +69,7 @@ public class MesQcDefectRecordServiceImpl implements MesQcDefectRecordService {
     @Override
     @Transactional(rollbackFor = Exception.class)
     public Long createDefectRecord(MesQcDefectRecordSaveReqVO createReqVO) {
+        applyCommonDefect(createReqVO);
         // 1. 校验检验单和检验行存在
         validateQcAndLineExists(createReqVO.getQcType(), createReqVO.getQcId(), createReqVO.getLineId());
 
@@ -82,6 +85,7 @@ public class MesQcDefectRecordServiceImpl implements MesQcDefectRecordService {
     @Override
     @Transactional(rollbackFor = Exception.class)
     public void updateDefectRecord(MesQcDefectRecordSaveReqVO updateReqVO) {
+        applyCommonDefect(updateReqVO);
         // 1. 校验存在
         validateDefectRecordExists(updateReqVO.getId());
 
@@ -122,6 +126,21 @@ public class MesQcDefectRecordServiceImpl implements MesQcDefectRecordService {
     }
 
     // ==================== 校验方法 ====================
+
+    private void applyCommonDefect(MesQcDefectRecordSaveReqVO reqVO) {
+        if (reqVO.getQuantity() == null || reqVO.getQuantity() <= 0) {
+            throw new IllegalArgumentException("缺陷数量必须大于零");
+        }
+        if (reqVO.getDefectId() == null) {
+            return;
+        }
+        cn.iocoder.yudao.module.mes.dal.dataobject.qc.defect.MesQcDefectDO defect = defectService.getDefect(reqVO.getDefectId());
+        if (defect == null) {
+            throw exception(QC_DEFECT_NOT_EXISTS);
+        }
+        reqVO.setName(defect.getName());
+        reqVO.setLevel(defect.getLevel());
+    }
 
     private void validateQcAndLineExists(Integer qcType, Long qcId, Long lineId) {
         if (Objects.equals(qcType, MesQcTypeEnum.IQC.getType())) {

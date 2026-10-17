@@ -11,6 +11,7 @@ import cn.iocoder.yudao.module.mes.service.dv.machinery.MesDvMachineryService;
 import jakarta.annotation.Resource;
 import org.springframework.context.annotation.Lazy;
 import org.springframework.stereotype.Service;
+import org.springframework.transaction.annotation.Transactional;
 import org.springframework.validation.annotation.Validated;
 
 import java.util.List;
@@ -38,6 +39,7 @@ public class MesDvCheckPlanMachineryServiceImpl implements MesDvCheckPlanMachine
     private MesDvMachineryService machineryService;
 
     @Override
+    @Transactional(rollbackFor=Exception.class)
     public Long createCheckPlanMachinery(MesDvCheckPlanMachinerySaveReqVO createReqVO) {
         // 1.1 校验方案草稿状态
         MesDvCheckPlanDO currentPlan = checkPlanService.validateCheckPlanPrepare(createReqVO.getPlanId());
@@ -68,6 +70,7 @@ public class MesDvCheckPlanMachineryServiceImpl implements MesDvCheckPlanMachine
     }
 
     @Override
+    @Transactional(rollbackFor=Exception.class)
     public void deleteCheckPlanMachinery(Long id) {
         // 1.1 校验存在
         MesDvCheckPlanMachineryDO existRecord = checkPlanMachineryMapper.selectById(id);

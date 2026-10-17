@@ -26,10 +26,12 @@ public class MesCalPlanShiftSaveReqVO {
 
     @Schema(description = "开始时间", requiredMode = Schema.RequiredMode.REQUIRED, example = "08:00")
     @NotEmpty(message = "开始时间不能为空")
+    @jakarta.validation.constraints.Pattern(regexp="(?:[01][0-9]|2[0-3]):[0-5][0-9]",message="开始时间须为HH:mm")
     private String startTime;
 
     @Schema(description = "结束时间", requiredMode = Schema.RequiredMode.REQUIRED, example = "17:00")
     @NotEmpty(message = "结束时间不能为空")
+    @jakarta.validation.constraints.Pattern(regexp="(?:[01][0-9]|2[0-3]):[0-5][0-9]",message="结束时间须为HH:mm")
     private String endTime;
 
     @Schema(description = "备注")

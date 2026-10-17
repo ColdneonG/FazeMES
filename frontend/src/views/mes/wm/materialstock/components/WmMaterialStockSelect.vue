@@ -29,6 +29,7 @@
         <div v-if="selectedItem" class="leading-6">
           <div>物料：{{ selectedItem.itemName || '-' }}</div>
           <div>批次：{{ selectedItem.batchCode || '-' }}</div>
+          <div>工单：{{ selectedItem.workOrderCode || selectedItem.workOrderId || '-' }}</div>
           <div>数量：{{ selectedItem.quantity ?? '-' }}</div>
           <div>仓库：{{ selectedItem.warehouseName || '-' }}</div>
           <div>库区：{{ selectedItem.locationName || '-' }}</div>
@@ -51,6 +52,8 @@
     :multiple="false"
     :item-id="itemId"
     :batch-id="batchId"
+    :work-order-id="workOrderId"
+    :vendor-id="vendorId"
     :warehouse-id="warehouseId"
     :virtual-filter="virtualFilter"
     @selected="handleSelected"
@@ -71,6 +74,8 @@ defineOptions({ name: 'WmMaterialStockSelect', inheritAttrs: false })
 const props = withDefaults(
   defineProps<{
     modelValue?: number // 绑定的库存 ID
+    workOrderId?: number // 固定工单归属
+    vendorId?: number // 固定供应商
     itemId?: number // 按物料 ID 过滤
     batchId?: number // 按批次 ID 过滤
     warehouseId?: number // 按仓库 ID 过滤

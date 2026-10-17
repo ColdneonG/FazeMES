@@ -66,7 +66,11 @@
         </el-col>
         <el-col :span="8">
           <el-form-item label="客户" prop="clientId">
-            <MdClientSelect v-model="formData.clientId" :disabled="isHeaderReadonly" />
+            <MdClientSelect
+              v-model="formData.clientId"
+              :disabled="isHeaderReadonly"
+              @change="formData.oqcId = undefined"
+            />
           </el-form-item>
         </el-col>
       </el-row>
@@ -96,6 +100,30 @@
               placeholder="请输入收货地址"
               :disabled="isHeaderReadonly"
             />
+          </el-form-item>
+        </el-col>
+      </el-row>
+      <el-row>
+        <el-col :span="24">
+          <el-form-item label="参考出货检验" prop="oqcId">
+            <el-select
+              v-model="formData.oqcId"
+              filterable
+              clearable
+              :disabled="isHeaderReadonly || !formData.clientId"
+              placeholder="选择已完成的同客户出货检验单"
+              class="!w-1/1"
+            >
+              <el-option
+                v-for="qc in oqcOptions"
+                :key="qc.id"
+                :value="qc.id"
+                :label="`${qc.code} · ${qc.name}`"
+              />
+            </el-select>
+            <div class="text-12px text-gray-500"
+              >参考关联；发货通知与各物料的必检要求仍逐项执行。</div
+            >
           </el-form-item>
         </el-col>
       </el-row>
@@ -218,6 +246,7 @@ const formData = ref({
   status: undefined as number | undefined,
   clientId: undefined as number | undefined,
   noticeId: undefined as number | undefined,
+  oqcId: undefined as number | undefined,
   salesOrderCode: undefined as string | undefined,
   salesDate: undefined,
   contactName: undefined as string | undefined,
@@ -248,12 +277,28 @@ const handleNoticeChange = (notice: WmSalesNoticeVO | undefined) => {
   if (!notice) {
     return
   }
+  if (formData.value.clientId !== notice.clientId) formData.value.oqcId = undefined
   formData.value.salesOrderCode = notice.salesOrderCode
   formData.value.clientId = notice.clientId
   formData.value.contactName = notice.recipientName
   formData.value.contactTelephone = notice.recipientTelephone
   formData.value.contactAddress = notice.recipientAddress
 }
+
+const oqcOptions = ref<{ id: number; code: string; name: string }[]>([])
+watch(
+  () => formData.value.clientId,
+  async (clientId) => {
+    oqcOptions.value = []
+    if (!clientId) return
+    try {
+      const options = await WmProductSalesApi.getQcOptions(clientId)
+      if (formData.value.clientId === clientId) oqcOptions.value = options
+    } catch {
+      message.error('出货检验列表加载失败，请重试')
+    }
+  }
+)
 
 /** 打开弹窗 */
 const open = async (type: string, id?: number) => {
@@ -386,6 +431,7 @@ const resetForm = () => {
     status: undefined as number | undefined,
     clientId: undefined as number | undefined,
     noticeId: undefined as number | undefined,
+    oqcId: undefined as number | undefined,
     salesOrderCode: undefined as string | undefined,
     salesDate: undefined,
     contactName: undefined as string | undefined,

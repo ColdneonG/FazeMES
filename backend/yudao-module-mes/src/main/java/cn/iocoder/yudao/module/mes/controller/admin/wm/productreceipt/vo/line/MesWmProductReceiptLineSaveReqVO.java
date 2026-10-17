@@ -23,6 +23,7 @@ public class MesWmProductReceiptLineSaveReqVO {
     private Long itemId;
 
     @Schema(description = "库存物资记录编号", example = "1")
+    @NotNull(message = "请选择本工单的产品库存")
     private Long materialStockId;
 
     @Schema(description = "收货数量", requiredMode = Schema.RequiredMode.REQUIRED, example = "100.00")

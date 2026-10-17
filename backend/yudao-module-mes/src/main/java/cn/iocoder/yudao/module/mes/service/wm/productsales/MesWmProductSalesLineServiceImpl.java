@@ -58,6 +58,7 @@ public class MesWmProductSalesLineServiceImpl implements MesWmProductSalesLineSe
     private MesWmSalesNoticeLineService salesNoticeLineService;
 
     @Override
+    @Transactional(rollbackFor=Exception.class)
     public Long createProductSalesLine(MesWmProductSalesLineSaveReqVO createReqVO) {
         // 校验数据
         validateLineSaveData(createReqVO);
@@ -69,7 +70,12 @@ public class MesWmProductSalesLineServiceImpl implements MesWmProductSalesLineSe
     }
 
     @Override
+    @Transactional(rollbackFor=Exception.class)
     public void updateProductSalesLine(MesWmProductSalesLineSaveReqVO updateReqVO) {
+        // A line cannot be moved out of a completed document by changing the request parent id.
+        var persistedParent=productSalesLineMapper.selectById(updateReqVO.getId());
+        if(persistedParent==null) throw exception(cn.iocoder.yudao.module.mes.enums.ErrorCodeConstants.WM_MATERIAL_STOCK_SELECTION_MISMATCH);
+        updateReqVO.setSalesId(persistedParent.getSalesId());
         // 校验存在
         MesWmProductSalesLineDO oldLine = validateProductSalesLineExists(updateReqVO.getId());
         // 校验数据

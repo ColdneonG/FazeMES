@@ -121,6 +121,12 @@ public class MesWmReturnVendorServiceImpl implements MesWmReturnVendorService {
         if (ObjUtil.notEqual(MesWmReturnVendorStatusEnum.APPROVING.getStatus(), returnVendor.getStatus())) {
             throw exception(WM_RETURN_VENDOR_STATUS_INVALID);
         }
+        returnVendorDetailService.validateReturnVendorDetails(id);
+        if (!checkReturnVendorQuantity(id)) {
+            throw exception(WM_RETURN_VENDOR_DETAIL_QUANTITY_MISMATCH);
+        }
+        validateFinalQuantities(id);
+
         // 执行拣货（待拣货 -> 待执行退货）
         returnVendorMapper.updateById(new MesWmReturnVendorDO()
                 .setId(id).setStatus(MesWmReturnVendorStatusEnum.APPROVED.getStatus()));
@@ -139,6 +145,12 @@ public class MesWmReturnVendorServiceImpl implements MesWmReturnVendorService {
         if (CollUtil.isEmpty(details)) {
             throw exception(WM_RETURN_VENDOR_NO_DETAIL);
         }
+        returnVendorDetailService.validateReturnVendorDetails(id);
+        if (!checkReturnVendorQuantity(id)) {
+            throw exception(WM_RETURN_VENDOR_DETAIL_QUANTITY_MISMATCH);
+        }
+
+        validateFinalQuantities(id);
 
         // 2. 遍历所有明细，创建库存事务（扣减库存 + 记录流水）
         createTransactionList(returnVendor, details);
@@ -152,6 +164,7 @@ public class MesWmReturnVendorServiceImpl implements MesWmReturnVendorService {
         wmTransactionService.createTransactionList(convertList(details, detail -> new MesWmTransactionSaveReqDTO()
                 .setType(MesWmTransactionTypeEnum.OUT.getType()).setItemId(detail.getItemId())
                 .setQuantity(detail.getQuantity().negate()) // 出库数量为负数
+                .setMaterialStockId(detail.getMaterialStockId())
                 .setBatchId(detail.getBatchId()).setBatchCode(detail.getBatchCode())
                 .setWarehouseId(detail.getWarehouseId()).setLocationId(detail.getLocationId()).setAreaId(detail.getAreaId())
                 .setVendorId(returnVendor.getVendorId())
@@ -192,7 +205,7 @@ public class MesWmReturnVendorServiceImpl implements MesWmReturnVendorService {
 
     @Override
     public MesWmReturnVendorDO validateReturnVendorExists(Long id) {
-        MesWmReturnVendorDO returnVendor = returnVendorMapper.selectById(id);
+        MesWmReturnVendorDO returnVendor = returnVendorMapper.selectForUpdate(id);
         if (returnVendor == null) {
             throw exception(WM_RETURN_VENDOR_NOT_EXISTS);
         }
@@ -240,4 +253,24 @@ public class MesWmReturnVendorServiceImpl implements MesWmReturnVendorService {
         return returnVendorMapper.selectCountByVendorId(vendorId);
     }
 
+    /** Final invariant under the document lock, before any stock movement. */
+    private void validateFinalQuantities(Long id) {
+        var lines=returnVendorLineService.getReturnVendorLineListByReturnId(id);
+        if(lines.isEmpty()) throw exception(cn.iocoder.yudao.module.mes.enums.ErrorCodeConstants.WM_RETURN_VENDOR_DETAIL_QUANTITY_MISMATCH);
+        var details=returnVendorDetailService.getReturnVendorDetailListByReturnId(id);
+        java.util.Map<Long,MesWmReturnVendorLineDO> byId=new java.util.HashMap<>();
+        java.util.Map<Long,java.math.BigDecimal> totals=new java.util.HashMap<>();
+        for(var line:lines) byId.put(line.getId(),line);
+        for(var detail:details) {
+            var line=byId.get(detail.getLineId());
+            if(line==null || !java.util.Objects.equals(detail.getReturnId(),id)
+                || !java.util.Objects.equals(line.getItemId(),detail.getItemId())
+                || detail.getQuantity()==null || detail.getQuantity().signum()<=0)
+                throw exception(cn.iocoder.yudao.module.mes.enums.ErrorCodeConstants.WM_RETURN_VENDOR_DETAIL_QUANTITY_MISMATCH);
+            totals.merge(line.getId(),detail.getQuantity(),java.math.BigDecimal::add);
+        }
+        for(var line:lines) if(line.getQuantity()==null || line.getQuantity().signum()<=0
+            || line.getQuantity().compareTo(totals.getOrDefault(line.getId(),java.math.BigDecimal.ZERO))!=0)
+            throw exception(cn.iocoder.yudao.module.mes.enums.ErrorCodeConstants.WM_RETURN_VENDOR_DETAIL_QUANTITY_MISMATCH);
+    }
 }

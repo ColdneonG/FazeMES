@@ -48,6 +48,9 @@ public class MesWmMaterialStockPageReqVO extends PageParam {
     @Schema(description = "供应商编号", example = "1")
     private Long vendorId;
 
+    @Schema(description = "所属生产工单，仅查询该工单线边库存")
+    private Long workOrderId;
+
     @Schema(description = "是否冻结", example = "false")
     private Boolean frozen;
 

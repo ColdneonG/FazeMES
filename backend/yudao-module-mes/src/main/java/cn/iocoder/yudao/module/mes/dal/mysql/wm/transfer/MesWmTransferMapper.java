@@ -26,4 +26,7 @@ public interface MesWmTransferMapper extends BaseMapperX<MesWmTransferDO> {
         return selectOne(MesWmTransferDO::getCode, code);
     }
 
+    default MesWmTransferDO selectForUpdate(Long id) {
+        return selectOne(new LambdaQueryWrapperX<MesWmTransferDO>().eq(MesWmTransferDO::getId,id).last("FOR UPDATE"));
+    }
 }

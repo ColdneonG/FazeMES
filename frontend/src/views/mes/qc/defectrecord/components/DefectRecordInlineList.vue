@@ -1,6 +1,6 @@
 <!-- 缺陷记录内联编辑列表（通用组件，供 IQC/IPQC/OQC/RQC 各模块复用） -->
 <template>
-  <Dialog title="缺陷记录" v-model="dialogVisible" width="900px">
+  <Dialog class="mes-qc-responsive" title="缺陷记录" v-model="dialogVisible" width="min(900px, calc(100vw - 24px))">
     <div class="overflow-hidden">
       <!-- 新增按钮 -->
       <el-row v-if="!isDetail" class="mb-10px">
@@ -11,11 +11,20 @@
 
       <!-- 内联编辑表格 -->
       <el-table v-loading="loading" :data="list" :stripe="true" :show-overflow-tooltip="true">
+        <el-table-column label="选用常见缺陷" min-width="180">
+          <template #default="scope">
+            <el-select v-if="scope.row.editing" v-model="scope.row.defectId" filterable clearable placeholder="可选，或手填描述" @change="(id) => selectCommonDefect(scope.row, id)">
+              <el-option v-for="defect in commonDefects" :key="defect.id" :label="defect.code + ' ' + defect.name" :value="defect.id" />
+            </el-select>
+            <span v-else>{{ commonDefects.find((defect) => defect.id === scope.row.defectId)?.code || '手工登记' }}</span>
+          </template>
+        </el-table-column>
         <el-table-column label="缺陷描述" align="center" min-width="200">
           <template #default="scope">
             <el-input
               v-if="scope.row.editing"
               v-model="scope.row.name"
+              :readonly="!!scope.row.defectId"
               type="textarea"
               :autosize="{ minRows: 1, maxRows: 4 }"
               placeholder="请输入缺陷描述"
@@ -25,7 +34,7 @@
         </el-table-column>
         <el-table-column label="缺陷等级" align="center" width="140">
           <template #default="scope">
-            <el-select v-if="scope.row.editing" v-model="scope.row.level" placeholder="请选择">
+            <el-select v-if="scope.row.editing" v-model="scope.row.level" placeholder="请选择" :disabled="!!scope.row.defectId">
               <el-option
                 v-for="dict in getIntDictOptions(DICT_TYPE.MES_DEFECT_LEVEL)"
                 :key="dict.value"
@@ -101,6 +110,7 @@
 <script setup lang="ts">
 import { getIntDictOptions, DICT_TYPE } from '@/utils/dict'
 import { QcDefectRecordApi, QcDefectRecordVO } from '@/api/mes/qc/defectrecord'
+import { QcDefectApi, type QcDefectVO } from '@/api/mes/qc/defect'
 
 /** 缺陷记录内联编辑弹窗（通用组件，供 IQC/IPQC/OQC/RQC 各模块复用） */
 defineOptions({ name: 'DefectRecordInlineList' })
@@ -119,6 +129,14 @@ const dialogVisible = ref(false)
 const loading = ref(false)
 const list = ref<any[]>([])
 const total = ref(0)
+const commonDefects = ref<QcDefectVO[]>([])
+const selectCommonDefect = (row: any, id?: number) => {
+  const selected = commonDefects.value.find((item) => item.id === id)
+  if (selected) {
+    row.name = selected.name
+    row.level = selected.level
+  }
+}
 
 // 当前操作的参数（通过 open 方法传入）
 const qcType = ref<number>(0) // 检验类型：MesQcTypeEnum
@@ -140,6 +158,7 @@ const open = async (type: number, id: number, line: number) => {
   lineId.value = line
   queryParams.pageNo = 1
   dialogVisible.value = true
+  commonDefects.value = await QcDefectApi.getDefectSimpleList()
   await getList()
 }
 defineExpose({ open })

@@ -110,6 +110,7 @@ public class MesCalCalendarController {
                     .build();
             result.add(calendarVO);
         }
+        result.sort(Comparator.comparing(MesCalCalendarRespVO::getDay));
         return success(result);
     }
 
@@ -140,10 +141,18 @@ public class MesCalCalendarController {
                                                                   Map<Long, MesCalPlanShiftDO> shiftMap) {
         MesCalTeamDO team = teamMap.get(ts.getTeamId());
         MesCalPlanShiftDO shift = shiftMap.get(ts.getShiftId());
-        return MesCalCalendarRespVO.TeamShiftItem.builder()
+        MesCalCalendarRespVO.TeamShiftItem item=MesCalCalendarRespVO.TeamShiftItem.builder()
                 .teamId(ts.getTeamId()).teamName(team != null ? team.getName() : null)
                 .shiftId(ts.getShiftId()).shiftName(shift != null ? shift.getName() : null)
                 .sort(ts.getSort()).build();
+        if(shift!=null) {
+            var range=cn.iocoder.yudao.module.mes.service.cal.plan.MesCalShiftTimeRange.resolve(
+                ts.getDay().toLocalDate(),shift.getStartTime(),shift.getEndTime());
+            item.setStartTime(shift.getStartTime()).setEndTime(shift.getEndTime())
+                .setStartDateTime(range.startDateTime()).setEndDateTime(range.endDateTime())
+                .setWorkingMinutes(range.workingMinutes()).setCrossesMidnight(range.crossesMidnight());
+        }
+        return item;
     }
 
     /**

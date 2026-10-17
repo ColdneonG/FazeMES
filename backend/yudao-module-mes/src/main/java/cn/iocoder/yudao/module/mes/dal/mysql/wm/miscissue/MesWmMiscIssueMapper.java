@@ -35,4 +35,7 @@ public interface MesWmMiscIssueMapper extends BaseMapperX<MesWmMiscIssueDO> {
         return selectList(MesWmMiscIssueDO::getStatus, status);
     }
 
+    default MesWmMiscIssueDO selectForUpdate(Long id) {
+        return selectOne(new LambdaQueryWrapperX<MesWmMiscIssueDO>().eq(MesWmMiscIssueDO::getId,id).last("FOR UPDATE"));
+    }
 }

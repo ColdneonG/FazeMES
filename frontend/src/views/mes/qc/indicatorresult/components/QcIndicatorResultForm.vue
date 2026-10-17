@@ -1,6 +1,6 @@
 <!-- MES 检验结果表单弹窗（含动态检测值输入） -->
 <template>
-  <Dialog :title="dialogTitle" v-model="dialogVisible" width="960px">
+  <Dialog class="mes-qc-responsive" :title="dialogTitle" v-model="dialogVisible" width="min(900px, calc(100vw - 24px))">
     <el-form
       ref="formRef"
       :model="formData"

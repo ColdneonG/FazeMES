@@ -44,6 +44,7 @@ import static cn.iocoder.yudao.framework.test.core.util.AssertUtils.assertServic
 import static cn.iocoder.yudao.framework.test.core.util.RandomUtils.randomLongId;
 import static cn.iocoder.yudao.module.mes.enums.ErrorCodeConstants.PRO_FEEDBACK_ROUTE_PROCESS_INVALID;
 import static cn.iocoder.yudao.module.mes.enums.ErrorCodeConstants.PRO_ROUTE_NOT_EXISTS;
+import static cn.iocoder.yudao.module.mes.enums.ErrorCodeConstants.WM_MATERIAL_STOCK_INSUFFICIENT;
 import static org.junit.jupiter.api.Assertions.*;
 import static org.mockito.ArgumentMatchers.*;
 import static org.mockito.Mockito.*;
@@ -185,39 +186,11 @@ public class MesWmItemConsumeServiceImplTest extends BaseDbUnitTest {
         when(materialStockService.getMaterialStockList(any(MesWmMaterialStockListReqVO.class)))
                 .thenReturn(Collections.emptyList());
 
-        // 调用
-        MesWmItemConsumeDO result = itemConsumeService.generateItemConsume(feedback);
-
-        // 断言 1：消耗单头已入库
-        assertNotNull(result);
-        assertNotNull(result.getId());
-        assertEquals(MesWmItemConsumeStatusEnum.PREPARE.getStatus(), result.getStatus());
-        assertEquals(feedback.getId(), result.getFeedbackId());
-
-        // 断言 2：消耗行正确
-        @SuppressWarnings("unchecked")
-        ArgumentCaptor<List<MesWmItemConsumeLineDO>> lineCaptor = ArgumentCaptor.forClass(List.class);
-        verify(itemConsumeLineService).createItemConsumeLineBatch(lineCaptor.capture());
-        List<MesWmItemConsumeLineDO> lines = lineCaptor.getValue();
-        assertEquals(1, lines.size());
-        assertEquals(bomItemId, lines.get(0).getItemId());
-        // 消耗数量 = 2 × 10 = 20
-        assertEquals(0, new BigDecimal("20").compareTo(lines.get(0).getQuantity()));
-
-        // 断言 3：生成 1 条无批次的 detail
-        @SuppressWarnings("unchecked")
-        ArgumentCaptor<List<MesWmItemConsumeDetailDO>> detailCaptor = ArgumentCaptor.forClass(List.class);
-        verify(itemConsumeDetailService).createItemConsumeDetailBatch(detailCaptor.capture());
-        List<MesWmItemConsumeDetailDO> details = detailCaptor.getValue();
-        assertEquals(1, details.size());
-        MesWmItemConsumeDetailDO detail = details.get(0);
-        assertEquals(bomItemId, detail.getItemId());
-        assertEquals(0, new BigDecimal("20").compareTo(detail.getQuantity()));
-        assertNull(detail.getMaterialStockId());
-        assertNull(detail.getBatchId());
-        assertEquals(WAREHOUSE_ID, detail.getWarehouseId());
-        assertEquals(LOCATION_ID, detail.getLocationId());
-        assertEquals(AREA_ID, detail.getAreaId());
+        // 缺料整笔失败，不生成无批次明细或负库存。
+        long countBefore = itemConsumeMapper.selectCount();
+        assertServiceException(() -> itemConsumeService.generateItemConsume(feedback), WM_MATERIAL_STOCK_INSUFFICIENT);
+        verify(itemConsumeDetailService, never()).createItemConsumeDetailBatch(any());
+        assertEquals(countBefore, itemConsumeMapper.selectCount());
     }
 
     @Test
@@ -236,6 +209,7 @@ public class MesWmItemConsumeServiceImplTest extends BaseDbUnitTest {
         MesWmMaterialStockDO stock = new MesWmMaterialStockDO();
         stock.setId(stockId);
         stock.setItemId(bomItemId);
+        stock.setWorkOrderId(feedback.getWorkOrderId());
         stock.setQuantity(new BigDecimal("50")); // 库存 50 > 需求 30
         stock.setBatchId(batchId);
         stock.setBatchCode("BATCH-001");
@@ -275,6 +249,7 @@ public class MesWmItemConsumeServiceImplTest extends BaseDbUnitTest {
         MesWmMaterialStockDO stock1 = new MesWmMaterialStockDO();
         stock1.setId(stockId1);
         stock1.setItemId(bomItemId);
+        stock1.setWorkOrderId(feedback.getWorkOrderId());
         stock1.setQuantity(new BigDecimal("20")); // 先进先出：先消耗这批
         stock1.setBatchId(1L);
         stock1.setBatchCode("BATCH-001");
@@ -282,6 +257,7 @@ public class MesWmItemConsumeServiceImplTest extends BaseDbUnitTest {
         MesWmMaterialStockDO stock2 = new MesWmMaterialStockDO();
         stock2.setId(stockId2);
         stock2.setItemId(bomItemId);
+        stock2.setWorkOrderId(feedback.getWorkOrderId());
         stock2.setQuantity(new BigDecimal("15"));
         stock2.setBatchId(2L);
         stock2.setBatchCode("BATCH-002");
@@ -327,32 +303,18 @@ public class MesWmItemConsumeServiceImplTest extends BaseDbUnitTest {
         MesWmMaterialStockDO stock = new MesWmMaterialStockDO();
         stock.setId(stockId);
         stock.setItemId(bomItemId);
+        stock.setWorkOrderId(feedback.getWorkOrderId());
         stock.setQuantity(new BigDecimal("18")); // 不够 30
         stock.setBatchId(1L);
         stock.setBatchCode("BATCH-001");
         when(materialStockService.getMaterialStockList(any(MesWmMaterialStockListReqVO.class)))
                 .thenReturn(ListUtil.of(stock));
 
-        // 调用
-        MesWmItemConsumeDO result = itemConsumeService.generateItemConsume(feedback);
-
-        // 断言：2 条 detail（18 带批次 + 12 无批次）
-        assertNotNull(result);
-        @SuppressWarnings("unchecked")
-        ArgumentCaptor<List<MesWmItemConsumeDetailDO>> detailCaptor = ArgumentCaptor.forClass(List.class);
-        verify(itemConsumeDetailService).createItemConsumeDetailBatch(detailCaptor.capture());
-        List<MesWmItemConsumeDetailDO> details = detailCaptor.getValue();
-        assertEquals(2, details.size());
-
-        // 第 1 条：批次全部消耗 18
-        assertEquals(stockId, details.get(0).getMaterialStockId());
-        assertEquals(0, new BigDecimal("18").compareTo(details.get(0).getQuantity()));
-        assertEquals("BATCH-001", details.get(0).getBatchCode());
-
-        // 第 2 条：剩余 12 无批次
-        assertNull(details.get(1).getMaterialStockId());
-        assertEquals(0, new BigDecimal("12").compareTo(details.get(1).getQuantity()));
-        assertNull(details.get(1).getBatchId());
+        // 缺料整笔失败，不生成无批次明细或负库存。
+        long countBefore = itemConsumeMapper.selectCount();
+        assertServiceException(() -> itemConsumeService.generateItemConsume(feedback), WM_MATERIAL_STOCK_INSUFFICIENT);
+        verify(itemConsumeDetailService, never()).createItemConsumeDetailBatch(any());
+        assertEquals(countBefore, itemConsumeMapper.selectCount());
     }
 
     @Test
@@ -377,6 +339,7 @@ public class MesWmItemConsumeServiceImplTest extends BaseDbUnitTest {
         MesWmMaterialStockDO stockA = new MesWmMaterialStockDO();
         stockA.setId(randomLongId());
         stockA.setItemId(itemA);
+        stockA.setWorkOrderId(feedback.getWorkOrderId());
         stockA.setQuantity(new BigDecimal("100"));
         stockA.setBatchId(1L);
         stockA.setBatchCode("BATCH-A");
@@ -388,35 +351,11 @@ public class MesWmItemConsumeServiceImplTest extends BaseDbUnitTest {
                 req != null && itemB.equals(req.getItemId()))))
                 .thenReturn(Collections.emptyList());
 
-        // 调用
-        MesWmItemConsumeDO result = itemConsumeService.generateItemConsume(feedback);
-
-        // 断言：2 条消耗行，2 条 detail
-        assertNotNull(result);
-
-        @SuppressWarnings("unchecked")
-        ArgumentCaptor<List<MesWmItemConsumeLineDO>> lineCaptor = ArgumentCaptor.forClass(List.class);
-        verify(itemConsumeLineService).createItemConsumeLineBatch(lineCaptor.capture());
-        assertEquals(2, lineCaptor.getValue().size());
-
-        @SuppressWarnings("unchecked")
-        ArgumentCaptor<List<MesWmItemConsumeDetailDO>> detailCaptor = ArgumentCaptor.forClass(List.class);
-        verify(itemConsumeDetailService).createItemConsumeDetailBatch(detailCaptor.capture());
-        List<MesWmItemConsumeDetailDO> details = detailCaptor.getValue();
-        assertEquals(2, details.size());
-
-        // 物料 A：有批次
-        MesWmItemConsumeDetailDO detailA = CollUtil.findOne(details,
-                d -> itemA.equals(d.getItemId()));
-        assertEquals(0, new BigDecimal("10").compareTo(detailA.getQuantity()));
-        assertNotNull(detailA.getMaterialStockId());
-        assertEquals("BATCH-A", detailA.getBatchCode());
-
-        // 物料 B：无批次
-        MesWmItemConsumeDetailDO detailB = CollUtil.findOne(details,
-                d -> itemB.equals(d.getItemId()));
-        assertEquals(0, new BigDecimal("20").compareTo(detailB.getQuantity()));
-        assertNull(detailB.getMaterialStockId());
+        // 缺料整笔失败，不生成无批次明细或负库存。
+        long countBefore = itemConsumeMapper.selectCount();
+        assertServiceException(() -> itemConsumeService.generateItemConsume(feedback), WM_MATERIAL_STOCK_INSUFFICIENT);
+        verify(itemConsumeDetailService, never()).createItemConsumeDetailBatch(any());
+        assertEquals(countBefore, itemConsumeMapper.selectCount());
     }
 
     // ========== finishItemConsume ==========
@@ -435,11 +374,11 @@ public class MesWmItemConsumeServiceImplTest extends BaseDbUnitTest {
         Long lineId1 = randomLongId();
         Long lineId2 = randomLongId();
         MesWmItemConsumeDetailDO detail1 = MesWmItemConsumeDetailDO.builder()
-                .consumeId(consume.getId()).lineId(lineId1).itemId(randomLongId())
+                .consumeId(consume.getId()).lineId(lineId1).materialStockId(111L).itemId(randomLongId())
                 .quantity(new BigDecimal("20")).batchId(1L).batchCode("BATCH-001")
                 .warehouseId(WAREHOUSE_ID).locationId(LOCATION_ID).areaId(AREA_ID).build();
         MesWmItemConsumeDetailDO detail2 = MesWmItemConsumeDetailDO.builder()
-                .consumeId(consume.getId()).lineId(lineId2).itemId(randomLongId())
+                .consumeId(consume.getId()).lineId(lineId2).materialStockId(112L).itemId(randomLongId())
                 .quantity(new BigDecimal("12"))
                 .warehouseId(WAREHOUSE_ID).locationId(LOCATION_ID).areaId(AREA_ID).build();
         when(itemConsumeDetailService.getItemConsumeDetailListByConsumeId(consume.getId()))
@@ -465,7 +404,9 @@ public class MesWmItemConsumeServiceImplTest extends BaseDbUnitTest {
         assertEquals(1L, tx1.getBatchId());
         assertEquals("BATCH-001", tx1.getBatchCode());
         assertEquals(WAREHOUSE_ID, tx1.getWarehouseId());
-        assertFalse(tx1.getCheckFlag());
+        assertNull(tx1.getCheckFlag());
+        assertEquals(consume.getWorkOrderId(), tx1.getWorkOrderId());
+        assertEquals(detail1.getMaterialStockId(), tx1.getMaterialStockId());
         assertEquals(MesBizTypeConstants.WM_ITEM_CONSUME, tx1.getBizType());
         assertEquals(consume.getId(), tx1.getBizId());
         assertEquals(lineId1, tx1.getBizLineId());
@@ -520,6 +461,25 @@ public class MesWmItemConsumeServiceImplTest extends BaseDbUnitTest {
     public void testGetByFeedbackId_notExists() {
         MesWmItemConsumeDO result = itemConsumeService.getByFeedbackId(randomLongId());
         assertNull(result);
+    }
+
+
+    @Test
+    public void testGenerateItemConsume_rejectsOtherOrderAndFrozenStock() {
+        MesProFeedbackDO feedback = buildFeedback();
+        var bom = new MesProRouteProductBomDO().setItemId(99L).setQuantity(BigDecimal.ONE);
+        when(routeProductBomService.getRouteProductBomList(any(), any(), any())).thenReturn(List.of(bom));
+        var other = MesWmMaterialStockDO.builder().id(11L).itemId(99L)
+                .workOrderId(feedback.getWorkOrderId() + 1).quantity(new BigDecimal("1000")).build();
+        var frozen = MesWmMaterialStockDO.builder().id(12L).itemId(99L)
+                .workOrderId(feedback.getWorkOrderId()).frozen(true).quantity(new BigDecimal("1000")).build();
+        when(materialStockService.getMaterialStockList(any(MesWmMaterialStockListReqVO.class)))
+                .thenReturn(List.of(other, frozen));
+        long countBefore = itemConsumeMapper.selectCount();
+        assertServiceException(() -> itemConsumeService.generateItemConsume(feedback), WM_MATERIAL_STOCK_INSUFFICIENT);
+        verify(materialStockService).getMaterialStockList(argThat((MesWmMaterialStockListReqVO q) ->
+                q != null && feedback.getWorkOrderId().equals(q.getWorkOrderId())));
+        assertEquals(countBefore, itemConsumeMapper.selectCount());
     }
 
 }

@@ -149,7 +149,9 @@ public class MesQcIqcServiceImpl implements MesQcIqcService {
      */
     private void writeBackSourceDoc(MesQcIqcDO iqc) {
         // 校验：sourceDocType 非空时，lineId 和 docId 必须非空，否则为脏数据
-        if (iqc.getSourceDocType() == null) {
+        // Legacy schemas default an omitted source type to 0 for manual inspections.
+        if (iqc.getSourceDocType() == null || (Objects.equals(iqc.getSourceDocType(), 0)
+                && iqc.getSourceDocId() == null && iqc.getSourceLineId() == null)) {
             return;
         }
         if (ObjectUtil.hasNull(iqc.getSourceLineId(), iqc.getSourceDocId())) {

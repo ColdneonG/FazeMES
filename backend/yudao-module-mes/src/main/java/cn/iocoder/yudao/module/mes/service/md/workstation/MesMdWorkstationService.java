@@ -58,6 +58,12 @@ public interface MesMdWorkstationService {
     MesMdWorkstationDO validateWorkstationExistsAndEnable(Long id);
 
     /**
+     * 校验工作站当前可以生产（存在、启用及当前设备/工装/人员/排班可用）。
+     * 用于实际作业和报工，不用于未来排产或资源只读查询。
+     */
+    MesMdWorkstationDO validateWorkstationAvailable(Long id);
+
+    /**
      * 获得工作站
      *
      * @param id 编号

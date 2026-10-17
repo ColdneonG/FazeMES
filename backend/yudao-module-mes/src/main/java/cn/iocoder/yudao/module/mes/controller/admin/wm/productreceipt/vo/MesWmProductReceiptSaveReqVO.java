@@ -23,6 +23,7 @@ public class MesWmProductReceiptSaveReqVO {
     private String name;
 
     @Schema(description = "生产工单编号", example = "1")
+    @NotNull(message = "生产工单不能为空")
     private Long workOrderId;
 
     @Schema(description = "收货日期", requiredMode = Schema.RequiredMode.REQUIRED)

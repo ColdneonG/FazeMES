@@ -13,6 +13,11 @@ import org.apache.ibatis.annotations.Mapper;
 @Mapper
 public interface MesWmReturnIssueMapper extends BaseMapperX<MesWmReturnIssueDO> {
 
+    default MesWmReturnIssueDO selectByIdForUpdate(Long id) {
+        return selectOne(new LambdaQueryWrapperX<MesWmReturnIssueDO>()
+                .eq(MesWmReturnIssueDO::getId, id).last("FOR UPDATE"));
+    }
+
     default PageResult<MesWmReturnIssueDO> selectPage(MesWmReturnIssuePageReqVO reqVO) {
         return selectPage(reqVO, new LambdaQueryWrapperX<MesWmReturnIssueDO>()
                 .likeIfPresent(MesWmReturnIssueDO::getCode, reqVO.getCode())

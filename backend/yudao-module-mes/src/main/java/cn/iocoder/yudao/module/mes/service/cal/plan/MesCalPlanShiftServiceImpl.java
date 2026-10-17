@@ -12,6 +12,7 @@ import cn.iocoder.yudao.module.mes.enums.cal.MesCalShiftTypeEnum;
 import jakarta.annotation.Resource;
 import org.springframework.context.annotation.Lazy;
 import org.springframework.stereotype.Service;
+import org.springframework.transaction.annotation.Transactional;
 import org.springframework.validation.annotation.Validated;
 
 import cn.hutool.core.collection.CollUtil;
@@ -40,12 +41,14 @@ public class MesCalPlanShiftServiceImpl implements MesCalPlanShiftService {
     private MesCalPlanService planService;
 
     @Override
+    @Transactional(rollbackFor=Exception.class)
     public Long createPlanShift(MesCalPlanShiftSaveReqVO createReqVO) {
         // 校验计划未确认
         planService.validatePlanPrepare(createReqVO.getPlanId());
         // 校验班次数量限制
         validatePlanShiftCount(createReqVO.getPlanId());
 
+        MesCalShiftTimeRange.resolve(java.time.LocalDate.now(),createReqVO.getStartTime(),createReqVO.getEndTime());
         // 插入
         MesCalPlanShiftDO planShift = BeanUtils.toBean(createReqVO, MesCalPlanShiftDO.class);
         planShiftMapper.insert(planShift);
@@ -53,17 +56,20 @@ public class MesCalPlanShiftServiceImpl implements MesCalPlanShiftService {
     }
 
     @Override
+    @Transactional(rollbackFor=Exception.class)
     public void updatePlanShift(MesCalPlanShiftSaveReqVO updateReqVO) {
         // 校验存在
         MesCalPlanShiftDO existShift = validatePlanShiftExists(updateReqVO.getId());
         // 校验计划未确认
         planService.validatePlanPrepare(existShift.getPlanId());
+        MesCalShiftTimeRange.resolve(java.time.LocalDate.now(),updateReqVO.getStartTime(),updateReqVO.getEndTime());
         // 更新
         MesCalPlanShiftDO updateObj = BeanUtils.toBean(updateReqVO, MesCalPlanShiftDO.class);
         planShiftMapper.updateById(updateObj);
     }
 
     @Override
+    @Transactional(rollbackFor=Exception.class)
     public void deletePlanShift(Long id) {
         // 校验存在
         MesCalPlanShiftDO existShift = validatePlanShiftExists(id);

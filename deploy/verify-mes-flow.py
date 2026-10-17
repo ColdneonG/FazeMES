@@ -100,7 +100,7 @@ def ensure_task(api, order_id, process, quantity, when):
         "workOrderId": order_id, "workstationId": process, "routeId": 900001,
         "processId": process, "itemId": 900103, "quantity": quantity,
         "startTime": when.isoformat(timespec="seconds"), "duration": 1,
-        "endTime": (when + timedelta(days=1)).isoformat(timespec="seconds"),
+        "endTime": (when + timedelta(hours=8)).isoformat(timespec="seconds"),
         "colorCode": "#2563eb", "remark": "Local HTTP acceptance flow",
     })
 

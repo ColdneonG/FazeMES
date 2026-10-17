@@ -19,6 +19,8 @@
             <WmMaterialStockSelect
               v-model="formData.materialStockId"
               :item-id="formData.itemId"
+              :vendor-id="props.vendorId"
+              :batch-id="lineBatchId"
               @change="handleStockChange"
             />
           </el-form-item>
@@ -89,6 +91,7 @@ defineOptions({ name: 'ReturnVendorDetailForm' })
 
 const props = defineProps<{
   returnId: number
+  vendorId?: number
 }>()
 
 const emit = defineEmits(['success'])
@@ -120,6 +123,7 @@ const formRules = reactive({
   quantity: [{ required: true, message: '数量不能为空', trigger: 'blur' }]
 })
 const formRef = ref() // 表单 Ref
+const lineBatchId = ref<number>()
 
 /** 库存选中回调 —— 自动回填仓库/库区/库位/批次/数量 */
 const handleStockChange = (stock: WmMaterialStockVO | undefined) => {
@@ -143,11 +147,18 @@ const handleStockChange = (stock: WmMaterialStockVO | undefined) => {
 }
 
 /** 打开弹窗 */
-const open = async (type: string, lineId: number, itemId?: number, detailId?: number) => {
+const open = async (
+  type: string,
+  lineId: number,
+  itemId?: number,
+  detailId?: number,
+  batchId?: number
+) => {
   dialogVisible.value = true
   dialogTitle.value = type === 'create' ? '添加拣货明细' : '编辑拣货明细'
   formType.value = type
   resetForm()
+  lineBatchId.value = batchId
   formData.value.lineId = lineId
   // 修改时，设置数据
   if (detailId) {

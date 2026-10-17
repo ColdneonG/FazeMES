@@ -5,6 +5,9 @@ import cn.iocoder.yudao.framework.common.util.object.BeanUtils;
 import cn.iocoder.yudao.module.mes.controller.admin.wm.productreceipt.vo.line.MesWmProductReceiptLinePageReqVO;
 import cn.iocoder.yudao.module.mes.controller.admin.wm.productreceipt.vo.line.MesWmProductReceiptLineSaveReqVO;
 import cn.iocoder.yudao.module.mes.dal.dataobject.wm.productreceipt.MesWmProductReceiptLineDO;
+import cn.iocoder.yudao.module.mes.dal.dataobject.wm.productreceipt.MesWmProductReceiptDO;
+import cn.iocoder.yudao.module.mes.service.wm.materialstock.MesWmMaterialStockService;
+import cn.iocoder.yudao.module.mes.service.pro.workorder.MesProWorkOrderService;
 import cn.iocoder.yudao.module.mes.dal.mysql.wm.productreceipt.MesWmProductReceiptLineMapper;
 import cn.iocoder.yudao.module.mes.service.md.item.MesMdItemService;
 import jakarta.annotation.Resource;
@@ -16,12 +19,13 @@ import org.springframework.validation.annotation.Validated;
 import java.util.List;
 
 import static cn.iocoder.yudao.framework.common.exception.util.ServiceExceptionUtil.exception;
-import static cn.iocoder.yudao.module.mes.enums.ErrorCodeConstants.WM_PRODUCT_RECPT_LINE_NOT_EXISTS;
+import static cn.iocoder.yudao.module.mes.enums.ErrorCodeConstants.*;
 
 /**
  * MES 产品收货单行 Service 实现类
  */
 @Service
+@Transactional(rollbackFor = Exception.class)
 @Validated
 public class MesWmProductReceiptLineServiceImpl implements MesWmProductReceiptLineService {
 
@@ -35,6 +39,10 @@ public class MesWmProductReceiptLineServiceImpl implements MesWmProductReceiptLi
     private MesWmProductReceiptDetailService productReceiptDetailService;
     @Resource
     private MesMdItemService itemService;
+    @Resource
+    private MesWmMaterialStockService materialStockService;
+    @Resource
+    private MesProWorkOrderService workOrderService;
 
     @Override
     public Long createProductReceiptLine(MesWmProductReceiptLineSaveReqVO createReqVO) {
@@ -107,9 +115,15 @@ public class MesWmProductReceiptLineServiceImpl implements MesWmProductReceiptLi
      */
     private void validateProductReceiptLineSaveData(MesWmProductReceiptLineSaveReqVO reqVO) {
         // 校验父单据存在且为可编辑状态
-        productReceiptService.validateProductReceiptEditable(reqVO.getReceiptId());
+        MesWmProductReceiptDO receipt = productReceiptService.validateProductReceiptEditable(reqVO.getReceiptId());
         // 校验物料存在
         itemService.validateItemExistsAndEnable(reqVO.getItemId());
+        if (receipt.getWorkOrderId() == null || !java.util.Objects.equals(reqVO.getItemId(),
+                workOrderService.validateWorkOrderExists(receipt.getWorkOrderId()).getProductId())) {
+            throw exception(WM_MATERIAL_STOCK_SELECTION_MISMATCH);
+        }
+        materialStockService.validateWorkOrderStock(reqVO.getMaterialStockId(), receipt.getWorkOrderId(),
+                reqVO.getItemId(), reqVO.getBatchId(), reqVO.getQuantity());
     }
 
 }

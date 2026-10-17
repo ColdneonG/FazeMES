@@ -1,5 +1,13 @@
 package cn.iocoder.yudao.module.mes.service.pro.task;
 
+import cn.iocoder.yudao.framework.common.enums.CommonStatusEnum;
+import cn.iocoder.yudao.module.mes.dal.dataobject.md.workstation.MesMdWorkstationDO;
+import cn.iocoder.yudao.module.mes.dal.dataobject.pro.route.MesProRouteDO;
+import cn.iocoder.yudao.module.mes.dal.dataobject.pro.route.MesProRouteProductDO;
+import cn.iocoder.yudao.module.mes.dal.dataobject.pro.route.MesProRouteProcessDO;
+import cn.iocoder.yudao.module.mes.enums.pro.MesProWorkOrderStatusEnum;
+import cn.iocoder.yudao.module.mes.service.pro.route.MesProRouteProductService;
+import cn.iocoder.yudao.module.mes.service.pro.route.MesProRouteProcessService;
 import cn.iocoder.yudao.module.mes.controller.admin.pro.task.vo.MesProTaskSaveReqVO;
 import cn.iocoder.yudao.module.mes.dal.dataobject.md.item.MesMdItemDO;
 import cn.iocoder.yudao.module.mes.dal.dataobject.pro.task.MesProTaskDO;
@@ -20,6 +28,7 @@ import org.mockito.Mock;
 import org.mockito.junit.jupiter.MockitoExtension;
 
 import java.math.BigDecimal;
+import java.time.LocalDateTime;
 import java.util.Collection;
 import java.util.HashMap;
 import java.util.LinkedHashMap;
@@ -41,6 +50,8 @@ class MesProTaskScheduleProgressTest {
     @Mock private MesMdWorkstationService workstationService;
     @Mock private MesProProcessService processService;
     @Mock private MesProRouteService routeService;
+    @Mock private MesProRouteProductService routeProductService;
+    @Mock private MesProRouteProcessService routeProcessService;
     @Mock private MesMdAutoCodeRecordService autoCodeRecordService;
 
     private final Map<Long, MesProTaskDO> tasks = new LinkedHashMap<>();
@@ -50,11 +61,20 @@ class MesProTaskScheduleProgressTest {
     @BeforeEach
     void mapperState() {
         lenient().when(workOrderService.validateWorkOrderExistsForUpdate(anyLong()))
-                .thenAnswer(i -> new MesProWorkOrderDO().setId(i.getArgument(0)));
+                .thenAnswer(i -> new MesProWorkOrderDO().setId(i.getArgument(0)).setProductId(9L)
+                        .setStatus(MesProWorkOrderStatusEnum.CONFIRMED.getStatus()));
         lenient().doAnswer(i -> { scheduled.put(i.getArgument(0), i.getArgument(1)); return null; })
                 .when(workOrderService).updateScheduledQuantity(anyLong(), any());
-        lenient().when(itemService.validateItemExists(anyLong()))
+        lenient().when(itemService.validateItemExistsAndEnable(anyLong()))
                 .thenReturn(new MesMdItemDO().setId(9L).setName("Demo product"));
+        lenient().when(workstationService.validateWorkstationExistsAndEnable(anyLong()))
+                .thenAnswer(i -> new MesMdWorkstationDO().setId(i.getArgument(0)).setProcessId(i.getArgument(0)));
+        lenient().when(routeService.validateRouteExists(8L))
+                .thenReturn(new MesProRouteDO().setId(8L).setStatus(CommonStatusEnum.ENABLE.getStatus()));
+        lenient().when(routeProductService.getRouteProductByItemId(9L))
+                .thenReturn(new MesProRouteProductDO().setRouteId(8L).setItemId(9L));
+        lenient().when(routeProcessService.getRouteProcessByRouteIdAndProcessId(eq(8L), anyLong()))
+                .thenReturn(new MesProRouteProcessDO());
         lenient().when(autoCodeRecordService.generateAutoCode(anyString())).thenReturn("DEMO-TASK");
         lenient().when(mapper.selectById(anyLong())).thenAnswer(i -> copy(tasks.get(i.<Long>getArgument(0))));
         lenient().when(mapper.selectByIdForUpdate(anyLong())).thenAnswer(i -> copy(tasks.get(i.<Long>getArgument(0))));
@@ -258,14 +278,104 @@ class MesProTaskScheduleProgressTest {
         assertThrows(RuntimeException.class, () -> service.validateTaskExistsForUpdate(id, 2L));
     }
 
+    @Test
+    void createRejectsDraftWorkOrderBeforeInsertingTask() {
+        when(workOrderService.validateWorkOrderExistsForUpdate(1L)).thenReturn(
+                new MesProWorkOrderDO().setId(1L).setProductId(9L).setStatus(MesProWorkOrderStatusEnum.PREPARE.getStatus()));
+        assertThrows(cn.iocoder.yudao.framework.common.exception.ServiceException.class, () -> create(1L, 10L, "20"));
+        verify(mapper, never()).insert(any(MesProTaskDO.class));
+    }
+
+    @Test
+    void futureSchedulingDoesNotDependOnTheCurrentShiftAvailability() {
+        lenient().when(workstationService.validateWorkstationAvailable(anyLong())).thenThrow(
+                new cn.iocoder.yudao.framework.common.exception.ServiceException(
+                        cn.iocoder.yudao.module.mes.enums.ErrorCodeConstants.MD_WORKSTATION_RESOURCE_UNAVAILABLE));
+
+        Long id = create(1L, 10L, "20");
+
+        assertEquals(LocalDateTime.of(2026, 10, 18, 8, 0), tasks.get(id).getStartTime());
+        assertQuantity(1L, "20");
+        verify(workstationService).validateWorkstationExistsAndEnable(10L);
+        verify(workstationService, never()).validateWorkstationAvailable(anyLong());
+    }
+
+    @Test
+    void createRejectsWorkstationOfAnotherProcess() {
+        when(workstationService.validateWorkstationExistsAndEnable(10L))
+                .thenReturn(new MesMdWorkstationDO().setId(10L).setProcessId(20L));
+        assertThrows(cn.iocoder.yudao.framework.common.exception.ServiceException.class, () -> create(1L, 10L, "20"));
+        verify(mapper, never()).insert(any(MesProTaskDO.class));
+    }
+
+    @Test
+    void createRejectsDisabledRouteAndProductAssignedToAnotherRoute() {
+        MesProRouteDO route = new MesProRouteDO().setId(8L).setStatus(CommonStatusEnum.DISABLE.getStatus());
+        when(routeService.validateRouteExists(8L)).thenReturn(route);
+        assertThrows(cn.iocoder.yudao.framework.common.exception.ServiceException.class, () -> create(1L, 10L, "20"));
+        route.setStatus(CommonStatusEnum.ENABLE.getStatus());
+        when(routeProductService.getRouteProductByItemId(9L)).thenReturn(new MesProRouteProductDO().setRouteId(99L));
+        assertThrows(cn.iocoder.yudao.framework.common.exception.ServiceException.class, () -> create(1L, 10L, "20"));
+        verify(mapper, never()).insert(any(MesProTaskDO.class));
+    }
+
+    @Test
+    void createRejectsProcessOutsideRouteAndProductOutsideWorkOrder() {
+        when(routeProcessService.getRouteProcessByRouteIdAndProcessId(8L, 10L)).thenReturn(null);
+        assertThrows(cn.iocoder.yudao.framework.common.exception.ServiceException.class, () -> create(1L, 10L, "20"));
+        when(workOrderService.validateWorkOrderExistsForUpdate(1L)).thenReturn(
+                new MesProWorkOrderDO().setId(1L).setProductId(99L).setStatus(MesProWorkOrderStatusEnum.CONFIRMED.getStatus()));
+        assertThrows(cn.iocoder.yudao.framework.common.exception.ServiceException.class, () -> create(1L, 10L, "20"));
+        verify(mapper, never()).insert(any(MesProTaskDO.class));
+    }
+
+    @Test
+    void ganttTimeOnlyPatchPreservesAllocationAndUsesEightHourWorkdays() {
+        Long id = create(1L, 10L, "20");
+        MesProTaskSaveReqVO change = new MesProTaskSaveReqVO();
+        change.setId(id);
+        change.setStartTime(LocalDateTime.of(2026, 10, 19, 8, 0));
+        change.setDuration(2);
+        change.setEndTime(change.getStartTime().plusHours(16));
+
+        service.updateTask(change);
+
+        assertEquals(change.getStartTime(), tasks.get(id).getStartTime());
+        assertEquals(change.getEndTime(), tasks.get(id).getEndTime());
+        assertEquals(2, tasks.get(id).getDuration());
+        assertEquals(new BigDecimal("20"), tasks.get(id).getQuantity());
+        assertQuantity(1L, "20");
+    }
+
+    @Test
+    void ganttRejectsInvertedOrInconsistentTimesAndClosedOrder() {
+        Long id = create(1L, 10L, "20");
+        clearInvocations(mapper);
+        MesProTaskSaveReqVO change = new MesProTaskSaveReqVO();
+        change.setId(id);
+        change.setStartTime(LocalDateTime.of(2026, 10, 19, 8, 0));
+        change.setDuration(1);
+        change.setEndTime(change.getStartTime().minusHours(8));
+        assertThrows(cn.iocoder.yudao.framework.common.exception.ServiceException.class, () -> service.updateTask(change));
+        change.setEndTime(change.getStartTime().plusHours(16));
+        assertThrows(cn.iocoder.yudao.framework.common.exception.ServiceException.class, () -> service.updateTask(change));
+        change.setEndTime(change.getStartTime().plusHours(8));
+        when(workOrderService.validateWorkOrderExistsForUpdate(1L)).thenReturn(
+                new MesProWorkOrderDO().setId(1L).setProductId(9L).setStatus(MesProWorkOrderStatusEnum.FINISHED.getStatus()));
+        assertThrows(cn.iocoder.yudao.framework.common.exception.ServiceException.class, () -> service.updateTask(change));
+        verify(mapper, never()).updateById(any(MesProTaskDO.class));
+    }
+
     private Long create(Long workOrderId, Long processId, String quantity) {
         MesProTaskSaveReqVO req = new MesProTaskSaveReqVO();
         req.setWorkOrderId(workOrderId);
         req.setRouteId(8L);
         req.setProcessId(processId);
-        req.setWorkstationId(nextId);
+        req.setWorkstationId(processId);
         req.setItemId(9L);
         req.setQuantity(new BigDecimal(quantity));
+        req.setStartTime(LocalDateTime.of(2026, 10, 18, 8, 0));
+        req.setDuration(1);
         return service.createTask(req);
     }
 
@@ -280,9 +390,7 @@ class MesProTaskScheduleProgressTest {
 
     private MesProTaskDO copy(MesProTaskDO task) {
         if (task == null) return null;
-        return new MesProTaskDO().setId(task.getId()).setWorkOrderId(task.getWorkOrderId())
-                .setRouteId(task.getRouteId()).setProcessId(task.getProcessId()).setItemId(task.getItemId())
-                .setQuantity(task.getQuantity()).setStatus(task.getStatus());
+        return cn.iocoder.yudao.framework.common.util.object.BeanUtils.toBean(task, MesProTaskDO.class);
     }
 
     private void merge(MesProTaskDO update) {
@@ -291,6 +399,9 @@ class MesProTaskScheduleProgressTest {
         if (update.getRouteId() != null) task.setRouteId(update.getRouteId());
         if (update.getProcessId() != null) task.setProcessId(update.getProcessId());
         if (update.getQuantity() != null) task.setQuantity(update.getQuantity());
+        if (update.getStartTime() != null) task.setStartTime(update.getStartTime());
+        if (update.getEndTime() != null) task.setEndTime(update.getEndTime());
+        if (update.getDuration() != null) task.setDuration(update.getDuration());
         if (update.getStatus() != null) task.setStatus(update.getStatus());
     }
 }

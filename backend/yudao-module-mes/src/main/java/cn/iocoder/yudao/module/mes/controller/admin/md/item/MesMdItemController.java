@@ -52,6 +52,16 @@ public class MesMdItemController {
     private MesMdItemTypeService itemTypeService;
     @Resource
     private MesMdUnitMeasureService unitMeasureService;
+    @Resource
+    private cn.iocoder.yudao.module.mes.service.md.item.MesMdStockWarningService stockWarningService;
+
+    @GetMapping("/stock-warning")
+    @Operation(summary = "查询低于下限或高于上限的实物库存预警")
+    @PreAuthorize("@ss.hasPermission('mes:md-item:query')")
+    public CommonResult<List<cn.iocoder.yudao.module.mes.controller.admin.md.item.vo.MesMdStockWarningRespVO>> getStockWarnings(
+            @RequestParam(required = false) String keyword, @RequestParam(required = false) String level) {
+        return success(stockWarningService.getWarnings(keyword, level));
+    }
 
     @PostMapping("/create")
     @Operation(summary = "创建物料产品")

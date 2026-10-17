@@ -32,4 +32,7 @@ public interface MesWmOutsourceReceiptMapper extends BaseMapperX<MesWmOutsourceR
         return selectCount(MesWmOutsourceReceiptDO::getVendorId, vendorId);
     }
 
+    default MesWmOutsourceReceiptDO selectForUpdate(Long id) {
+        return selectOne(new LambdaQueryWrapperX<MesWmOutsourceReceiptDO>().eq(MesWmOutsourceReceiptDO::getId,id).last("FOR UPDATE"));
+    }
 }

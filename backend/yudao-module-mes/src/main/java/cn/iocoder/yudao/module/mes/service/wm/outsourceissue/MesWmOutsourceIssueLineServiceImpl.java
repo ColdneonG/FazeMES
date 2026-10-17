@@ -17,6 +17,7 @@ import cn.iocoder.yudao.module.mes.service.wm.batch.MesWmBatchService;
 import jakarta.annotation.Resource;
 import org.springframework.context.annotation.Lazy;
 import org.springframework.stereotype.Service;
+import org.springframework.transaction.annotation.Transactional;
 import org.springframework.validation.annotation.Validated;
 
 import java.util.List;
@@ -35,6 +36,8 @@ import static cn.iocoder.yudao.module.mes.enums.ErrorCodeConstants.WM_OUTSOURCE_
 @Validated
 public class MesWmOutsourceIssueLineServiceImpl implements MesWmOutsourceIssueLineService {
 
+    @Resource private cn.iocoder.yudao.module.mes.dal.mysql.wm.outsourceissue.MesWmOutsourceIssueMapper documentMapper;
+
     @Resource
     private MesWmOutsourceIssueLineMapper outsourceIssueLineMapper;
 
@@ -51,7 +54,9 @@ public class MesWmOutsourceIssueLineServiceImpl implements MesWmOutsourceIssueLi
     private MesProWorkOrderBomService workOrderBomService;
 
     @Override
+    @Transactional(rollbackFor=Exception.class)
     public Long createOutsourceIssueLine(MesWmOutsourceIssueLineSaveReqVO createReqVO) {
+        lockDocumentForEdit(createReqVO.getIssueId());
         // 校验数据
         validateOutsourceIssueLineSaveData(createReqVO);
         // 根据 batchCode 解析 batchId
@@ -64,7 +69,13 @@ public class MesWmOutsourceIssueLineServiceImpl implements MesWmOutsourceIssueLi
     }
 
     @Override
+    @Transactional(rollbackFor=Exception.class)
     public void updateOutsourceIssueLine(MesWmOutsourceIssueLineSaveReqVO updateReqVO) {
+        var persisted=outsourceIssueLineMapper.selectById(updateReqVO.getId());
+        if(persisted==null) throw exception(cn.iocoder.yudao.module.mes.enums.ErrorCodeConstants.WM_OUTSOURCE_ISSUE_STATUS_NOT_APPROVING);
+        lockDocumentForEdit(persisted.getIssueId());
+        if(!java.util.Objects.equals(persisted.getIssueId(),updateReqVO.getIssueId()))
+            throw exception(cn.iocoder.yudao.module.mes.enums.ErrorCodeConstants.WM_OUTSOURCE_ISSUE_STATUS_NOT_APPROVING);
         // 校验存在
         validateOutsourceIssueLineExists(updateReqVO.getId());
         // 校验数据
@@ -78,7 +89,11 @@ public class MesWmOutsourceIssueLineServiceImpl implements MesWmOutsourceIssueLi
     }
 
     @Override
+    @Transactional(rollbackFor=Exception.class)
     public void deleteOutsourceIssueLine(Long id) {
+        var persisted=outsourceIssueLineMapper.selectById(id);
+        if(persisted==null) throw exception(cn.iocoder.yudao.module.mes.enums.ErrorCodeConstants.WM_OUTSOURCE_ISSUE_STATUS_NOT_APPROVING);
+        lockDocumentForEdit(persisted.getIssueId());
         // 校验存在
         validateOutsourceIssueLineExists(id);
 
@@ -155,4 +170,10 @@ public class MesWmOutsourceIssueLineServiceImpl implements MesWmOutsourceIssueLi
         reqVO.setBatchId(batch != null ? batch.getId() : null);
     }
 
+    private void lockDocumentForEdit(Long id) {
+        var document=documentMapper.selectForUpdate(id);
+        if(document==null || (!java.util.Objects.equals(document.getStatus(),cn.iocoder.yudao.module.mes.enums.MesOrderStatusConstants.PREPARE)
+            && !java.util.Objects.equals(document.getStatus(),cn.iocoder.yudao.module.mes.enums.MesOrderStatusConstants.APPROVING)))
+            throw exception(cn.iocoder.yudao.module.mes.enums.ErrorCodeConstants.WM_OUTSOURCE_ISSUE_STATUS_NOT_APPROVING);
+    }
 }

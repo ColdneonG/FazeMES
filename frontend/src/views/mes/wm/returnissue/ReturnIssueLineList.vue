@@ -95,6 +95,8 @@
               placeholder="请选择库存"
               class="!w-1/1"
               virtual-filter="only"
+              :work-order-id="props.workOrderId"
+              :disabled="props.workOrderId == null"
               @change="handleStockChange"
             />
           </el-form-item>
@@ -168,6 +170,7 @@ defineOptions({ name: 'ReturnIssueLineList' })
 
 const props = defineProps<{
   issueId: number
+  workOrderId?: number
   formType: string
 }>()
 

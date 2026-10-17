@@ -7,6 +7,7 @@ export interface WmProductSalesVO {
   name: string
   clientId: number
   clientName: string
+  oqcId?: number
   salesOrderCode: string
   shipmentDate: string
   contactName: string
@@ -18,6 +19,8 @@ export interface WmProductSalesVO {
 
 // MES 销售出库单 API
 export const WmProductSalesApi = {
+  getQcOptions: (clientId: number): Promise<{ id: number; code: string; name: string }[]> =>
+    request.get({ url: '/mes/wm/product-sales/qc-options', params: { clientId } }),
   // 查询销售出库单分页
   getProductSalesPage: async (params: any) => {
     return await request.get({ url: '/mes/wm/product-sales/page', params })

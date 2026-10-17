@@ -47,6 +47,13 @@ public class MesCalCalendarRespVO {
         @Schema(description = "排序", example = "1")
         private Integer sort;
 
+        private String startTime;
+        private String endTime;
+        private LocalDateTime startDateTime;
+        private LocalDateTime endDateTime;
+        private Long workingMinutes;
+        private Boolean crossesMidnight;
+
     }
 
 }

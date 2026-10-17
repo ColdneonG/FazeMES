@@ -6,6 +6,7 @@ export interface QcDefectRecordVO {
   qcType: number // 检验类型
   qcId: number // 检验单 ID
   lineId: number // 检验行 ID
+  defectId?: number // 常见缺陷来源，保留名称/等级快照
   name: string // 缺陷描述
   level: number // 缺陷等级
   quantity: number // 缺陷数量

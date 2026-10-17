@@ -1,5 +1,6 @@
 <!-- MES 物料产品列表 -->
 <template>
+  <ContentWrap><MdStockWarnings /></ContentWrap>
 
   <el-row :gutter="20">
     <!-- 左侧分类树 -->
@@ -178,6 +179,7 @@ import download from '@/utils/download'
 import { CommonStatusEnum } from '@/utils/constants'
 import { MdItemApi, MdItemVO } from '@/api/mes/md/item'
 import MdItemForm from './MdItemForm.vue'
+import MdStockWarnings from './MdStockWarnings.vue'
 import MdItemImportForm from './MdItemImportForm.vue'
 import MdItemTypeTree from './type/components/MdItemTypeTree.vue'
 
@@ -236,7 +238,7 @@ const handleTypeNodeClick = (row: any) => {
 /** 添加/修改操作 */
 const formRef = ref()
 const openForm = (type: string, id?: number) => {
-  formRef.value.open(type, id)
+  formRef.value.open(type, id, queryParams.itemTypeId)
 }
 
 /** 切换物料状态 */

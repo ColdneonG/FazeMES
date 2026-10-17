@@ -45,6 +45,7 @@ public class MesWmTransferLineServiceImpl implements MesWmTransferLineService {
     private MesWmMaterialStockService materialStockService;
 
     @Override
+    @Transactional(rollbackFor=Exception.class)
     public Long createTransferLine(MesWmTransferLineSaveReqVO createReqVO) {
         // 校验
         validateLineSaveData(createReqVO);
@@ -56,7 +57,12 @@ public class MesWmTransferLineServiceImpl implements MesWmTransferLineService {
     }
 
     @Override
+    @Transactional(rollbackFor=Exception.class)
     public void updateTransferLine(MesWmTransferLineSaveReqVO updateReqVO) {
+        // A line cannot be moved out of a completed document by changing the request parent id.
+        var persistedParent=transferLineMapper.selectById(updateReqVO.getId());
+        if(persistedParent==null) throw exception(cn.iocoder.yudao.module.mes.enums.ErrorCodeConstants.WM_MATERIAL_STOCK_SELECTION_MISMATCH);
+        updateReqVO.setTransferId(persistedParent.getTransferId());
         // 校验存在
         validateTransferLineExists(updateReqVO.getId());
         // 校验

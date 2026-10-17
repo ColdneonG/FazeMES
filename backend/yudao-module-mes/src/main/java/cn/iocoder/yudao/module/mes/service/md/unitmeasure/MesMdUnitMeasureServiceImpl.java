@@ -63,6 +63,7 @@ public class MesMdUnitMeasureServiceImpl implements MesMdUnitMeasureService {
 
     @Override
     public Long createUnitMeasure(MesMdUnitMeasureSaveReqVO createReqVO) {
+        validatePrimaryRelation(createReqVO);
         // 校验编码唯一
         validateUnitMeasureCodeUnique(null, createReqVO.getCode());
 
@@ -76,6 +77,7 @@ public class MesMdUnitMeasureServiceImpl implements MesMdUnitMeasureService {
     public void updateUnitMeasure(MesMdUnitMeasureSaveReqVO updateReqVO) {
         // 校验存在
         validateUnitMeasureExists(updateReqVO.getId());
+        validatePrimaryRelation(updateReqVO);
         // 校验编码唯一
         validateUnitMeasureCodeUnique(updateReqVO.getId(), updateReqVO.getCode());
 
@@ -119,6 +121,31 @@ public class MesMdUnitMeasureServiceImpl implements MesMdUnitMeasureService {
     private void validateUnitMeasureExists(Long id) {
         if (unitMeasureMapper.selectById(id) == null) {
             throw exception(MD_UNIT_MEASURE_NOT_EXISTS);
+        }
+    }
+
+    private void validatePrimaryRelation(MesMdUnitMeasureSaveReqVO reqVO) {
+        if (reqVO.getId() != null && unitMeasureMapper.selectCountByPrimaryId(reqVO.getId()) > 0
+                && (!Boolean.TRUE.equals(reqVO.getPrimaryFlag()) || !cn.iocoder.yudao.framework.common.enums.CommonStatusEnum.isEnable(reqVO.getStatus()))) {
+            throw exception(MD_UNIT_MEASURE_PRIMARY_IN_USE);
+        }
+        if (Boolean.TRUE.equals(reqVO.getPrimaryFlag())) {
+            reqVO.setPrimaryId(null);
+            reqVO.setChangeRate(null);
+            return;
+        }
+        if (reqVO.getPrimaryId() == null || Objects.equals(reqVO.getId(), reqVO.getPrimaryId())) {
+            throw exception(MD_UNIT_MEASURE_PRIMARY_REQUIRED);
+        }
+        MesMdUnitMeasureDO primary = unitMeasureMapper.selectById(reqVO.getPrimaryId());
+        if (primary == null || !Boolean.TRUE.equals(primary.getPrimaryFlag())
+                || !cn.iocoder.yudao.framework.common.enums.CommonStatusEnum.isEnable(primary.getStatus())) {
+            throw exception(MD_UNIT_MEASURE_PRIMARY_REQUIRED);
+        }
+        if (reqVO.getChangeRate() == null || reqVO.getChangeRate().signum() <= 0
+                || reqVO.getChangeRate().stripTrailingZeros().scale() > 6
+                || reqVO.getChangeRate().precision() - reqVO.getChangeRate().scale() > 14) {
+            throw exception(MD_UNIT_MEASURE_RATE_INVALID);
         }
     }
 

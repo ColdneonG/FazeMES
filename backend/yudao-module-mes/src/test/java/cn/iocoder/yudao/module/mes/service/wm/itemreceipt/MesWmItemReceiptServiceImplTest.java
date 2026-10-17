@@ -2,6 +2,7 @@ package cn.iocoder.yudao.module.mes.service.wm.itemreceipt;
 
 import cn.iocoder.yudao.framework.test.core.ut.BaseDbUnitTest;
 import cn.iocoder.yudao.module.mes.dal.dataobject.wm.itemreceipt.MesWmItemReceiptDO;
+import cn.iocoder.yudao.module.mes.dal.dataobject.wm.itemreceipt.MesWmItemReceiptLineDO;
 import cn.iocoder.yudao.module.mes.dal.dataobject.wm.itemreceipt.MesWmItemReceiptDetailDO;
 import cn.iocoder.yudao.module.mes.dal.mysql.wm.itemreceipt.MesWmItemReceiptMapper;
 import cn.iocoder.yudao.module.mes.enums.wm.MesWmItemReceiptStatusEnum;
@@ -77,6 +78,11 @@ public class MesWmItemReceiptServiceImplTest extends BaseDbUnitTest {
             o.setReceiptId(receiptId);
             o.setQuantity(BigDecimal.valueOf(50));
         });
+        detail1.setLineId(1001L).setItemId(9001L);
+        detail2.setLineId(1002L).setItemId(9002L);
+        when(itemReceiptLineService.getItemReceiptLineListByReceiptId(receiptId)).thenReturn(Arrays.asList(
+                new MesWmItemReceiptLineDO().setId(1001L).setReceiptId(receiptId).setItemId(9001L).setReceivedQuantity(BigDecimal.valueOf(100)),
+                new MesWmItemReceiptLineDO().setId(1002L).setReceiptId(receiptId).setItemId(9002L).setReceivedQuantity(BigDecimal.valueOf(50))));
         when(itemReceiptDetailService.getItemReceiptDetailListByReceiptId(eq(receiptId)))
                 .thenReturn(Arrays.asList(detail1, detail2));
 
@@ -102,9 +108,11 @@ public class MesWmItemReceiptServiceImplTest extends BaseDbUnitTest {
         itemReceiptMapper.insert(receipt);
         Long receiptId = receipt.getId();
 
-        // mock 空明细
-        when(itemReceiptDetailService.getItemReceiptDetailListByReceiptId(eq(receiptId)))
-                .thenReturn(Collections.emptyList());
+        // A successful receipt still needs a real, balanced line/detail even without an arrival notice.
+        when(itemReceiptLineService.getItemReceiptLineListByReceiptId(receiptId)).thenReturn(Collections.singletonList(
+                new MesWmItemReceiptLineDO().setId(1003L).setReceiptId(receiptId).setItemId(9003L).setReceivedQuantity(BigDecimal.valueOf(30))));
+        when(itemReceiptDetailService.getItemReceiptDetailListByReceiptId(eq(receiptId))).thenReturn(Collections.singletonList(
+                new MesWmItemReceiptDetailDO().setId(2003L).setReceiptId(receiptId).setLineId(1003L).setItemId(9003L).setQuantity(BigDecimal.valueOf(30))));
 
         // 调用
         itemReceiptService.finishItemReceipt(receiptId);
@@ -112,7 +120,7 @@ public class MesWmItemReceiptServiceImplTest extends BaseDbUnitTest {
         // 断言 1：状态更新为已完成
         MesWmItemReceiptDO updated = itemReceiptMapper.selectById(receiptId);
         assertEquals(MesWmItemReceiptStatusEnum.FINISHED.getStatus(), updated.getStatus());
-        // 断言 2：库存事务仍被调用（空列表）
+        // 断言 2：平衡的入库明细创建库存事务
         verify(wmTransactionService).createTransactionList(anyList());
         // 断言 3：到货通知单完成方法不被调用
         verify(arrivalNoticeService, never()).finishArrivalNotice(any());
@@ -157,4 +165,15 @@ public class MesWmItemReceiptServiceImplTest extends BaseDbUnitTest {
                 WM_ITEM_RECEIPT_STATUS_ERROR);
     }
 
+    @Test
+    public void testFinishItemReceipt_emptyLinesCannotComplete() {
+        MesWmItemReceiptDO receipt=randomPojo(MesWmItemReceiptDO.class,o->{
+            o.setStatus(MesWmItemReceiptStatusEnum.APPROVED.getStatus());o.setNoticeId(null);
+        });
+        itemReceiptMapper.insert(receipt);
+        when(itemReceiptLineService.getItemReceiptLineListByReceiptId(receipt.getId())).thenReturn(Collections.emptyList());
+        assertServiceException(()->itemReceiptService.finishItemReceipt(receipt.getId()),WM_ITEM_RECEIPT_DETAIL_QUANTITY_MISMATCH);
+        assertEquals(MesWmItemReceiptStatusEnum.APPROVED.getStatus(),itemReceiptMapper.selectById(receipt.getId()).getStatus());
+        verifyNoInteractions(wmTransactionService,arrivalNoticeService);
+    }
 }

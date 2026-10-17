@@ -2,7 +2,13 @@
 <template>
   <div class="overflow-hidden">
     <!-- 操作栏 -->
-    <el-button v-if="!disabled" type="primary" plain @click="openForm('create')" class="mb-10px">
+    <el-button
+      v-if="!disabled && !processOnly"
+      type="primary"
+      plain
+      @click="openForm('create')"
+      class="mb-10px"
+    >
       <Icon icon="ep:plus" class="mr-5px" /> 添加明细
     </el-button>
     <!-- 列表 -->
@@ -16,7 +22,9 @@
       <el-table-column label="操作" align="center" width="130" v-if="!disabled">
         <template #default="scope">
           <el-button link type="primary" @click="openForm('update', scope.row)">编辑</el-button>
-          <el-button link type="danger" @click="handleDelete(scope.row.id)">删除</el-button>
+          <el-button v-if="!processOnly" link type="danger" @click="handleDelete(scope.row.id)"
+            >删除</el-button
+          >
         </template>
       </el-table-column>
     </el-table>
@@ -33,6 +41,7 @@
         <el-form-item label="项目" prop="subjectId">
           <el-select
             v-model="formData.subjectId"
+            :disabled="processOnly"
             filterable
             remote
             reserve-keyword
@@ -48,10 +57,19 @@
           </el-select>
         </el-form-item>
         <el-form-item label="故障描述" prop="malfunction">
-          <el-input v-model="formData.malfunction" type="textarea" placeholder="请输入故障描述" />
+          <el-input
+            v-model="formData.malfunction"
+            :disabled="processOnly"
+            type="textarea"
+            placeholder="请输入故障描述"
+          />
         </el-form-item>
         <el-form-item label="故障图片" prop="malfunctionUrl">
-          <el-input v-model="formData.malfunctionUrl" placeholder="请输入故障图片 URL" />
+          <el-input
+            v-model="formData.malfunctionUrl"
+            :disabled="processOnly"
+            placeholder="请输入故障图片 URL"
+          />
         </el-form-item>
         <el-form-item label="维修描述" prop="description">
           <el-input v-model="formData.description" type="textarea" placeholder="请输入维修描述" />
@@ -77,6 +95,7 @@ defineOptions({ name: 'RepairLineList' })
 const props = defineProps<{
   repairId: number
   disabled?: boolean
+  processOnly?: boolean
 }>()
 
 const { t } = useI18n() // 国际化

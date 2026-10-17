@@ -59,9 +59,15 @@ public class MesWmMiscReceiptLineServiceImpl implements MesWmMiscReceiptLineServ
     @Override
     @Transactional(rollbackFor = Exception.class)
     public void updateMiscReceiptLine(MesWmMiscReceiptLineSaveReqVO updateReqVO) {
+        // A line cannot be moved out of a completed document by changing the request parent id.
+        var persistedParent=miscReceiptLineMapper.selectById(updateReqVO.getId());
+        if(persistedParent==null) throw exception(cn.iocoder.yudao.module.mes.enums.ErrorCodeConstants.WM_MATERIAL_STOCK_SELECTION_MISMATCH);
+        updateReqVO.setReceiptId(persistedParent.getReceiptId());
         // 1. 校验
         MesWmMiscReceiptLineDO line = validateMiscReceiptLineExists(updateReqVO.getId());
         updateReqVO.setReceiptId(line.getReceiptId());
+        // Lock and validate the persisted parent before changing either the line or its details.
+        validateLineSaveData(updateReqVO);
 
         // 2. 更新行
         MesWmMiscReceiptLineDO updateObj = BeanUtils.toBean(updateReqVO, MesWmMiscReceiptLineDO.class);

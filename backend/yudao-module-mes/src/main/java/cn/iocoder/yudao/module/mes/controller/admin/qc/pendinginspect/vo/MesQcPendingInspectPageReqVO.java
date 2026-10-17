@@ -21,4 +21,11 @@ public class MesQcPendingInspectPageReqVO extends PageParam {
     @Schema(description = "物料编号", example = "1024")
     private Long itemId;
 
+    @Schema(description = "工位编号，现场质检筛选")
+    private Long workstationId;
+    @Schema(description = "生产工单编号")
+    private Long workOrderId;
+    @Schema(description = "生产任务编号")
+    private Long taskId;
+
 }

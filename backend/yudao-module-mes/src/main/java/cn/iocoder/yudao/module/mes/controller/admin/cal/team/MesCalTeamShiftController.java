@@ -57,7 +57,13 @@ public class MesCalTeamShiftController {
                 convertSet(list, MesCalTeamShiftDO::getShiftId));
         return success(BeanUtils.toBean(list, MesCalTeamShiftRespVO.class, vo -> {
             MapUtils.findAndThen(teamMap, vo.getTeamId(), team -> vo.setTeamName(team.getName()));
-            MapUtils.findAndThen(shiftMap, vo.getShiftId(), shift -> vo.setShiftName(shift.getName()));
+            MapUtils.findAndThen(shiftMap, vo.getShiftId(), shift -> {
+                var range=cn.iocoder.yudao.module.mes.service.cal.plan.MesCalShiftTimeRange.resolve(
+                    vo.getDay().toLocalDate(),shift.getStartTime(),shift.getEndTime());
+                vo.setShiftName(shift.getName()).setStartTime(shift.getStartTime()).setEndTime(shift.getEndTime())
+                    .setStartDateTime(range.startDateTime()).setEndDateTime(range.endDateTime())
+                    .setWorkingMinutes(range.workingMinutes()).setCrossesMidnight(range.crossesMidnight());
+            });
         }));
     }
 

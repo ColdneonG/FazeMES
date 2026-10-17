@@ -28,6 +28,9 @@ public class MesQcDefectRecordSaveReqVO {
     @NotNull(message = "检验行 ID 不能为空")
     private Long lineId;
 
+    @Schema(description = "选用的常见缺陷ID；不选时手工录入")
+    private Long defectId;
+
     @Schema(description = "缺陷描述", requiredMode = Schema.RequiredMode.REQUIRED, example = "表面划伤")
     @NotEmpty(message = "缺陷描述不能为空")
     private String name;
@@ -39,6 +42,7 @@ public class MesQcDefectRecordSaveReqVO {
 
     @Schema(description = "缺陷数量", requiredMode = Schema.RequiredMode.REQUIRED, example = "1")
     @NotNull(message = "缺陷数量不能为空")
+    @jakarta.validation.constraints.Positive(message = "缺陷数量必须大于零")
     private Integer quantity;
 
     @Schema(description = "备注", example = "备注")

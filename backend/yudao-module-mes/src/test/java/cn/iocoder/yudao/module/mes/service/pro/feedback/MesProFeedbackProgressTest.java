@@ -1,10 +1,19 @@
 package cn.iocoder.yudao.module.mes.service.pro.feedback;
 
+import cn.iocoder.yudao.framework.security.core.LoginUser;
+import org.junit.jupiter.api.BeforeEach;
+import org.junit.jupiter.api.AfterEach;
+import org.springframework.security.authentication.UsernamePasswordAuthenticationToken;
+import org.springframework.security.core.context.SecurityContextHolder;
 import cn.iocoder.yudao.module.mes.dal.dataobject.pro.feedback.MesProFeedbackDO;
 import cn.iocoder.yudao.module.mes.dal.dataobject.pro.route.MesProRouteProcessDO;
 import cn.iocoder.yudao.module.mes.dal.dataobject.wm.productproduce.MesWmProductProduceDO;
 import cn.iocoder.yudao.module.mes.dal.dataobject.wm.productproduce.MesWmProductProduceLineDO;
 import cn.iocoder.yudao.module.mes.dal.mysql.pro.feedback.MesProFeedbackMapper;
+import cn.iocoder.yudao.module.mes.dal.dataobject.md.workstation.MesMdWorkstationDO;
+import cn.iocoder.yudao.module.mes.service.md.workstation.MesMdWorkstationService;
+import cn.iocoder.yudao.framework.common.exception.ServiceException;
+import static cn.iocoder.yudao.module.mes.enums.ErrorCodeConstants.MD_WORKSTATION_RESOURCE_UNAVAILABLE;
 import cn.iocoder.yudao.module.mes.enums.pro.MesProFeedbackStatusEnum;
 import cn.iocoder.yudao.module.mes.enums.wm.MesWmQualityStatusEnum;
 import cn.iocoder.yudao.module.mes.service.pro.route.MesProRouteProcessService;
@@ -21,6 +30,7 @@ import org.mockito.junit.jupiter.MockitoExtension;
 
 import java.math.BigDecimal;
 import java.util.List;
+import java.util.concurrent.atomic.AtomicBoolean;
 
 import static org.junit.jupiter.api.Assertions.*;
 import static org.mockito.ArgumentMatchers.*;
@@ -39,6 +49,18 @@ class MesProFeedbackProgressTest {
     @Mock private MesWmItemConsumeService itemConsumeService;
     @Mock private MesWmProductProduceService productProduceService;
     @Mock private MesWmProductProduceLineService produceLineService;
+    @Mock private MesMdWorkstationService workstationService;
+
+    @BeforeEach
+    void loginApprover() {
+        SecurityContextHolder.getContext().setAuthentication(
+                new UsernamePasswordAuthenticationToken(new LoginUser().setId(1L), null, List.of()));
+    }
+
+    @AfterEach
+    void clearLogin() {
+        SecurityContextHolder.clearContext();
+    }
 
     @Test
     void nonKeyApprovalAdvancesTaskOnceWithoutProducingWorkOrderUnits() {
@@ -167,9 +189,93 @@ class MesProFeedbackProgressTest {
         verify(mapper, never()).updateById(any(MesProFeedbackDO.class));
     }
 
+    @Test
+    void approvalRequiresAuthenticatedDesignatedApproverBeforeChangingStock() {
+        MesProFeedbackDO feedback = prepare(false, false);
+        feedback.setApproveUserId(99L);
+        assertThrows(cn.iocoder.yudao.framework.common.exception.ServiceException.class, () -> service.approveFeedback(1L));
+        feedback.setApproveUserId(1L);
+        SecurityContextHolder.clearContext();
+        assertThrows(cn.iocoder.yudao.framework.common.exception.ServiceException.class, () -> service.approveFeedback(1L));
+        verifyNoInteractions(itemConsumeService, productProduceService, taskService);
+        verify(mapper, never()).updateById(any(MesProFeedbackDO.class));
+    }
+
+    @Test
+    void rejectionAlsoRequiresDesignatedApprover() {
+        MesProFeedbackDO feedback = prepare(false, false);
+        feedback.setApproveUserId(99L);
+        assertThrows(cn.iocoder.yudao.framework.common.exception.ServiceException.class, () -> service.rejectFeedback(1L));
+        verify(mapper, never()).updateById(any(MesProFeedbackDO.class));
+        feedback.setApproveUserId(1L);
+        service.rejectFeedback(1L);
+        verify(mapper).updateById(argThat((MesProFeedbackDO row) ->
+                MesProFeedbackStatusEnum.PREPARE.getStatus().equals(row.getStatus())));
+    }
+
+    @Test
+    void submissionRechecksCurrentResourcesWithoutAdvancingUnavailableDraft() {
+        MesProFeedbackDO feedback = new MesProFeedbackDO().setId(1L).setWorkOrderId(3L).setWorkstationId(6L)
+                .setStatus(MesProFeedbackStatusEnum.PREPARE.getStatus());
+        when(mapper.selectById(1L)).thenReturn(feedback);
+        when(mapper.selectByIdForUpdate(1L)).thenReturn(feedback);
+        when(workstationService.validateWorkstationAvailable(6L))
+                .thenThrow(new ServiceException(MD_WORKSTATION_RESOURCE_UNAVAILABLE));
+
+        ServiceException failure = assertThrows(ServiceException.class, () -> service.submitFeedback(1L));
+
+        assertEquals(MD_WORKSTATION_RESOURCE_UNAVAILABLE.getCode(), failure.getCode());
+        verify(mapper, never()).updateById(any(MesProFeedbackDO.class));
+        verifyNoInteractions(taskService, itemConsumeService, productProduceService);
+    }
+
+    @Test
+    void delayedSubmissionCannotReopenFeedbackCompletedWhileWaitingForTheLock() {
+        when(mapper.selectById(1L)).thenReturn(new MesProFeedbackDO().setId(1L).setWorkOrderId(3L)
+                .setWorkstationId(6L).setStatus(MesProFeedbackStatusEnum.PREPARE.getStatus()));
+        when(mapper.selectByIdForUpdate(1L)).thenReturn(new MesProFeedbackDO().setId(1L).setWorkOrderId(3L)
+                .setWorkstationId(6L).setStatus(MesProFeedbackStatusEnum.FINISHED.getStatus()));
+
+        ServiceException failure = assertThrows(ServiceException.class, () -> service.submitFeedback(1L));
+
+        assertEquals(cn.iocoder.yudao.module.mes.enums.ErrorCodeConstants.PRO_FEEDBACK_NOT_PREPARE.getCode(), failure.getCode());
+        var order = inOrder(workOrderService, mapper);
+        order.verify(workOrderService).validateWorkOrderExistsForUpdate(3L);
+        order.verify(mapper).selectByIdForUpdate(1L);
+        verify(mapper, never()).updateById(any(MesProFeedbackDO.class));
+        verifyNoInteractions(workstationService, taskService, itemConsumeService, productProduceService);
+    }
+
+    @Test
+    void submittedFeedbackCanBeApprovedAfterTheCurrentShiftEnds() {
+        MesProFeedbackDO feedback = prepare(false, false).setWorkstationId(6L)
+                .setStatus(MesProFeedbackStatusEnum.PREPARE.getStatus());
+        AtomicBoolean onShift = new AtomicBoolean(true);
+        when(workstationService.validateWorkstationAvailable(6L)).thenAnswer(invocation -> {
+            if (!onShift.get()) throw new ServiceException(MD_WORKSTATION_RESOURCE_UNAVAILABLE);
+            return new MesMdWorkstationDO().setId(6L);
+        });
+        doAnswer(invocation -> {
+            MesProFeedbackDO update = invocation.getArgument(0);
+            feedback.setStatus(update.getStatus());
+            return 1;
+        }).when(mapper).updateById(any(MesProFeedbackDO.class));
+
+        service.submitFeedback(1L);
+        assertEquals(MesProFeedbackStatusEnum.APPROVING.getStatus(), feedback.getStatus());
+        onShift.set(false);
+
+        assertTrue(service.approveFeedback(1L));
+
+        assertEquals(MesProFeedbackStatusEnum.FINISHED.getStatus(), feedback.getStatus());
+        verify(workstationService, times(1)).validateWorkstationAvailable(6L);
+        verify(taskService).updateProducedQuantity(2L, new BigDecimal("50"),
+                new BigDecimal("45"), new BigDecimal("5"));
+    }
+
     private MesProFeedbackDO prepare(boolean key, boolean check) {
         MesProFeedbackDO feedback = new MesProFeedbackDO().setId(1L).setTaskId(2L).setWorkOrderId(3L)
-                .setRouteId(4L).setProcessId(5L).setStatus(MesProFeedbackStatusEnum.APPROVING.getStatus())
+                .setApproveUserId(1L).setRouteId(4L).setProcessId(5L).setStatus(MesProFeedbackStatusEnum.APPROVING.getStatus())
                 .setFeedbackQuantity(new BigDecimal("50")).setQualifiedQuantity(new BigDecimal("45"))
                 .setUnqualifiedQuantity(new BigDecimal("5")).setUncheckQuantity(BigDecimal.ZERO);
         when(mapper.selectById(1L)).thenReturn(feedback);

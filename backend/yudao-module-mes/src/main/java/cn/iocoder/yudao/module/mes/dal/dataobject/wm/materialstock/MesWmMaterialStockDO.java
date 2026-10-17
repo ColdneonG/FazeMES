@@ -90,6 +90,8 @@ public class MesWmMaterialStockDO extends BaseDO {
      * 关联 {@link MesMdVendorDO#getId()}
      */
     private Long vendorId;
+    /** 线边库存所属工单；实物仓及待核对的历史库存为空。 */
+    private Long workOrderId;
     /**
      * 在库数量
      */

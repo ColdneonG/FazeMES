@@ -40,6 +40,7 @@ const emit = defineEmits<{
 
 const ganttContainer = ref<HTMLElement>()
 const ganttInited = ref(false)
+const message = useMessage()
 
 /** 初始化甘特图配置 */
 const initGantt = () => {
@@ -141,18 +142,36 @@ const initGantt = () => {
 
   // 编辑事件监听（通过 lightbox 弹窗编辑后触发）
   if (!props.readonly) {
+    const canEdit = (id: string | number) => {
+      const task = gantt.getTask(id)
+      return task.type === gantt.config.types.task && task.editable !== false
+    }
+    gantt.attachEvent('onBeforeTaskDrag', canEdit)
+    gantt.attachEvent('onBeforeLightbox', canEdit)
+    gantt.attachEvent('onBeforeTaskChanged', (id: string | number) => {
+      if (!canEdit(id)) return false
+      const task = gantt.getTask(id)
+      if (!task.start_date || !task.end_date) return false
+      const days = (task.end_date.getTime() - task.start_date.getTime()) / (8 * 3600 * 1000)
+      if (!Number.isInteger(days) || days < 1) {
+        message.warning('生产时长须为正整数工作日（每工作日8小时）')
+        return false
+      }
+      return true
+    })
     gantt.attachEvent('onAfterTaskUpdate', (id: string | number) => {
       const task = gantt.getTask(id)
       // 生产排产只允许回写 task 节点，避免把工单(project)节点当成任务保存
       if (task.type !== gantt.config.types.task || !task.originalId) {
         return
       }
+      if (!task.start_date || !task.end_date) return
       // 触发 task-update 事件，通知父组件保存修改
       emit('task-update', {
         id: task.originalId,
         startTime: task.start_date,
         endTime: task.end_date,
-        duration: task.duration
+        duration: (task.end_date.getTime() - task.start_date.getTime()) / (8 * 3600 * 1000)
       })
     })
   }
@@ -183,6 +202,8 @@ const loadData = (tasks: any[]) => {
     data: tasks.map((item: any) => ({
       ...item,
       type: TYPE_MAP[item.type] || item.type,
+      duration: item.duration ? item.duration * 8 : undefined,
+      readonly: item.editable === false || TYPE_MAP[item.type] === 'project',
       start_date: item.startDate ? new Date(item.startDate) : undefined,
       end_date: item.endDate ? new Date(item.endDate) : undefined
     })),

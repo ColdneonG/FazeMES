@@ -155,7 +155,9 @@ public class MesQcOqcServiceImpl implements MesQcOqcService {
      * @param oqc 出货检验单
      */
     private void writeBackSourceDoc(MesQcOqcDO oqc) {
-        if (oqc.getSourceDocType() == null) {
+        // Legacy schemas default an omitted source type to 0 for manual inspections.
+        if (oqc.getSourceDocType() == null || (Objects.equals(oqc.getSourceDocType(), 0)
+                && oqc.getSourceDocId() == null && oqc.getSourceLineId() == null)) {
             return;
         }
         if (oqc.getSourceLineId() == null) {

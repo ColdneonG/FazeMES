@@ -1,5 +1,4 @@
 <template>
-
   <ContentWrap>
     <!-- 搜索工作栏 -->
     <el-form
@@ -94,6 +93,27 @@
       <el-table-column label="状态" align="center" prop="status" min-width="100">
         <template #default="scope">
           <dict-tag :type="DICT_TYPE.COMMON_STATUS" :value="scope.row.status" />
+        </template>
+      </el-table-column>
+      <el-table-column label="资源可用性" align="center" min-width="210">
+        <template #default="{ row }">
+          <el-tag :type="row.available ? 'success' : 'danger'">{{
+            row.available ? '可生产' : '不可生产'
+          }}</el-tag>
+          <div
+            v-for="reason in row.availabilityReasons"
+            :key="reason"
+            class="text-red-500 text-12px mt-4px"
+            >{{ reason }}</div
+          >
+          <el-tooltip v-if="row.availabilityNotes?.length" placement="top">
+            <template #content
+              ><div v-for="note in row.availabilityNotes" :key="note">{{ note }}</div></template
+            >
+            <div class="text-gray-500 text-12px mt-4px"
+              >{{ row.availabilityNotes.length }} 项未限制说明</div
+            >
+          </el-tooltip>
         </template>
       </el-table-column>
       <el-table-column

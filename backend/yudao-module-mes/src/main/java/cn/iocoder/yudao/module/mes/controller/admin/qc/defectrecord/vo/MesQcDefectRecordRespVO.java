@@ -21,6 +21,9 @@ public class MesQcDefectRecordRespVO {
     @Schema(description = "检验行 ID", requiredMode = Schema.RequiredMode.REQUIRED, example = "200")
     private Long lineId;
 
+    @Schema(description = "选用的常见缺陷ID")
+    private Long defectId;
+
     @Schema(description = "缺陷描述", requiredMode = Schema.RequiredMode.REQUIRED, example = "表面划伤")
     private String name;
 

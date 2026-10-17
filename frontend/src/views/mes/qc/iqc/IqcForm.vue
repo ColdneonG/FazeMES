@@ -1,6 +1,6 @@
 <!-- MES 来料检验单表单 -->
 <template>
-  <Dialog :title="dialogTitle" v-model="dialogVisible" width="1080px">
+  <Dialog :title="dialogTitle" v-model="dialogVisible" :default-fullscreen="props.terminal" class="mes-qc-responsive" width="1080px">
     <!-- 基本信息表单 -->
     <el-form
       ref="formRef"
@@ -226,6 +226,7 @@
       </el-button>
       <el-button
         @click="handleFinish"
+        v-hasPermi="['mes:qc-iqc:finish']"
         type="success"
         :disabled="formLoading"
         v-if="formType === 'update' && formData.status === MesQcStatusEnum.DRAFT"
@@ -247,6 +248,8 @@ import IqcLineList from './IqcLineList.vue'
 import QcIndicatorResultList from '@/views/mes/qc/indicatorresult/components/QcIndicatorResultList.vue'
 import UserSelectV2 from '@/views/system/user/components/UserSelectV2.vue'
 import { MesQcTypeEnum, MesQcStatusEnum, MesAutoCodeRuleCode } from '@/views/mes/utils/constants'
+
+const props = withDefaults(defineProps<{ terminal?: boolean }>(), { terminal: false })
 
 defineOptions({ name: 'IqcForm' })
 
@@ -337,6 +340,7 @@ const open = async (type: string, id?: number, data?: QcIqcVO) => {
     // 预填模式：来自待检任务（pending inspect）
     Object.assign(formData.value, data)
   }
+  if (props.terminal && type === 'create') await generateCode()
   // 保存原始数据快照
   originalFormData.value = JSON.stringify(formData.value)
 }
@@ -354,7 +358,16 @@ const submitForm = async () => {
   try {
     const data = formData.value as unknown as QcIqcVO
     if (formType.value === 'create') {
-      await QcIqcApi.createIqc(data)
+      const createdId = await QcIqcApi.createIqc(data)
+      if (props.terminal) {
+        formData.value = await QcIqcApi.getIqc(createdId)
+        formType.value = 'update'
+        activeTab.value = 'line'
+        originalFormData.value = JSON.stringify(formData.value)
+        message.success('已建立检验单，请继续填写检测值和缺陷后完成')
+        emit('success')
+        return
+      }
       message.success(t('common.createSuccess'))
     } else {
       await QcIqcApi.updateIqc(data)
