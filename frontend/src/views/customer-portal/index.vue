@@ -117,8 +117,13 @@
                 ><p class="product-description">{{
                   product.description || '欢迎提交订购需求，供应方将与您确认详细信息。'
                 }}</p
+                ><p v-if="product.referenceSalePrice != null" class="reference-price"
+                  >参考售价 {{ money(product.referenceSalePrice) }} /
+                  {{ product.unitName || '单位' }}（不含税）<small>成交以销售确认价为准</small></p
                 ><div class="product-footer"
-                  ><span>{{ product.unitName || '按产品计量' }} · 询价</span
+                  ><span
+                    >{{ product.unitName || '按产品计量' }} ·
+                    {{ product.referenceSalePrice == null ? '询价' : '商务条件待确认' }}</span
                   ><el-button type="primary" plain @click="addProduct(product)"
                     >加入购物车</el-button
                   ></div
@@ -243,6 +248,8 @@
 </template>
 
 <script setup lang="ts">
+import { money } from '@/views/mes/cost/format'
+import { generateUUID } from '@/utils'
 import { ElMessage } from 'element-plus'
 import {
   CustomerPortalApi,
@@ -277,7 +284,7 @@ const cart = ref<PortalRequestLine[]>([])
 const checkoutOpen = ref(false)
 const deliveryDate = ref('')
 const remark = ref('')
-const requestKey = ref(crypto.randomUUID())
+const requestKey = ref(generateUUID())
 const filteredProducts = computed(() => {
   const keyword = search.value.trim().toLowerCase()
   return products.value.filter((p) =>
@@ -287,7 +294,7 @@ const filteredProducts = computed(() => {
 watch(
   [cart, deliveryDate, remark],
   () => {
-    requestKey.value = crypto.randomUUID()
+    requestKey.value = generateUUID()
   },
   { deep: true }
 )
@@ -703,6 +710,19 @@ onMounted(() => {
   > span {
     font-size: 11px;
     color: #128770;
+  }
+}
+
+.reference-price {
+  font-weight: 600;
+  color: #128770;
+
+  small {
+    display: block;
+    margin-top: 6px;
+    font-size: 11px;
+    font-weight: 400;
+    color: #7a889a;
   }
 }
 

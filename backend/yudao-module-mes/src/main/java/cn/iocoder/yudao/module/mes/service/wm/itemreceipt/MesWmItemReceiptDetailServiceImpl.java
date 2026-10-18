@@ -10,6 +10,7 @@ import cn.iocoder.yudao.module.mes.service.wm.materialstock.MesWmMaterialStockSe
 import cn.iocoder.yudao.module.mes.service.wm.warehouse.MesWmWarehouseAreaService;
 import cn.iocoder.yudao.module.mes.service.md.item.MesMdItemService;
 import cn.iocoder.yudao.module.mes.service.wm.batch.MesWmBatchService;
+import com.baomidou.mybatisplus.core.conditions.update.LambdaUpdateWrapper;
 import jakarta.annotation.Resource;
 import org.springframework.context.annotation.Lazy;
 import org.springframework.stereotype.Service;
@@ -54,7 +55,6 @@ public class MesWmItemReceiptDetailServiceImpl implements MesWmItemReceiptDetail
     @Transactional(rollbackFor=Exception.class)
     public Long createItemReceiptDetail(MesWmItemReceiptDetailSaveReqVO createReqVO) {
         // 1. 校验数据
-        itemReceiptService.validateItemReceiptEditable(createReqVO.getReceiptId());
         validateItemReceiptDetailSaveData(createReqVO);
 
         // 2. 插入
@@ -71,6 +71,11 @@ public class MesWmItemReceiptDetailServiceImpl implements MesWmItemReceiptDetail
     public void updateItemReceiptDetail(MesWmItemReceiptDetailSaveReqVO updateReqVO) {
         // 1.1 校验存在
         MesWmItemReceiptDetailDO detail = validateItemReceiptDetailExists(updateReqVO.getId());
+        itemReceiptService.validateItemReceiptEditable(detail.getReceiptId());
+        detail = itemReceiptDetailMapper.selectForUpdate(updateReqVO.getId());
+        if (detail == null) {
+            throw exception(WM_ITEM_RECEIPT_DETAIL_NOT_EXISTS);
+        }
         // 1.2 校验数据
         updateReqVO.setReceiptId(detail.getReceiptId());
         updateReqVO.setLineId(detail.getLineId());
@@ -79,7 +84,9 @@ public class MesWmItemReceiptDetailServiceImpl implements MesWmItemReceiptDetail
 
         // 2. 更新
         MesWmItemReceiptDetailDO updateObj = BeanUtils.toBean(updateReqVO, MesWmItemReceiptDetailDO.class);
-        itemReceiptDetailMapper.updateById(updateObj);
+        itemReceiptDetailMapper.update(updateObj, new LambdaUpdateWrapper<MesWmItemReceiptDetailDO>()
+                .eq(MesWmItemReceiptDetailDO::getId, detail.getId())
+                .set(updateReqVO.getBatchId() == null, MesWmItemReceiptDetailDO::getBatchId, null));
 
         // 3. 更新后校验数量是否超出
         validateDetailQuantityNotExceed(detail.getLineId());
@@ -89,7 +96,7 @@ public class MesWmItemReceiptDetailServiceImpl implements MesWmItemReceiptDetail
         // 校验父单据存在且为可编辑状态
         itemReceiptService.validateItemReceiptEditable(reqVO.getReceiptId());
         // 上架明细沿用入库单行的物料和批次，避免客户端漏传或传错批次。
-        MesWmItemReceiptLineDO line = itemReceiptLineService.getItemReceiptLine(reqVO.getLineId());
+        MesWmItemReceiptLineDO line = itemReceiptLineService.getItemReceiptLineForUpdate(reqVO.getLineId());
         if (line == null) {
             throw exception(WM_ITEM_RECEIPT_LINE_NOT_EXISTS);
         }
@@ -98,12 +105,15 @@ public class MesWmItemReceiptDetailServiceImpl implements MesWmItemReceiptDetail
             throw exception(WM_ITEM_RECEIPT_DETAIL_LINE_MISMATCH);
         }
         reqVO.setBatchId(line.getBatchId());
-        if (Boolean.TRUE.equals(itemService.validateItemExists(reqVO.getItemId()).getBatchFlag())
+        if (!Boolean.FALSE.equals(itemService.validateItemExists(reqVO.getItemId()).getBatchFlag())
                 && reqVO.getBatchId() == null) {
             throw exception(MD_ITEM_BATCH_REQUIRED);
         }
         if (reqVO.getBatchId() != null) {
             batchService.validateBatchExists(reqVO.getBatchId(), reqVO.getItemId());
+        }
+        if (reqVO.getQuantity() == null || reqVO.getQuantity().signum() <= 0) {
+            throw exception(WM_ITEM_RECEIPT_DETAIL_QUANTITY_MISMATCH);
         }
         // 校验库区关系
         warehouseAreaService.validateWarehouseAreaExists(reqVO.getWarehouseId(), reqVO.getLocationId(), reqVO.getAreaId());
@@ -139,6 +149,16 @@ public class MesWmItemReceiptDetailServiceImpl implements MesWmItemReceiptDetail
     }
 
     @Override
+    public List<MesWmItemReceiptDetailDO> getItemReceiptDetailListByLineIdForUpdate(Long lineId) {
+        return itemReceiptDetailMapper.selectListByLineIdForUpdate(lineId);
+    }
+
+    @Override
+    public List<MesWmItemReceiptDetailDO> getItemReceiptDetailListByReceiptIdForUpdate(Long receiptId) {
+        return itemReceiptDetailMapper.selectListByReceiptIdForUpdate(receiptId);
+    }
+
+    @Override
     public void deleteItemReceiptDetailByLineId(Long lineId) {
         itemReceiptDetailMapper.deleteByLineId(lineId);
     }
@@ -162,11 +182,11 @@ public class MesWmItemReceiptDetailServiceImpl implements MesWmItemReceiptDetail
      * @param lineId 行编号
      */
     private void validateDetailQuantityNotExceed(Long lineId) {
-        MesWmItemReceiptLineDO line = itemReceiptLineService.getItemReceiptLine(lineId);
+        MesWmItemReceiptLineDO line = itemReceiptLineService.getItemReceiptLineForUpdate(lineId);
         if (line == null || line.getReceivedQuantity() == null) {
             return;
         }
-        List<MesWmItemReceiptDetailDO> details = itemReceiptDetailMapper.selectListByLineId(lineId);
+        List<MesWmItemReceiptDetailDO> details = itemReceiptDetailMapper.selectListByLineIdForUpdate(lineId);
         BigDecimal totalDetailQty = CollectionUtils.getSumValue(details,
                 MesWmItemReceiptDetailDO::getQuantity, BigDecimal::add, BigDecimal.ZERO);
         if (totalDetailQty.compareTo(line.getReceivedQuantity()) > 0) {

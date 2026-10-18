@@ -19,6 +19,8 @@ import static cn.iocoder.yudao.framework.common.util.collection.CollectionUtils.
  * @author 芋道源码
  */
 public interface MesProTaskService {
+    /** Validate cumulative task capacity and configured finish-start predecessor release under the work-order lock. */
+    void validateFeedbackSequence(cn.iocoder.yudao.module.mes.dal.dataobject.pro.feedback.MesProFeedbackDO feedback);
 
     /**
      * 创建生产任务

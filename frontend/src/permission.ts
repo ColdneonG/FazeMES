@@ -9,6 +9,7 @@ import { useDictStoreWithOut } from '@/store/modules/dict'
 import { useUserStoreWithOut } from '@/store/modules/user'
 import { usePermissionStoreWithOut } from '@/store/modules/permission'
 import { parseRouteLocation } from '@/utils/routeParams'
+import { getMesLandingPath } from '@/utils/mesNavigation'
 
 const { start, done } = useNProgress()
 
@@ -59,8 +60,16 @@ router.beforeEach(async (to, from, next) => {
         // 修复跳转时不带参数的问题
         const redirect = typeof redirectPath === 'string' ? redirectPath : to.fullPath
         const redirectLocation = parseRouteLocation(redirect)
-        const nextData =
-          to.fullPath === redirect
+        const landingPath =
+          typeof redirectPath !== 'string' &&
+          !redirectLocation.query &&
+          !redirectLocation.hash &&
+          ['/', '/index'].includes(redirectLocation.path)
+            ? getMesLandingPath(permissionStore.getRouters, userStore.getPermissions)
+            : undefined
+        const nextData = landingPath
+          ? { path: landingPath, replace: true }
+          : to.fullPath === redirect
             ? { ...to, replace: true }
             : { ...redirectLocation, replace: true }
         next(nextData)

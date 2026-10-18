@@ -43,6 +43,12 @@ public interface MesWmItemReceiptLineService {
      */
     MesWmItemReceiptLineDO getItemReceiptLine(Long id);
 
+    /** 在已持有父单据锁的事务中读取最新行，避免使用锁前的 MVCC 快照。 */
+    MesWmItemReceiptLineDO getItemReceiptLineForUpdate(Long id);
+
+    /** 在已持有父单据锁的事务中读取最新行列表。 */
+    List<MesWmItemReceiptLineDO> getItemReceiptLineListByReceiptIdForUpdate(Long receiptId);
+
     /**
      * 获得采购入库单行分页
      *

@@ -2,6 +2,7 @@ import { getAllParentPath } from '@/layout/components/Menu/src/helper'
 import type { RouteMeta } from 'vue-router'
 import { isUrl } from '@/utils/is'
 import { cloneDeep } from 'lodash-es'
+import { pathResolve } from '@/utils/routerHelper'
 
 export type TabMapTypes = {
   [key: string]: string[]
@@ -10,6 +11,7 @@ export type TabMapTypes = {
 export const tabPathMap = reactive<TabMapTypes>({})
 
 export const initTabMap = (routes: AppRouteRecordRaw[]) => {
+  Object.keys(tabPathMap).forEach((path) => delete tabPathMap[path])
   for (const v of routes) {
     const meta = (v.meta ?? {}) as RouteMeta
     if (!meta?.hidden) {
@@ -29,7 +31,7 @@ export const filterMenusPath = (
     if (!meta.hidden || meta.canTo) {
       const allParentPath = getAllParentPath<AppRouteRecordRaw>(allRoutes, v.path)
 
-      const fullPath = isUrl(v.path) ? v.path : allParentPath.join('/')
+      const fullPath = isUrl(v.path) ? v.path : allParentPath.reduce(pathResolve, '')
 
       data = cloneDeep(v)
       data.path = fullPath

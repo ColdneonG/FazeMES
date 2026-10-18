@@ -3,6 +3,7 @@ package cn.iocoder.yudao.module.mes.service.wm.batch;
 import cn.hutool.core.collection.CollUtil;
 import cn.hutool.core.util.ObjUtil;
 import cn.iocoder.yudao.framework.common.pojo.PageResult;
+import cn.iocoder.yudao.framework.tenant.core.context.TenantContextHolder;
 import cn.iocoder.yudao.module.mes.controller.admin.wm.batch.vo.MesWmBatchGenerateReqVO;
 import cn.iocoder.yudao.module.mes.controller.admin.wm.batch.vo.MesWmBatchPageReqVO;
 import cn.iocoder.yudao.module.mes.dal.dataobject.md.item.MesMdItemBatchConfigDO;
@@ -22,8 +23,11 @@ import org.springframework.transaction.annotation.Transactional;
 import org.springframework.validation.annotation.Validated;
 
 import java.util.ArrayList;
+import java.util.ArrayDeque;
 import java.util.HashSet;
+import java.util.LinkedHashMap;
 import java.util.List;
+import java.util.Map;
 import java.util.Set;
 
 import static cn.iocoder.yudao.framework.common.exception.util.ServiceExceptionUtil.exception;
@@ -202,45 +206,48 @@ public class MesWmBatchServiceImpl implements MesWmBatchService {
 
     @Override
     public List<MesWmBatchDO> getForwardBatchList(String code) {
-        return getForwardBatchList(code, new HashSet<>(), 0);
-    }
-
-    private List<MesWmBatchDO> getForwardBatchList(String code, Set<String> visited, int depth) {
-        if (code == null || !visited.add(code) || depth >= MAX_TRACE_DEPTH) {
-            return new ArrayList<>();
-        }
-        List<MesWmBatchDO> list = batchMapper.selectListByForward(code);
-        if (CollUtil.isEmpty(list)) {
-            return new ArrayList<>();
-        }
-        // 继续递归查询下游批次
-        List<MesWmBatchDO> results = new ArrayList<>(list);
-        for (MesWmBatchDO batch : list) {
-            results.addAll(getForwardBatchList(batch.getCode(), visited, depth + 1));
-        }
-        return results;
+        return getRelatedBatchList(code, true);
     }
 
     @Override
     public List<MesWmBatchDO> getBackwardBatchList(String code) {
-        return getBackwardBatchList(code, new HashSet<>(), 0);
+        return getRelatedBatchList(code, false);
     }
 
-    private List<MesWmBatchDO> getBackwardBatchList(String code, Set<String> visited, int depth) {
-        if (code == null || !visited.add(code) || depth >= MAX_TRACE_DEPTH) {
+    private List<MesWmBatchDO> getRelatedBatchList(String code, boolean forward) {
+        if (code == null || code.isBlank()) {
             return new ArrayList<>();
         }
-        List<MesWmBatchDO> list = batchMapper.selectListByBackward(code);
-        if (CollUtil.isEmpty(list)) {
-            return new ArrayList<>();
+        Long tenantId = TenantContextHolder.getRequiredTenantId();
+        Map<String, MesWmBatchDO> results = new LinkedHashMap<>();
+        Set<String> visited = new HashSet<>();
+        ArrayDeque<TraceStep> pending = new ArrayDeque<>();
+        visited.add(code);
+        pending.add(new TraceStep(code, 0));
+        // Breadth first traversal reaches shared descendants by their shortest path.
+        // Each batch is queried once; cycles never report the original batch as its own ancestor.
+        while (!pending.isEmpty()) {
+            TraceStep step = pending.removeFirst();
+            List<MesWmBatchDO> related = forward ? batchMapper.selectListByForward(step.code(), tenantId)
+                    : batchMapper.selectListByBackward(step.code(), tenantId);
+            if (CollUtil.isEmpty(related)) {
+                continue;
+            }
+            for (MesWmBatchDO batch : related) {
+                String relatedCode = batch.getCode();
+                if (relatedCode == null || relatedCode.isBlank() || code.equals(relatedCode)) {
+                    continue;
+                }
+                results.putIfAbsent(relatedCode + ":" + batch.getItemId() + ":" + batch.getWorkOrderId(), batch);
+                if (visited.add(relatedCode) && step.depth() + 1 < MAX_TRACE_DEPTH) {
+                    pending.addLast(new TraceStep(relatedCode, step.depth() + 1));
+                }
+            }
         }
-        // 继续递归查询上游批次
-        List<MesWmBatchDO> results = new ArrayList<>(list);
-        for (MesWmBatchDO batch : list) {
-            results.addAll(getBackwardBatchList(batch.getCode(), visited, depth + 1));
-        }
-        return results;
+        return new ArrayList<>(results.values());
     }
+
+    private record TraceStep(String code, int depth) { }
 
     @Override
     public MesWmBatchDO validateBatchExists(Long batchId, Long itemId) {

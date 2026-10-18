@@ -15,11 +15,14 @@ import cn.iocoder.yudao.module.mes.service.md.item.MesMdItemBatchConfigService;
 import cn.iocoder.yudao.module.mes.service.md.item.MesMdItemService;
 import cn.iocoder.yudao.module.mes.service.pro.task.MesProTaskService;
 import cn.iocoder.yudao.module.mes.service.pro.kitting.MesProKittingService;
+import cn.iocoder.yudao.module.mes.service.pro.integrity.MesProductionIntegrityService;
+import cn.iocoder.yudao.module.mes.service.cost.MesCostService;
 import cn.iocoder.yudao.module.mes.service.wm.barcode.MesWmBarcodeService;
 import jakarta.annotation.Resource;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 import org.springframework.validation.annotation.Validated;
+import org.springframework.context.annotation.Lazy;
 
 import java.math.BigDecimal;
 import java.time.LocalDateTime;
@@ -54,12 +57,19 @@ public class MesProWorkOrderServiceImpl implements MesProWorkOrderService {
     private MesProTaskService taskService;
     @Resource
     private MesProKittingService kittingService;
+    @Resource
+    private MesProductionIntegrityService integrityService;
+    @Resource
+    @Lazy
+    private MesCostService mesCostService;
 
     @Override
     @Transactional(rollbackFor = Exception.class)
     public Long createWorkOrder(MesProWorkOrderSaveReqVO createReqVO) {
+        integrityService.lockBomGraph();
         // 1. 校验数据
         validateWorkOrderSaveData(null, createReqVO);
+        integrityService.validateChildWorkOrder(createReqVO, null);
 
         // 2.1 设置默认值
         if (createReqVO.getParentId() == null) {
@@ -67,6 +77,7 @@ public class MesProWorkOrderServiceImpl implements MesProWorkOrderService {
         }
         // 2.2 插入工单
         MesProWorkOrderDO workOrder = BeanUtils.toBean(createReqVO, MesProWorkOrderDO.class);
+        workOrder.setQuantityProduced(BigDecimal.ZERO).setQuantityScheduled(BigDecimal.ZERO).setQuantityChanged(BigDecimal.ZERO);
         workOrder.setStatus(MesProWorkOrderStatusEnum.PREPARE.getStatus());
         workOrderMapper.insert(workOrder);
 
@@ -82,8 +93,15 @@ public class MesProWorkOrderServiceImpl implements MesProWorkOrderService {
     @Override
     @Transactional(rollbackFor = Exception.class)
     public void updateWorkOrder(MesProWorkOrderSaveReqVO updateReqVO) {
+        integrityService.lockBomGraph();
+        MesProWorkOrderDO located = validateWorkOrderExists(updateReqVO.getId());
+        if (!java.util.Objects.equals(located.getParentId(), updateReqVO.getParentId() == null ? 0L : updateReqVO.getParentId())) {
+            throw MesProductionIntegrityService.invalid("已创建工单不能更换父工单");
+        }
+        integrityService.validateChildWorkOrder(updateReqVO, updateReqVO.getId());
         // 1.1 校验存在 + 只有草稿状态才能编辑
         MesProWorkOrderDO oldWorkOrder = validateWorkOrderExistsForUpdate(updateReqVO.getId());
+        mesCostService.assertWorkOrderMutable(updateReqVO.getId());
         if (ObjUtil.notEqual(oldWorkOrder.getStatus(), MesProWorkOrderStatusEnum.PREPARE.getStatus())) {
             throw exception(PRO_WORK_ORDER_NOT_PREPARE);
         }
@@ -94,17 +112,22 @@ public class MesProWorkOrderServiceImpl implements MesProWorkOrderService {
         boolean productChanged = ObjUtil.notEqual(oldWorkOrder.getProductId(), updateReqVO.getProductId());
         boolean quantityChanged = oldWorkOrder.getQuantity().compareTo(updateReqVO.getQuantity()) != 0;
         if (productChanged || quantityChanged) {
+            integrityService.validateParentChange(updateReqVO.getId());
             workOrderBomService.generateWorkOrderBom(updateReqVO.getId(), updateReqVO, true);
         }
 
         // 3. 更新
         MesProWorkOrderDO updateObj = BeanUtils.toBean(updateReqVO, MesProWorkOrderDO.class);
+        updateObj.setQuantityProduced(null).setQuantityScheduled(null).setQuantityChanged(null);
         workOrderMapper.updateById(updateObj);
     }
 
     @Override
     @Transactional(rollbackFor = Exception.class)
     public void deleteWorkOrder(Long id) {
+        integrityService.lockBomGraph();
+        mesCostService.assertWorkOrderMutable(id);
+        integrityService.validateParentChange(id);
         // 1.1 校验存在
         MesProWorkOrderDO workOrder = validateWorkOrderExistsForUpdate(id);
         // 1.2 只能删除草稿状态的工单
@@ -175,16 +198,20 @@ public class MesProWorkOrderServiceImpl implements MesProWorkOrderService {
     @Override
     @Transactional(rollbackFor = Exception.class)
     public void confirmWorkOrder(Long id) {
+        integrityService.lockBomGraph();
         // 1.1 校验存在
         MesProWorkOrderDO workOrder = validateWorkOrderExistsForUpdate(id);
+        mesCostService.assertWorkOrderMutable(id);
         // 1.2 只有草稿状态才能确认
         if (ObjUtil.notEqual(workOrder.getStatus(), MesProWorkOrderStatusEnum.PREPARE.getStatus())) {
             throw exception(PRO_WORK_ORDER_NOT_PREPARE);
         }
 
+        integrityService.validateWorkOrderRecipe(id);
         // 2. 更新状态为已确认
         workOrderMapper.updateById(new MesProWorkOrderDO().setId(id)
                 .setStatus(MesProWorkOrderStatusEnum.CONFIRMED.getStatus()));
+        if (java.util.Objects.equals(workOrder.getType(), 1)) mesCostService.capturePlan(id);
     }
 
     @Override
@@ -192,10 +219,12 @@ public class MesProWorkOrderServiceImpl implements MesProWorkOrderService {
     public void finishWorkOrder(Long id) {
         // 1. 校验存在 + 只有已确认状态才能完成
         MesProWorkOrderDO workOrder = validateWorkOrderExistsForUpdate(id);
+        mesCostService.assertWorkOrderMutable(id);
         if (ObjUtil.notEqual(workOrder.getStatus(), MesProWorkOrderStatusEnum.CONFIRMED.getStatus())) {
             throw exception(PRO_WORK_ORDER_NOT_CONFIRMED);
         }
 
+        integrityService.validateWorkOrderFinish(id);
         // 2. 级联完成所有关联任务
         taskService.finishTaskByOrderId(id);
         kittingService.releaseForClosedOrder(id);
@@ -211,10 +240,12 @@ public class MesProWorkOrderServiceImpl implements MesProWorkOrderService {
     public void cancelWorkOrder(Long id) {
         // 1. 校验存在 + 只有已确认状态才能取消
         MesProWorkOrderDO workOrder = validateWorkOrderExistsForUpdate(id);
+        mesCostService.assertWorkOrderMutable(id);
         if (ObjUtil.notEqual(workOrder.getStatus(), MesProWorkOrderStatusEnum.CONFIRMED.getStatus())) {
             throw exception(PRO_WORK_ORDER_NOT_CONFIRMED);
         }
 
+        integrityService.validateWorkOrderCancel(id);
         // 2. 级联取消所有关联任务
         taskService.cancelTaskByOrderId(id);
         kittingService.releaseForClosedOrder(id);
@@ -228,6 +259,10 @@ public class MesProWorkOrderServiceImpl implements MesProWorkOrderService {
     // ==================== 校验方法 ====================
 
     private void validateWorkOrderSaveData(Long id, MesProWorkOrderSaveReqVO reqVO) {
+        if (!java.util.Arrays.asList(cn.iocoder.yudao.module.mes.enums.pro.MesProWorkOrderTypeEnum.ARRAYS).contains(reqVO.getType())
+                || !java.util.Arrays.asList(cn.iocoder.yudao.module.mes.enums.pro.MesProWorkOrderSourceTypeEnum.ARRAYS).contains(reqVO.getOrderSourceType())) {
+            throw MesProductionIntegrityService.invalid("工单类型或来源类型不正确");
+        }
         // 1. 校验编码唯一
         validateWorkOrderCodeUnique(id, reqVO.getCode());
         // 2. 校验产品存在

@@ -10,6 +10,9 @@ import cn.iocoder.yudao.module.mes.dal.dataobject.wm.warehouse.MesWmWarehouseAre
 import cn.iocoder.yudao.module.mes.dal.dataobject.wm.warehouse.MesWmWarehouseDO;
 import cn.iocoder.yudao.module.mes.dal.dataobject.wm.warehouse.MesWmWarehouseLocationDO;
 import cn.iocoder.yudao.module.mes.dal.mysql.wm.productproduce.MesWmProductProduceMapper;
+import cn.iocoder.yudao.module.mes.dal.mysql.wm.productproduce.MesWmProductProduceLineMapper;
+import cn.iocoder.yudao.module.mes.dal.mysql.wm.productproduce.MesWmProductProduceDetailMapper;
+import cn.iocoder.yudao.module.mes.service.wm.transaction.dto.MesWmTransactionSaveReqDTO;
 import cn.iocoder.yudao.module.mes.enums.wm.MesWmProductProduceStatusEnum;
 import cn.iocoder.yudao.module.mes.enums.wm.MesWmQualityStatusEnum;
 import cn.iocoder.yudao.module.mes.service.pro.workorder.MesProWorkOrderService;
@@ -20,11 +23,15 @@ import cn.iocoder.yudao.module.mes.service.wm.warehouse.MesWmWarehouseLocationSe
 import cn.iocoder.yudao.module.mes.service.wm.warehouse.MesWmWarehouseService;
 import jakarta.annotation.Resource;
 import org.junit.jupiter.api.Test;
+import org.junit.jupiter.params.ParameterizedTest;
+import org.junit.jupiter.params.provider.CsvSource;
 import org.mockito.ArgumentCaptor;
 import org.springframework.context.annotation.Import;
 import org.springframework.test.context.bean.override.mockito.MockitoBean;
 
 import java.math.BigDecimal;
+import java.util.List;
+import java.util.concurrent.*;
 
 import static cn.iocoder.yudao.framework.test.core.util.RandomUtils.randomLongId;
 import static cn.iocoder.yudao.framework.test.core.util.RandomUtils.randomPojo;
@@ -45,6 +52,10 @@ public class MesWmProductProduceServiceImplTest extends BaseDbUnitTest {
 
     @Resource
     private MesWmProductProduceMapper productProduceMapper;
+    @Resource
+    private MesWmProductProduceLineMapper produceLineMapper;
+    @Resource
+    private MesWmProductProduceDetailMapper produceDetailMapper;
 
     @MockitoBean
     private MesWmProductProduceLineService productProduceLineService;
@@ -94,17 +105,19 @@ public class MesWmProductProduceServiceImplTest extends BaseDbUnitTest {
                 .batchId(batchId).batchCode(batchCode)
                 .qualityStatus(MesWmQualityStatusEnum.PENDING.getStatus())
                 .build();
-        when(productProduceLineService.validateProductProduceLineExists(sourceLineId))
+        when(productProduceLineService.validateProductProduceLineExistsForUpdate(sourceLineId))
                 .thenReturn(pendingLine);
 
         // mock: finishProductProduce 内部查行和明细（用于创建库存事务）
         MesWmProductProduceLineDO qualifiedLine = MesWmProductProduceLineDO.builder()
                 .id(100L).produceId(produce.getId()).itemId(itemId)
+                .batchId(batchId).batchCode(batchCode)
                 .quantity(BigDecimal.valueOf(80))
                 .qualityStatus(MesWmQualityStatusEnum.PASS.getStatus())
                 .build();
         MesWmProductProduceLineDO unqualifiedLine = MesWmProductProduceLineDO.builder()
                 .id(101L).produceId(produce.getId()).itemId(itemId)
+                .batchId(batchId).batchCode(batchCode)
                 .quantity(BigDecimal.valueOf(20))
                 .qualityStatus(MesWmQualityStatusEnum.FAIL.getStatus())
                 .build();
@@ -113,9 +126,11 @@ public class MesWmProductProduceServiceImplTest extends BaseDbUnitTest {
 
         // mock: finishProductProduce 中按行查明细
         MesWmProductProduceDetailDO qualifiedDetail = MesWmProductProduceDetailDO.builder()
-                .lineId(100L).quantity(BigDecimal.valueOf(80)).build();
+                .produceId(produce.getId()).lineId(100L).itemId(itemId).batchId(batchId).batchCode(batchCode)
+                .quantity(BigDecimal.valueOf(80)).build();
         MesWmProductProduceDetailDO unqualifiedDetail = MesWmProductProduceDetailDO.builder()
-                .lineId(101L).quantity(BigDecimal.valueOf(20)).build();
+                .produceId(produce.getId()).lineId(101L).itemId(itemId).batchId(batchId).batchCode(batchCode)
+                .quantity(BigDecimal.valueOf(20)).build();
         when(productProduceDetailService.getProductProduceDetailListByLineId(100L))
                 .thenReturn(ListUtil.of(qualifiedDetail));
         when(productProduceDetailService.getProductProduceDetailListByLineId(101L))
@@ -179,7 +194,7 @@ public class MesWmProductProduceServiceImplTest extends BaseDbUnitTest {
                 .itemId(itemId).quantity(BigDecimal.valueOf(50))
                 .qualityStatus(MesWmQualityStatusEnum.PENDING.getStatus())
                 .build();
-        when(productProduceLineService.validateProductProduceLineExists(sourceLineId))
+        when(productProduceLineService.validateProductProduceLineExistsForUpdate(sourceLineId))
                 .thenReturn(pendingLine);
 
         // mock: finishProductProduce 查行和明细
@@ -191,7 +206,7 @@ public class MesWmProductProduceServiceImplTest extends BaseDbUnitTest {
         when(productProduceLineService.getProductProduceLineListByProduceId(produce.getId()))
                 .thenReturn(ListUtil.of(qualifiedLine));
         MesWmProductProduceDetailDO detail = MesWmProductProduceDetailDO.builder()
-                .lineId(200L).quantity(BigDecimal.valueOf(50)).build();
+                .produceId(produce.getId()).lineId(200L).itemId(itemId).quantity(BigDecimal.valueOf(50)).build();
         when(productProduceDetailService.getProductProduceDetailListByLineId(200L))
                 .thenReturn(ListUtil.of(detail));
 
@@ -246,7 +261,7 @@ public class MesWmProductProduceServiceImplTest extends BaseDbUnitTest {
         when(areaService.getWarehouseAreaByCode(any())).thenReturn(area);
 
         // mock: validateProductProduceLineExists 抛异常
-        when(productProduceLineService.validateProductProduceLineExists(sourceLineId))
+        when(productProduceLineService.validateProductProduceLineExistsForUpdate(sourceLineId))
                 .thenThrow(new ServiceException(WM_PRODUCT_PRODUCE_LINE_NOT_EXISTS));
 
         // 调用，应该抛异常
@@ -254,6 +269,195 @@ public class MesWmProductProduceServiceImplTest extends BaseDbUnitTest {
                 productProduceService.splitPendingAndFinishProduce(feedbackId, sourceLineId,
                         BigDecimal.TEN, BigDecimal.ZERO));
         assertEquals(WM_PRODUCT_PRODUCE_LINE_NOT_EXISTS.getCode(), ex.getCode());
+    }
+
+    @ParameterizedTest
+    @CsvSource({"100,0", "9,0", "-1,11", "11,-1", "0.0000001,9.9999999"})
+    void inspectionCannotChangeTheTotalOrUseNegativeQuantities(String good, String bad) {
+        MesWmProductProduceDO produce = pendingProduce(71L);
+        when(productProduceLineService.validateProductProduceLineExistsForUpdate(700L)).thenReturn(
+                MesWmProductProduceLineDO.builder().id(700L).produceId(produce.getId()).feedbackId(71L)
+                        .quantity(BigDecimal.TEN).qualityStatus(MesWmQualityStatusEnum.PENDING.getStatus()).build());
+
+        ServiceException ex = assertThrows(ServiceException.class, () -> productProduceService
+                .splitPendingAndFinishProduce(71L, 700L, new BigDecimal(good), new BigDecimal(bad)));
+
+        assertEquals(WM_PRODUCT_PRODUCE_DETAIL_QUANTITY_MISMATCH.getCode(), ex.getCode());
+        verifyNoInteractions(wmTransactionService, productProduceDetailService, warehouseService);
+        verify(productProduceLineService, never()).updateProductProduceLine(any());
+        verify(productProduceLineService, never()).createProductProduceLine(any());
+    }
+
+    @Test
+    void inspectionCannotSplitAnotherProductionDocumentOrFeedback() {
+        MesWmProductProduceDO produce = pendingProduce(72L);
+        MesWmProductProduceLineDO line = MesWmProductProduceLineDO.builder().id(701L)
+                .produceId(produce.getId() + 1).feedbackId(72L).quantity(BigDecimal.TEN)
+                .qualityStatus(MesWmQualityStatusEnum.PENDING.getStatus()).build();
+        when(productProduceLineService.validateProductProduceLineExistsForUpdate(701L)).thenReturn(line);
+
+        assertThrows(ServiceException.class, () -> productProduceService
+                .splitPendingAndFinishProduce(72L, 701L, BigDecimal.TEN, BigDecimal.ZERO));
+        line.setProduceId(produce.getId()).setFeedbackId(999L);
+        assertThrows(ServiceException.class, () -> productProduceService
+                .splitPendingAndFinishProduce(72L, 701L, BigDecimal.TEN, BigDecimal.ZERO));
+        verifyNoInteractions(wmTransactionService, productProduceDetailService, warehouseService);
+    }
+
+    @Test
+    void inspectionCannotSplitAnAlreadyClassifiedLine() {
+        MesWmProductProduceDO produce = pendingProduce(73L);
+        when(productProduceLineService.validateProductProduceLineExistsForUpdate(702L)).thenReturn(
+                MesWmProductProduceLineDO.builder().id(702L).produceId(produce.getId()).feedbackId(73L)
+                        .quantity(BigDecimal.TEN).qualityStatus(MesWmQualityStatusEnum.PASS.getStatus()).build());
+
+        assertThrows(ServiceException.class, () -> productProduceService
+                .splitPendingAndFinishProduce(73L, 702L, BigDecimal.TEN, BigDecimal.ZERO));
+        verifyNoInteractions(wmTransactionService, productProduceDetailService, warehouseService);
+    }
+
+    @Test
+    void finishedProductionCannotBeExecutedOrSplitAgain() {
+        MesWmProductProduceDO produce = pendingProduce(74L);
+        productProduceMapper.updateById(new MesWmProductProduceDO().setId(produce.getId())
+                .setStatus(MesWmProductProduceStatusEnum.FINISHED.getStatus()));
+
+        assertThrows(ServiceException.class, () -> productProduceService.finishProductProduce(produce.getId()));
+        assertThrows(ServiceException.class, () -> productProduceService
+                .splitPendingAndFinishProduce(74L, 703L, BigDecimal.TEN, BigDecimal.ZERO));
+        verifyNoInteractions(wmTransactionService, productProduceLineService, productProduceDetailService);
+    }
+
+    @Test
+    void productionCannotBookADetailFromAnotherBatch() {
+        MesWmProductProduceDO produce = pendingProduce(75L);
+        MesWmProductProduceLineDO line = outputLine(produce.getId(), 710L);
+        MesWmProductProduceDetailDO detail = outputDetail(line).setBatchId(999L);
+        when(productProduceLineService.getProductProduceLineListByProduceId(produce.getId())).thenReturn(List.of(line));
+        when(productProduceDetailService.getProductProduceDetailListByLineId(line.getId())).thenReturn(List.of(detail));
+
+        assertThrows(ServiceException.class, () -> productProduceService.finishProductProduce(produce.getId()));
+        assertEquals(MesWmProductProduceStatusEnum.PREPARE.getStatus(), productProduceMapper.selectById(produce.getId()).getStatus());
+        verifyNoInteractions(wmTransactionService);
+    }
+
+    @Test
+    void laterStockFailureRollsBackEarlierMovementAndDocumentState() {
+        MesWmProductProduceDO produce = pendingProduce(76L);
+        MesWmProductProduceDO marker = pendingProduce(760L);
+        MesWmProductProduceLineDO first = outputLine(produce.getId(), 711L);
+        MesWmProductProduceLineDO second = outputLine(produce.getId(), 712L);
+        when(productProduceLineService.getProductProduceLineListByProduceId(produce.getId())).thenReturn(List.of(first, second));
+        when(productProduceDetailService.getProductProduceDetailListByLineId(first.getId())).thenReturn(List.of(outputDetail(first)));
+        when(productProduceDetailService.getProductProduceDetailListByLineId(second.getId())).thenReturn(List.of(outputDetail(second)));
+        doAnswer(invocation -> {
+            productProduceMapper.updateById(new MesWmProductProduceDO().setId(marker.getId())
+                    .setStatus(MesWmProductProduceStatusEnum.FINISHED.getStatus()));
+            return null;
+        }).doThrow(new IllegalStateException("second stock movement failed")).when(wmTransactionService).createTransaction(any());
+
+        assertThrows(IllegalStateException.class, () -> productProduceService.finishProductProduce(produce.getId()));
+
+        assertEquals(MesWmProductProduceStatusEnum.PREPARE.getStatus(), productProduceMapper.selectById(marker.getId()).getStatus(),
+                "The service transaction must roll back database writes made by an earlier stock movement");
+        assertEquals(MesWmProductProduceStatusEnum.PREPARE.getStatus(), productProduceMapper.selectById(produce.getId()).getStatus());
+    }
+
+    @Test
+    void concurrentFinishBooksStockOnlyOnce() throws Exception {
+        MesWmProductProduceDO produce = pendingProduce(77L);
+        MesWmProductProduceLineDO line = outputLine(produce.getId(), 713L);
+        when(productProduceLineService.getProductProduceLineListByProduceId(produce.getId())).thenReturn(List.of(line));
+        when(productProduceDetailService.getProductProduceDetailListByLineId(line.getId())).thenReturn(List.of(outputDetail(line)));
+        CountDownLatch firstMovement = new CountDownLatch(1), release = new CountDownLatch(1);
+        doAnswer(invocation -> {
+            firstMovement.countDown();
+            assertTrue(release.await(5, TimeUnit.SECONDS));
+            return null;
+        }).when(wmTransactionService).createTransaction(any());
+        ExecutorService pool = Executors.newFixedThreadPool(2);
+        try {
+            Future<?> first = pool.submit(() -> productProduceService.finishProductProduce(produce.getId()));
+            assertTrue(firstMovement.await(5, TimeUnit.SECONDS));
+            Future<?> second = pool.submit(() -> assertThrows(ServiceException.class,
+                    () -> productProduceService.finishProductProduce(produce.getId())));
+            release.countDown();
+            first.get(10, TimeUnit.SECONDS);
+            second.get(10, TimeUnit.SECONDS);
+            verify(wmTransactionService, times(1)).createTransaction(any());
+        } finally {
+            release.countDown();
+            pool.shutdownNow();
+        }
+    }
+
+    @Test
+    void sixDecimalOutputReachesStockWithoutDatabaseRounding() {
+        MesWmProductProduceDO produce = pendingProduce(78L);
+        MesWmProductProduceLineDO line = outputLine(produce.getId(), 714L).setQuantity(new BigDecimal("0.000001"));
+        produceLineMapper.insert(line);
+        produceDetailMapper.insert(outputDetail(line));
+        when(productProduceLineService.getProductProduceLineListByProduceId(produce.getId()))
+                .thenAnswer(invocation -> produceLineMapper.selectListByProduceId(produce.getId()));
+        when(productProduceDetailService.getProductProduceDetailListByLineId(line.getId()))
+                .thenAnswer(invocation -> produceDetailMapper.selectListByLineId(line.getId()));
+
+        productProduceService.finishProductProduce(produce.getId());
+
+        ArgumentCaptor<MesWmTransactionSaveReqDTO> movement = ArgumentCaptor.forClass(MesWmTransactionSaveReqDTO.class);
+        verify(wmTransactionService).createTransaction(movement.capture());
+        assertEquals(0, new BigDecimal("0.000001").compareTo(movement.getValue().getQuantity()));
+        assertEquals(0, new BigDecimal("0.000001").compareTo(produceLineMapper.selectById(line.getId()).getQuantity()));
+    }
+
+    @Test
+    void fullyRejectedInspectionBooksOnlyRejectedStockAndNoZeroMovement() {
+        MesWmProductProduceDO produce = pendingProduce(79L);
+        MesWmProductProduceLineDO pending = outputLine(produce.getId(), 715L).setFeedbackId(79L)
+                .setQualityStatus(MesWmQualityStatusEnum.PENDING.getStatus());
+        MesWmProductProduceLineDO rejected = outputLine(produce.getId(), 716L)
+                .setQualityStatus(MesWmQualityStatusEnum.FAIL.getStatus());
+        when(productProduceLineService.validateProductProduceLineExistsForUpdate(715L)).thenReturn(pending);
+        doAnswer(invocation -> {
+            invocation.<MesWmProductProduceLineDO>getArgument(0).setId(716L);
+            return null;
+        }).when(productProduceLineService).createProductProduceLine(any());
+        when(productProduceLineService.getProductProduceLineListByProduceId(produce.getId()))
+                .thenAnswer(invocation -> List.of(pending, rejected));
+        when(productProduceDetailService.getProductProduceDetailListByLineId(715L)).thenReturn(List.of());
+        when(productProduceDetailService.getProductProduceDetailListByLineId(716L)).thenReturn(List.of(outputDetail(rejected)));
+        when(warehouseService.getWarehouseByCode(any())).thenReturn(new MesWmWarehouseDO().setId(1L));
+        when(locationService.getWarehouseLocationByCode(any())).thenReturn(new MesWmWarehouseLocationDO().setId(2L));
+        when(areaService.getWarehouseAreaByCode(any())).thenReturn(new MesWmWarehouseAreaDO().setId(3L));
+
+        productProduceService.splitPendingAndFinishProduce(79L, 715L, BigDecimal.ZERO, BigDecimal.TEN);
+
+        assertEquals(0, pending.getQuantity().signum());
+        assertEquals(MesWmQualityStatusEnum.PASS.getStatus(), pending.getQualityStatus());
+        ArgumentCaptor<MesWmTransactionSaveReqDTO> movement = ArgumentCaptor.forClass(MesWmTransactionSaveReqDTO.class);
+        verify(wmTransactionService, times(1)).createTransaction(movement.capture());
+        assertEquals(716L, movement.getValue().getBizLineId());
+        assertEquals(0, BigDecimal.TEN.compareTo(movement.getValue().getQuantity()));
+        assertEquals(MesWmProductProduceStatusEnum.FINISHED.getStatus(), productProduceMapper.selectById(produce.getId()).getStatus());
+    }
+
+    private MesWmProductProduceDO pendingProduce(Long feedbackId) {
+        MesWmProductProduceDO produce = randomPojo(MesWmProductProduceDO.class, row -> row
+                .setFeedbackId(feedbackId).setStatus(MesWmProductProduceStatusEnum.PREPARE.getStatus()));
+        productProduceMapper.insert(produce);
+        return produce;
+    }
+
+    private MesWmProductProduceLineDO outputLine(Long produceId, Long id) {
+        return MesWmProductProduceLineDO.builder().id(id).produceId(produceId).itemId(100L)
+                .batchId(200L).batchCode("PRODUCT-200").quantity(BigDecimal.TEN)
+                .qualityStatus(MesWmQualityStatusEnum.PASS.getStatus()).build();
+    }
+
+    private MesWmProductProduceDetailDO outputDetail(MesWmProductProduceLineDO line) {
+        return MesWmProductProduceDetailDO.builder().produceId(line.getProduceId()).lineId(line.getId())
+                .itemId(line.getItemId()).batchId(line.getBatchId()).batchCode(line.getBatchCode())
+                .quantity(line.getQuantity()).build();
     }
 
 }

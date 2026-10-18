@@ -46,6 +46,7 @@ public class MesProRouteProcessServiceImpl implements MesProRouteProcessService 
     @Override
     @Transactional(rollbackFor = Exception.class)
     public Long createRouteProcess(MesProRouteProcessSaveReqVO createReqVO) {
+        validateInspectionConfiguration(createReqVO.getKeyFlag(), createReqVO.getCheckFlag());
         // 1.0 已启用的工艺路线，不允许操作
         routeService.validateRouteNotEnable(createReqVO.getRouteId());
         // 1.1 校验工艺路线、工序存在
@@ -70,7 +71,14 @@ public class MesProRouteProcessServiceImpl implements MesProRouteProcessService 
         // 1.0 已启用的工艺路线，不允许操作
         routeService.validateRouteNotEnable(updateReqVO.getRouteId());
         // 1.1 校验存在
-        validateRouteProcessExists(updateReqVO.getId());
+        MesProRouteProcessDO existing = validateRouteProcessExists(updateReqVO.getId());
+        if (!java.util.Objects.equals(existing.getRouteId(), updateReqVO.getRouteId())) {
+            throw cn.iocoder.yudao.module.mes.service.pro.integrity.MesProductionIntegrityService.invalid("不能将工序移至另一条路线，请删除后重新添加");
+        }
+        // 将省略的标识补齐后一并校验、写入，防止部分更新或并发更新形成非法标识组合。
+        if (updateReqVO.getKeyFlag() == null) updateReqVO.setKeyFlag(existing.getKeyFlag());
+        if (updateReqVO.getCheckFlag() == null) updateReqVO.setCheckFlag(existing.getCheckFlag());
+        validateInspectionConfiguration(updateReqVO.getKeyFlag(), updateReqVO.getCheckFlag());
         // 1.2 校验工艺路线、工序存在
         validateRouteAndProcessExists(updateReqVO.getRouteId(), updateReqVO.getProcessId());
         // 1.3 校验唯一性
@@ -128,6 +136,12 @@ public class MesProRouteProcessServiceImpl implements MesProRouteProcessService 
             throw exception(PRO_ROUTE_PROCESS_NOT_EXISTS);
         }
         return routeProcess;
+    }
+
+    private void validateInspectionConfiguration(Boolean keyFlag, Boolean checkFlag) {
+        if (Boolean.TRUE.equals(checkFlag) && !Boolean.TRUE.equals(keyFlag)) {
+            throw exception(PRO_FEEDBACK_NON_KEY_CHECK_UNSUPPORTED);
+        }
     }
 
     private void validateRouteAndProcessExists(Long routeId, Long processId) {

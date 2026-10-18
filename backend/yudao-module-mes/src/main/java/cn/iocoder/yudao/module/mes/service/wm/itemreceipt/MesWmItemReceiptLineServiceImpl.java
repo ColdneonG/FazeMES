@@ -12,13 +12,16 @@ import cn.iocoder.yudao.module.mes.dal.dataobject.wm.itemreceipt.MesWmItemReceip
 import cn.iocoder.yudao.module.mes.dal.mysql.wm.itemreceipt.MesWmItemReceiptLineMapper;
 import cn.iocoder.yudao.module.mes.service.wm.arrivalnotice.MesWmArrivalNoticeLineService;
 import cn.iocoder.yudao.module.mes.service.wm.batch.MesWmBatchService;
+import com.baomidou.mybatisplus.core.conditions.update.LambdaUpdateWrapper;
 import jakarta.annotation.Resource;
 import org.springframework.context.annotation.Lazy;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 import org.springframework.validation.annotation.Validated;
 
+import java.math.BigDecimal;
 import java.util.List;
+import java.util.Objects;
 
 import static cn.iocoder.yudao.framework.common.exception.util.ServiceExceptionUtil.exception;
 import static cn.iocoder.yudao.framework.common.util.collection.CollectionUtils.convertList;
@@ -69,26 +72,63 @@ public class MesWmItemReceiptLineServiceImpl implements MesWmItemReceiptLineServ
     @Override
     @Transactional(rollbackFor=Exception.class)
     public void updateItemReceiptLine(MesWmItemReceiptLineSaveReqVO updateReqVO) {
-        // A line cannot be moved out of a completed document by changing the request parent id.
-        var persistedParent=itemReceiptLineMapper.selectById(updateReqVO.getId());
-        if(persistedParent==null) throw exception(cn.iocoder.yudao.module.mes.enums.ErrorCodeConstants.WM_MATERIAL_STOCK_SELECTION_MISMATCH);
+        // 锁前只用持久化的父编号定位单据，禁止客户端将行移出已关闭单据。
+        MesWmItemReceiptLineDO persistedParent = validateItemReceiptLineExists(updateReqVO.getId());
         updateReqVO.setReceiptId(persistedParent.getReceiptId());
-        // 1.1 校验存在
-        MesWmItemReceiptLineDO line = validateItemReceiptLineExists(updateReqVO.getId());
-        // 1.2 校验父单据存在且为可编辑状态
-        MesWmItemReceiptDO receipt = itemReceiptService.validateItemReceiptEditable(line.getReceiptId());
-        // 1.3 校验数据
+        MesWmItemReceiptDO receipt = itemReceiptService.validateItemReceiptEditable(persistedParent.getReceiptId());
+        // 等待父单锁时行可能已被修改或删除，必须使用当前读重新校验。
+        MesWmItemReceiptLineDO line = itemReceiptLineMapper.selectForUpdate(updateReqVO.getId());
+        if (line == null) {
+            throw exception(WM_ITEM_RECEIPT_LINE_NOT_EXISTS);
+        }
+        if (!Objects.equals(line.getReceiptId(), receipt.getId())) {
+            throw exception(WM_ITEM_RECEIPT_DETAIL_LINE_MISMATCH);
+        }
         validateItemReceiptLineSaveData(receipt, updateReqVO);
 
-        // 2.1 更新
         MesWmItemReceiptLineDO updateObj = BeanUtils.toBean(updateReqVO, MesWmItemReceiptLineDO.class);
-        // 2.2 生成或获取批次
-        MesWmBatchDO batch = generateOrGetBatch(receipt, updateReqVO);
-        if (batch != null) {
-            updateObj.setBatchId(batch.getId()).setBatchCode(batch.getCode());
+        var details = itemReceiptDetailService.getItemReceiptDetailListByLineIdForUpdate(line.getId());
+        if (CollUtil.isNotEmpty(details)) {
+            // 已分配实物的物料和批次属性不可静默替换，删掉上架明细后才可重新分配。
+            if (!Objects.equals(line.getItemId(), updateReqVO.getItemId())
+                    || !Objects.equals(line.getProductionDate(), updateReqVO.getProductionDate())
+                    || !Objects.equals(line.getExpireDate(), updateReqVO.getExpireDate())
+                    || !Objects.equals(line.getLotNumber(), updateReqVO.getLotNumber())) {
+                throw exception(WM_ITEM_RECEIPT_LINE_HAS_DETAIL);
+            }
+            BigDecimal total = BigDecimal.ZERO;
+            for (var detail : details) {
+                if (!Objects.equals(detail.getReceiptId(), receipt.getId())
+                        || !Objects.equals(detail.getItemId(), line.getItemId())) {
+                    throw exception(WM_ITEM_RECEIPT_DETAIL_LINE_MISMATCH);
+                }
+                if (!Objects.equals(detail.getBatchId(), line.getBatchId())) {
+                    throw exception(WM_ITEM_RECEIPT_DETAIL_BATCH_MISMATCH);
+                }
+                if (detail.getQuantity() == null || detail.getQuantity().signum() <= 0) {
+                    throw exception(WM_ITEM_RECEIPT_DETAIL_QUANTITY_MISMATCH);
+                }
+                total = total.add(detail.getQuantity());
+            }
+            if (updateReqVO.getReceivedQuantity() == null || updateReqVO.getReceivedQuantity().compareTo(total) < 0) {
+                throw exception(WM_ITEM_RECEIPT_DETAIL_QUANTITY_EXCEED);
+            }
+            // 数量和备注的正常编辑、重试不重新生成批次。
+            updateObj.setBatchId(line.getBatchId()).setBatchCode(line.getBatchCode());
+        } else {
+            MesWmBatchDO batch = generateOrGetBatch(receipt, updateReqVO);
+            updateObj.setBatchId(batch == null ? null : batch.getId())
+                    .setBatchCode(batch == null ? null : batch.getCode());
         }
-        // 2.3 更新数据库
-        itemReceiptLineMapper.updateById(updateObj);
+        // 显式写入可空字段，避免更换为无批次物料或清空日期后残留旧值。
+        itemReceiptLineMapper.update(updateObj, new LambdaUpdateWrapper<MesWmItemReceiptLineDO>()
+                .eq(MesWmItemReceiptLineDO::getId, line.getId())
+                .set(updateObj.getBatchId() == null, MesWmItemReceiptLineDO::getBatchId, null)
+                .set(updateObj.getBatchCode() == null, MesWmItemReceiptLineDO::getBatchCode, null)
+                .set(updateReqVO.getProductionDate() == null, MesWmItemReceiptLineDO::getProductionDate, null)
+                .set(updateReqVO.getExpireDate() == null, MesWmItemReceiptLineDO::getExpireDate, null)
+                .set(updateReqVO.getLotNumber() == null, MesWmItemReceiptLineDO::getLotNumber, null)
+                .set(updateReqVO.getArrivalNoticeLineId() == null, MesWmItemReceiptLineDO::getArrivalNoticeLineId, null));
     }
 
     private void validateItemReceiptLineSaveData(MesWmItemReceiptDO receipt, MesWmItemReceiptLineSaveReqVO reqVO) {
@@ -113,6 +153,16 @@ public class MesWmItemReceiptLineServiceImpl implements MesWmItemReceiptLineServ
     @Override
     public MesWmItemReceiptLineDO getItemReceiptLine(Long id) {
         return itemReceiptLineMapper.selectById(id);
+    }
+
+    @Override
+    public MesWmItemReceiptLineDO getItemReceiptLineForUpdate(Long id) {
+        return itemReceiptLineMapper.selectForUpdate(id);
+    }
+
+    @Override
+    public List<MesWmItemReceiptLineDO> getItemReceiptLineListByReceiptIdForUpdate(Long receiptId) {
+        return itemReceiptLineMapper.selectListByReceiptIdForUpdate(receiptId);
     }
 
     @Override

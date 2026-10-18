@@ -146,10 +146,13 @@ public class MesCustomerPortalService {
         jdbc.update("UPDATE mes_portal_session SET revoked=1 WHERE token_hash=? AND tenant_id=? AND account_id=?", hash(token), id.tenantId(), id.accountId());
     }
 
-    private static final String CATALOG_SELECT = "SELECT p.product_id,i.code AS product_code,i.name AS product_name,i.specification,COALESCE(u.name,'') AS unit_name,p.description FROM mes_portal_catalog p JOIN mes_md_item i ON i.id=p.product_id AND i.tenant_id=p.tenant_id AND i.deleted=0 AND i.status=0 LEFT JOIN mes_md_unit_measure u ON u.id=i.unit_measure_id AND u.tenant_id=i.tenant_id AND u.deleted=0";
+    // Whitelist only the public reference sale price; never join/select purchase or cost fields.
+    private static final String CATALOG_SELECT = "SELECT p.product_id,i.code AS product_code,i.name AS product_name,i.specification,COALESCE(u.name,'') AS unit_name,p.description,(SELECT cp.sale_price FROM mes_cost_profile cp WHERE cp.tenant_id=p.tenant_id AND cp.item_id=p.product_id AND cp.deleted=0 ORDER BY cp.version DESC LIMIT 1) AS reference_sale_price FROM mes_portal_catalog p JOIN mes_md_item i ON i.id=p.product_id AND i.tenant_id=p.tenant_id AND i.deleted=0 AND i.status=0 LEFT JOIN mes_md_unit_measure u ON u.id=i.unit_measure_id AND u.tenant_id=i.tenant_id AND u.deleted=0";
     public List<Map<String, Object>> catalog(String token) {
         Identity id = identity(token);
-        return rows(CATALOG_SELECT + " WHERE p.tenant_id=? AND p.enabled=1 ORDER BY i.code LIMIT 500", id.tenantId());
+        var catalog=rows(CATALOG_SELECT + " WHERE p.tenant_id=? AND p.enabled=1 ORDER BY i.code LIMIT 500", id.tenantId());
+        for(var product:catalog){Object price=product.get("referenceSalePrice");product.put("referenceSalePrice",price==null?null:((BigDecimal)price).toPlainString());product.put("currency","CNY");product.put("taxBasis","EXCLUSIVE");}
+        return catalog;
     }
     /** Customer-safe projection: no cost, supplier, internal notes, station operators or other clients. */
     public List<Map<String, Object>> orders(String token) {

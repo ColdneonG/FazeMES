@@ -42,6 +42,8 @@
 
 <script lang="ts" setup>
 import { propTypes } from '@/utils/propTypes'
+import { usePermissionStore } from '@/store/modules/permission'
+import { collectNavigationPages } from '@/utils/mesNavigation'
 defineProps({
   isModal: {
     type: Boolean,
@@ -55,13 +57,13 @@ const showSearch = ref(false) // 是否显示弹框
 const showTopSearch = ref(false) // 是否显示顶部搜索框
 const value: Ref = ref('') // 用户输入的值
 
-const routers = router.getRoutes() // 路由对象
+const permissionStore = usePermissionStore()
 const options = computed(() => {
   // 提示选项
   if (!value.value) {
     return []
   }
-  const list = routers.filter((item: any) => {
+  const list = collectNavigationPages(permissionStore.getRouters).filter((item) => {
     if (item.meta.title?.indexOf(value.value) > -1 || item.path.indexOf(value.value) > -1) {
       return true
     }

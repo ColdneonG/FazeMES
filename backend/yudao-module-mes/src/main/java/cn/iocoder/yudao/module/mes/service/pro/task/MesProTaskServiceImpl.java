@@ -14,6 +14,13 @@ import cn.iocoder.yudao.module.mes.dal.dataobject.pro.workorder.MesProWorkOrderD
 import cn.iocoder.yudao.module.mes.dal.dataobject.pro.route.MesProRouteDO;
 import cn.iocoder.yudao.module.mes.dal.dataobject.pro.route.MesProRouteProductDO;
 import cn.iocoder.yudao.module.mes.dal.mysql.pro.task.MesProTaskMapper;
+import cn.iocoder.yudao.module.mes.dal.mysql.pro.feedback.MesProFeedbackMapper;
+import cn.iocoder.yudao.module.mes.dal.dataobject.pro.feedback.MesProFeedbackDO;
+import cn.iocoder.yudao.module.mes.dal.mysql.pro.sop.MesSopTaskSnapshotMapper;
+import cn.iocoder.yudao.module.mes.dal.mysql.pro.sop.MesSopStepRecordMapper;
+import cn.iocoder.yudao.module.mes.dal.dataobject.pro.sop.MesSopTaskSnapshotDO;
+import cn.iocoder.yudao.module.mes.dal.dataobject.pro.sop.MesSopStepRecordDO;
+import cn.iocoder.yudao.framework.mybatis.core.query.LambdaQueryWrapperX;
 import cn.iocoder.yudao.module.mes.enums.md.autocode.MesMdAutoCodeRuleCodeEnum;
 import cn.iocoder.yudao.module.mes.enums.pro.MesProTaskStatusEnum;
 import cn.iocoder.yudao.module.mes.enums.pro.MesProWorkOrderStatusEnum;
@@ -58,6 +65,12 @@ public class MesProTaskServiceImpl implements MesProTaskService {
 
     @Resource
     private MesProTaskMapper taskMapper;
+    @Resource
+    private MesProFeedbackMapper feedbackMapper;
+    @Resource
+    private MesSopTaskSnapshotMapper sopSnapshotMapper;
+    @Resource
+    private MesSopStepRecordMapper sopRecordMapper;
 
     @Resource
     @Lazy
@@ -80,14 +93,23 @@ public class MesProTaskServiceImpl implements MesProTaskService {
     private MesMdAutoCodeRecordService autoCodeRecordService;
     @Resource
     private MesProSopService sopService;
+    @Resource
+    private cn.iocoder.yudao.module.mes.service.pro.integrity.MesProductionIntegrityService integrityService;
+
+    @Override
+    public void validateFeedbackSequence(cn.iocoder.yudao.module.mes.dal.dataobject.pro.feedback.MesProFeedbackDO feedback) {
+        integrityService.validateFeedbackSequence(feedback);
+    }
 
     @Override
     @Transactional(rollbackFor = Exception.class)
     public Long createTask(MesProTaskSaveReqVO createReqVO) {
+        integrityService.lockBomGraph();
         // 1. 锁定工单后验证整组排产数据，不能依赖页面的筛选条件。
         validateScheduleFields(createReqVO);
         MesProWorkOrderDO workOrder = workOrderService.validateWorkOrderExistsForUpdate(createReqVO.getWorkOrderId());
         MesMdItemDO item = validateScheduleRelations(createReqVO, workOrder);
+        validateScheduledQuantity(createReqVO, workOrder, null, BigDecimal.ZERO);
         validateScheduleTime(createReqVO);
 
         // 2.1 构建任务 DO：自动填充客户信息
@@ -108,6 +130,7 @@ public class MesProTaskServiceImpl implements MesProTaskService {
     @Override
     @Transactional(rollbackFor = Exception.class)
     public void updateTask(MesProTaskSaveReqVO updateReqVO) {
+        integrityService.lockBomGraph();
         // 1.1 校验存在
         MesProTaskDO task = validateTaskNotFinished(updateReqVO.getId());
         Long workOrderId = updateReqVO.getWorkOrderId() != null ? updateReqVO.getWorkOrderId() : task.getWorkOrderId();
@@ -127,8 +150,10 @@ public class MesProTaskServiceImpl implements MesProTaskService {
         // 起始时间/时长变化时重算结束时间；显式传结束时间则须一致。
         effective.setEndTime(updateReqVO.getEndTime());
         validateScheduleFields(effective);
-        MesMdItemDO item = validateScheduleRelations(effective,
-                workOrderService.validateWorkOrderExistsForUpdate(workOrderId));
+        validateTaskHistory(task, effective, false);
+        MesProWorkOrderDO workOrder = workOrderService.validateWorkOrderExistsForUpdate(workOrderId);
+        MesMdItemDO item = validateScheduleRelations(effective, workOrder);
+        validateScheduledQuantity(effective, workOrder, task.getId(), task.getChangedQuantity());
         validateScheduleTime(effective);
 
         // 2. 更新
@@ -150,7 +175,59 @@ public class MesProTaskServiceImpl implements MesProTaskService {
                 || reqVO.getQuantity().signum() <= 0) {
             throw exception(PRO_TASK_SCHEDULE_INVALID);
         }
+        BigDecimal quantity = reqVO.getQuantity().stripTrailingZeros();
+        if (quantity.scale() > 6 || quantity.precision() - quantity.scale() > 14) {
+            throw cn.iocoder.yudao.module.mes.service.pro.integrity.MesProductionIntegrityService.invalid("排产数量最多十四位整数及六位小数");
+        }
     }
+
+    /** The locked work order serializes all station splits of the same operation. */
+    private void validateScheduledQuantity(MesProTaskSaveReqVO req, MesProWorkOrderDO order,
+                                            Long excludingTaskId, BigDecimal ownChangedQuantity) {
+        BigDecimal capacity = zero(order.getQuantity()).add(zero(order.getQuantityChanged()));
+        BigDecimal allocated = req.getQuantity().add(zero(ownChangedQuantity));
+        for (MesProTaskDO other : taskMapper.selectListByWorkOrderIdForUpdate(order.getId())) {
+            if (Objects.equals(other.getId(), excludingTaskId)
+                    || Objects.equals(other.getStatus(), MesProTaskStatusEnum.CANCELED.getStatus())
+                    || !Objects.equals(other.getRouteId(), req.getRouteId())
+                    || !Objects.equals(other.getProcessId(), req.getProcessId())) continue;
+            allocated = allocated.add(zero(other.getQuantity())).add(zero(other.getChangedQuantity()));
+        }
+        if (allocated.signum() <= 0 || allocated.compareTo(capacity) > 0) {
+            throw cn.iocoder.yudao.module.mes.service.pro.integrity.MesProductionIntegrityService.invalid("同一工单同工序的累计排产数量不能超过工单数量");
+        }
+    }
+
+    /** Even saved draft reports must retain their original task relationships. */
+    private void validateTaskHistory(MesProTaskDO task, MesProTaskSaveReqVO effective, boolean deleting) {
+        boolean hasHistory = !feedbackMapper.selectList(new LambdaQueryWrapperX<MesProFeedbackDO>()
+                .eq(MesProFeedbackDO::getTaskId, task.getId()).last("LIMIT 1 FOR UPDATE")).isEmpty();
+        // Old imported tasks may carry progress even if their source reports are unavailable.
+        hasHistory = hasHistory || zero(task.getProducedQuantity()).signum() > 0;
+        if (!hasHistory) {
+            // SOP confirmation holds the same work-order -> task locks. Current
+            // reads see evidence committed while this mutation waited for them.
+            var snapshots = sopSnapshotMapper.selectList(new LambdaQueryWrapperX<MesSopTaskSnapshotDO>()
+                    .eq(MesSopTaskSnapshotDO::getTaskId, task.getId()).last("LIMIT 1 FOR UPDATE"));
+            if (!snapshots.isEmpty()) {
+                hasHistory = !sopRecordMapper.selectList(new LambdaQueryWrapperX<MesSopStepRecordDO>()
+                        .eq(MesSopStepRecordDO::getSnapshotId, snapshots.get(0).getId())
+                        .isNotNull(MesSopStepRecordDO::getConfirmedAt).last("LIMIT 1 FOR UPDATE")).isEmpty();
+            }
+        }
+        if (!hasHistory) return;
+        boolean relationshipsChanged = !deleting && (
+                !Objects.equals(task.getWorkOrderId(), effective.getWorkOrderId())
+                || !Objects.equals(task.getRouteId(), effective.getRouteId())
+                || !Objects.equals(task.getProcessId(), effective.getProcessId())
+                || !Objects.equals(task.getWorkstationId(), effective.getWorkstationId())
+                || !Objects.equals(task.getItemId(), effective.getItemId()));
+        if (deleting || relationshipsChanged || effective.getQuantity().compareTo(task.getQuantity()) < 0) {
+            throw cn.iocoder.yudao.module.mes.service.pro.integrity.MesProductionIntegrityService.invalid("任务已有报工或SOP执行记录，不能删除、更换执行关系或减少排产数量");
+        }
+    }
+
+    private BigDecimal zero(BigDecimal value) { return value == null ? BigDecimal.ZERO : value; }
 
     private MesMdItemDO validateScheduleRelations(MesProTaskSaveReqVO reqVO, MesProWorkOrderDO workOrder) {
         if (!Objects.equals(workOrder.getStatus(), MesProWorkOrderStatusEnum.CONFIRMED.getStatus())) {
@@ -212,10 +289,12 @@ public class MesProTaskServiceImpl implements MesProTaskService {
     @Override
     @Transactional(rollbackFor = Exception.class)
     public void deleteTask(Long id) {
+        integrityService.lockBomGraph();
         // 1. 校验存在且非终态
         MesProTaskDO task = validateTaskNotFinished(id);
         workOrderService.validateWorkOrderExistsForUpdate(task.getWorkOrderId());
         task = validateTaskNotFinishedForUpdate(id, task.getWorkOrderId());
+        validateTaskHistory(task, null, true);
 
         // 2. 删除
         taskMapper.deleteById(id);

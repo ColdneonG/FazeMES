@@ -15,6 +15,7 @@ import cn.iocoder.yudao.module.mes.dal.dataobject.pro.route.MesProRouteProductBo
 import cn.iocoder.yudao.module.mes.dal.dataobject.md.item.MesMdItemDO;
 import cn.iocoder.yudao.module.mes.dal.mysql.pro.route.MesProRouteMapper;
 import cn.iocoder.yudao.module.mes.service.md.item.MesMdItemService;
+import cn.iocoder.yudao.module.mes.service.pro.integrity.MesProductionIntegrityService;
 import jakarta.annotation.Resource;
 import org.springframework.context.annotation.Lazy;
 import org.springframework.stereotype.Service;
@@ -52,6 +53,8 @@ public class MesProRouteServiceImpl implements MesProRouteService {
     @Resource
     @Lazy
     private MesMdItemService itemService;
+    @Resource
+    private MesProductionIntegrityService integrityService;
 
     @Override
     public Long createRoute(MesProRouteSaveReqVO createReqVO) {
@@ -65,7 +68,9 @@ public class MesProRouteServiceImpl implements MesProRouteService {
     }
 
     @Override
+    @Transactional(rollbackFor = Exception.class)
     public void updateRoute(MesProRouteSaveReqVO updateReqVO) {
+        validateRouteNotEnable(updateReqVO.getId());
         // 1.1 校验存在
         validateRouteExists(updateReqVO.getId());
         // 1.2 校验编码唯一性
@@ -77,12 +82,16 @@ public class MesProRouteServiceImpl implements MesProRouteService {
     }
 
     @Override
+    @Transactional(rollbackFor = Exception.class)
     public void updateRouteStatus(Long id, Integer status) {
+        if (status == null || (status != 0 && status != 1)) throw MesProductionIntegrityService.invalid("工艺路线状态不正确");
+        integrityService.lockBomGraph();
         // 1.1 校验存在
         MesProRouteDO route = validateRouteExists(id);
         // 1.2 启用时的校验
         if (CommonStatusEnum.ENABLE.getStatus().equals(status)) {
             validateRouteEnable(id);
+            integrityService.validateRoute(id);
         }
 
         // 2. 更新状态
@@ -166,11 +175,10 @@ public class MesProRouteServiceImpl implements MesProRouteService {
     }
 
     @Override
+    @Transactional(rollbackFor = Exception.class)
     public void validateRouteNotEnable(Long routeId) {
-        MesProRouteDO route = routeMapper.selectById(routeId);
-        if (route != null && CommonStatusEnum.ENABLE.getStatus().equals(route.getStatus())) {
-            throw exception(PRO_ROUTE_IS_ENABLE);
-        }
+        integrityService.lockBomGraph();
+        integrityService.validateRouteEditable(routeId);
     }
 
     @Override

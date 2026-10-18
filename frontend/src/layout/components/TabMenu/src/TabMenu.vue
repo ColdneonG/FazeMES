@@ -7,7 +7,7 @@ import { Icon } from '@/components/Icon'
 import { Menu } from '@/layout/components/Menu'
 import { pathResolve } from '@/utils/routerHelper'
 import { cloneDeep } from 'lodash-es'
-import { filterMenusPath, initTabMap, tabPathMap } from './helper'
+import { filterMenusPath, initTabMap } from './helper'
 import { useDesign } from '@/hooks/web/useDesign'
 import { isUrl } from '@/utils/is'
 import { createRouteLocation } from '@/utils/routeParams'
@@ -155,24 +155,20 @@ export default defineComponent({
       } as AppRouteRecordRaw
     }
 
-    const isCurrentRouteInTab = (tabPath: string) => {
-      const currentPath = unref(currentMenuPath)
-      if (unref(headerMixed)) {
-        return currentPath === tabPath || currentPath.startsWith(`${tabPath}/`)
-      }
-      return !!tabPathMap[tabPath]?.includes(currentPath)
-    }
+    const getCurrentTab = () =>
+      getRootMenuRoute(
+        unref(tabRouters).map((route) => ({ ...route, path: getFullTabPath(route) })),
+        unref(currentMenuPath)
+      )
+
+    const isCurrentRouteInTab = (tabPath: string) => getCurrentTab()?.fullPath === tabPath
 
     const syncTabMenusByRoute = () => {
       if (!unref(fixedMenu) && !unref(headerMixed) && !unref(twoColumn)) {
         return
       }
 
-      const currentPath = unref(currentMenuPath)
-      const activeTab = unref(tabRouters).find((route) => {
-        const tabPath = getFullTabPath(route)
-        return currentPath === tabPath || currentPath.startsWith(`${tabPath}/`)
-      })
+      const activeTab = getCurrentTab()?.route
 
       if (!activeTab || !shouldShowExtraMenu(activeTab)) {
         tabActive.value = activeTab ? getFullTabPath(activeTab) : ''
@@ -238,11 +234,7 @@ export default defineComponent({
 
     // 设置高亮
     const isActive = (currentPath: string) => {
-      const { path } = unref(currentRoute)
-      if (isCurrentRouteInTab(currentPath) || tabPathMap[currentPath]?.includes(path)) {
-        return true
-      }
-      return false
+      return isCurrentRouteInTab(currentPath)
     }
 
     const mouseleave = () => {

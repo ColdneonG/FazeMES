@@ -1,5 +1,8 @@
 <template>
   <div class="app-container">
+    <el-alert v-if="error" class="mb-10px" type="error" :closable="false" :title="error">
+      <el-button link type="primary" @click="getList">重试</el-button>
+    </el-alert>
     <el-table v-loading="loading" :data="batchList">
       <el-table-column label="生产工单号" width="150px" align="center" prop="workOrderCode" />
       <el-table-column label="批次编号" align="center" prop="code" />
@@ -22,37 +25,40 @@ const props = defineProps<{
   direction: 'forward' | 'backward' // 追溯方向：forward=向前追溯，backward=向后追溯
 }>()
 
-const loading = ref(true) // 列表的加载中
+const loading = ref(false) // 列表的加载中
 const batchList = ref<BatchVO[]>([]) // 列表的数据
+const error = ref('')
+let requestSequence = 0
 
 /** 查询列表 */
 const getList = async () => {
-  if (!props.batchCode) {
+  const sequence = ++requestSequence
+  const code = props.batchCode
+  batchList.value = []
+  error.value = ''
+  if (!code) {
+    loading.value = false
     return
   }
   loading.value = true
   try {
-    batchList.value =
+    const result =
       props.direction === 'forward'
-        ? await BatchApi.getForwardList(props.batchCode)
-        : await BatchApi.getBackwardList(props.batchCode)
+        ? await BatchApi.getForwardList(code)
+        : await BatchApi.getBackwardList(code)
+    if (sequence === requestSequence) batchList.value = result
+  } catch {
+    if (sequence === requestSequence) error.value = '批次追溯查询失败，请重新打开或重试。'
   } finally {
-    loading.value = false
+    if (sequence === requestSequence) loading.value = false
   }
 }
 
 /** 监听批次编号变化 */
-watch(
-  () => props.batchCode,
-  (val) => {
-    if (val) {
-      getList()
-    }
-  }
-)
+watch(() => [props.batchCode, props.direction], getList, { immediate: true })
 
-/** 初始化 */
-onMounted(() => {
-  getList()
+/** Invalidate pending responses when the dialog content is disposed. */
+onBeforeUnmount(() => {
+  requestSequence++
 })
 </script>

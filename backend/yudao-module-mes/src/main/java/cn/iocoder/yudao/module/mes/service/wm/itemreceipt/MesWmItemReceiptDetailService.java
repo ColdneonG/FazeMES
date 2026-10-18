@@ -57,6 +57,12 @@ public interface MesWmItemReceiptDetailService {
      */
     List<MesWmItemReceiptDetailDO> getItemReceiptDetailListByLineId(Long lineId);
 
+    /** 在已持有父单据锁的事务中读取最新上架明细。 */
+    List<MesWmItemReceiptDetailDO> getItemReceiptDetailListByLineIdForUpdate(Long lineId);
+
+    /** 在已持有父单据锁的事务中读取最新上架明细。 */
+    List<MesWmItemReceiptDetailDO> getItemReceiptDetailListByReceiptIdForUpdate(Long receiptId);
+
     /**
      * 按入库单行编号批量删除明细
      *

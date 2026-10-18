@@ -228,6 +228,9 @@ public class MesProFeedbackServiceImplTest extends BaseDbUnitTest {
             o.setFeedbackQuantity(BigDecimal.valueOf(100));
             o.setQualifiedQuantity(BigDecimal.valueOf(80));
             o.setUnqualifiedQuantity(BigDecimal.valueOf(20));
+            o.setLaborScrapQuantity(BigDecimal.ZERO);
+            o.setMaterialScrapQuantity(BigDecimal.ZERO);
+            o.setOtherScrapQuantity(BigDecimal.ZERO);
             o.setUncheckQuantity(BigDecimal.ZERO);
             o.setRouteId(routeId);
             o.setProcessId(processId);
@@ -250,7 +253,8 @@ public class MesProFeedbackServiceImplTest extends BaseDbUnitTest {
                 .quantity(BigDecimal.valueOf(80))
                 .qualityStatus(MesWmQualityStatusEnum.PASS.getStatus()).build();
         when(produceLineService.getProductProduceLineListByFeedbackId(feedback.getId()))
-                .thenReturn(ListUtil.of(qualifiedLine));
+                .thenReturn(ListUtil.of(qualifiedLine, MesWmProductProduceLineDO.builder()
+                        .quantity(BigDecimal.valueOf(20)).qualityStatus(MesWmQualityStatusEnum.FAIL.getStatus()).build()));
 
         // 调用
         boolean result = feedbackService.approveFeedback(feedback.getId());
@@ -281,6 +285,11 @@ public class MesProFeedbackServiceImplTest extends BaseDbUnitTest {
             o.setStatus(MesProFeedbackStatusEnum.APPROVING.getStatus());
             o.setApproveUserId(1L);
             o.setFeedbackQuantity(BigDecimal.valueOf(50));
+            o.setQualifiedQuantity(BigDecimal.ZERO);
+            o.setUnqualifiedQuantity(BigDecimal.ZERO);
+            o.setLaborScrapQuantity(BigDecimal.ZERO);
+            o.setMaterialScrapQuantity(BigDecimal.ZERO);
+            o.setOtherScrapQuantity(BigDecimal.ZERO);
             o.setUncheckQuantity(BigDecimal.valueOf(50)); // 质检工序 uncheckQuantity > 0
             o.setRouteId(routeId);
             o.setProcessId(processId);
@@ -324,6 +333,9 @@ public class MesProFeedbackServiceImplTest extends BaseDbUnitTest {
             o.setFeedbackQuantity(BigDecimal.valueOf(30));
             o.setQualifiedQuantity(BigDecimal.valueOf(25));
             o.setUnqualifiedQuantity(BigDecimal.valueOf(5));
+            o.setLaborScrapQuantity(BigDecimal.ZERO);
+            o.setMaterialScrapQuantity(BigDecimal.ZERO);
+            o.setOtherScrapQuantity(BigDecimal.ZERO);
             o.setUncheckQuantity(BigDecimal.ZERO);
             o.setRouteId(routeId);
             o.setProcessId(processId);
@@ -386,15 +398,19 @@ public class MesProFeedbackServiceImplTest extends BaseDbUnitTest {
     }
 
     @Test
-    public void testApproveFeedback_nonKeyCheck_directFinishAndCleanUncheck() {
-        // 准备数据：非关键 + 质检工序（!key+check），uncheckQuantity > 0
-        // 应放行（checkFlag=true 不拦截 uncheckQuantity），直接完结并清零 uncheckQuantity
+    public void testApproveFeedback_nonKeyCheck_rejectsUnsupportedInspection() {
+        // 非关键工序没有 IPQC 待检产出来源，必须拒绝，不能清空待检量直接完成。
         Long routeId = randomLongId();
         Long processId = randomLongId();
         MesProFeedbackDO feedback = randomPojo(MesProFeedbackDO.class, o -> {
             o.setStatus(MesProFeedbackStatusEnum.APPROVING.getStatus());
             o.setApproveUserId(1L);
             o.setFeedbackQuantity(BigDecimal.valueOf(20));
+            o.setQualifiedQuantity(BigDecimal.ZERO);
+            o.setUnqualifiedQuantity(BigDecimal.ZERO);
+            o.setLaborScrapQuantity(BigDecimal.ZERO);
+            o.setMaterialScrapQuantity(BigDecimal.ZERO);
+            o.setOtherScrapQuantity(BigDecimal.ZERO);
             o.setUncheckQuantity(BigDecimal.valueOf(20));
             o.setRouteId(routeId);
             o.setProcessId(processId);
@@ -408,19 +424,17 @@ public class MesProFeedbackServiceImplTest extends BaseDbUnitTest {
         when(routeProcessService.getRouteProcessByRouteIdAndProcessId(routeId, processId))
                 .thenReturn(routeProcess);
 
-        // 调用
-        boolean result = feedbackService.approveFeedback(feedback.getId());
-
-        // 断言 1：返回 true（直接完成，不走 UNCHECK）
-        assertTrue(result);
-
-        // 断言 2：状态为已完成，uncheckQuantity 被清零
+        cn.iocoder.yudao.framework.common.exception.ServiceException failure = assertThrows(
+                cn.iocoder.yudao.framework.common.exception.ServiceException.class,
+                () -> feedbackService.approveFeedback(feedback.getId()));
+        assertEquals(cn.iocoder.yudao.module.mes.enums.ErrorCodeConstants.PRO_FEEDBACK_NON_KEY_CHECK_UNSUPPORTED.getCode(),
+                failure.getCode());
         MesProFeedbackDO updated = feedbackMapper.selectById(feedback.getId());
-        assertEquals(MesProFeedbackStatusEnum.FINISHED.getStatus(), updated.getStatus());
-        assertEquals(0, BigDecimal.ZERO.compareTo(updated.getUncheckQuantity()));
-
-        // 断言 3：非关键工序不生成产出单
-        verify(productProduceService, never()).generateProductProduce(any(), anyBoolean());
+        assertEquals(MesProFeedbackStatusEnum.APPROVING.getStatus(), updated.getStatus());
+        assertEquals(0, BigDecimal.valueOf(20).compareTo(updated.getUncheckQuantity()));
+        verifyNoInteractions(itemConsumeService, productProduceService);
+        verify(taskService, never()).updateProducedQuantity(anyLong(), any(), any(), any());
+        verify(workOrderService, never()).updateProducedQuantity(anyLong(), any());
     }
 
 }

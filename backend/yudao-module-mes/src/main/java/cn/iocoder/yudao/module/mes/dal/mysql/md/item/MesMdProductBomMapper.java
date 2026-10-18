@@ -26,15 +26,22 @@ public interface MesMdProductBomMapper extends BaseMapperX<MesMdProductBomDO> {
     }
 
     default List<MesMdProductBomDO> selectByItemId(Long itemId) {
-        return selectList(MesMdProductBomDO::getItemId, itemId);
+        return selectList(new LambdaQueryWrapperX<MesMdProductBomDO>()
+                .eq(MesMdProductBomDO::getItemId, itemId).eq(MesMdProductBomDO::getStatus, 0));
     }
 
     default List<MesMdProductBomDO> selectByItemIds(Collection<Long> itemIds) {
-        return selectList(MesMdProductBomDO::getItemId, itemIds);
+        return selectList(new LambdaQueryWrapperX<MesMdProductBomDO>()
+                .in(MesMdProductBomDO::getItemId, itemIds).eq(MesMdProductBomDO::getStatus, 0));
     }
 
     default List<MesMdProductBomDO> selectAll() {
         return selectList();
+    }
+
+    default List<MesMdProductBomDO> selectAllForUpdate() {
+        return selectList(new LambdaQueryWrapperX<MesMdProductBomDO>()
+                .orderByAsc(MesMdProductBomDO::getId).last("FOR UPDATE"));
     }
 
     default void deleteByItemId(Long itemId) {

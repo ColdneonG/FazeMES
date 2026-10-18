@@ -130,8 +130,15 @@
             :formatter="dateFormatter"
             width="180px"
           />
-          <el-table-column label="操作" align="center" width="200">
+          <el-table-column label="操作" align="center" width="290">
             <template #default="scope">
+              <el-button
+                link
+                type="primary"
+                v-hasPermi="['mes:cost:query']"
+                @click="openCostCenter(router, { itemId: scope.row.id })"
+                >价格 / BOM</el-button
+              >
               <el-button
                 link
                 type="primary"
@@ -178,6 +185,7 @@ import { dateFormatter } from '@/utils/formatTime'
 import download from '@/utils/download'
 import { CommonStatusEnum } from '@/utils/constants'
 import { MdItemApi, MdItemVO } from '@/api/mes/md/item'
+import { openCostCenter } from '@/views/mes/cost/navigation'
 import MdItemForm from './MdItemForm.vue'
 import MdStockWarnings from './MdStockWarnings.vue'
 import MdItemImportForm from './MdItemImportForm.vue'
@@ -188,6 +196,7 @@ import { BarcodeDetail, PrinterLabel } from '@/views/mes/wm/barcode/components'
 defineOptions({ name: 'MesMdItem' })
 
 const message = useMessage() // 消息弹窗
+const router = useRouter()
 const { t } = useI18n() // 国际化
 
 const loading = ref(true) // 列表的加载中

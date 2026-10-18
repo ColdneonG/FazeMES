@@ -37,7 +37,7 @@ public class MesMdItemBatchConfigRespVO {
     private Boolean purchaseOrderCodeFlag;
 
     @Schema(description = "批次属性-生产工单", example = "false")
-    private Boolean workorderFlag;
+    private Boolean workOrderFlag;
 
     @Schema(description = "批次属性-生产任务", example = "false")
     private Boolean taskFlag;

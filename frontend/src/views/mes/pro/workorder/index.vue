@@ -152,8 +152,15 @@
         :formatter="dateFormatter"
         width="180"
       />
-      <el-table-column label="操作" align="center" width="260" fixed="right">
+      <el-table-column label="操作" align="center" width="330" fixed="right">
         <template #default="scope">
+          <el-button
+            link
+            type="primary"
+            v-hasPermi="['mes:cost:query']"
+            @click="openCostCenter(router, { workorderId: scope.row.id })"
+            >成本</el-button
+          >
           <el-button
             link
             type="primary"
@@ -248,6 +255,7 @@ import { DICT_TYPE, getIntDictOptions } from '@/utils/dict'
 import download from '@/utils/download'
 import { handleTree } from '@/utils/tree'
 import { ProWorkOrderApi, ProWorkOrderVO } from '@/api/mes/pro/workorder'
+import { openCostCenter } from '@/views/mes/cost/navigation'
 import WorkOrderForm from './WorkOrderForm.vue'
 import MdItemSelect from '@/views/mes/md/item/components/MdItemSelect.vue'
 import MdClientSelect from '@/views/mes/md/client/components/MdClientSelect.vue'

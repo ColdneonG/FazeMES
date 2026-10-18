@@ -1,31 +1,26 @@
 package cn.iocoder.yudao.module.mes.service.wm.batch;
 
+import cn.iocoder.yudao.framework.tenant.core.context.TenantContextHolder;
 import cn.iocoder.yudao.framework.test.core.ut.BaseDbUnitTest;
-import cn.iocoder.yudao.module.mes.dal.dataobject.pro.feedback.MesProFeedbackDO;
 import cn.iocoder.yudao.module.mes.dal.dataobject.wm.batch.MesWmBatchDO;
-import cn.iocoder.yudao.module.mes.dal.dataobject.wm.itemconsume.MesWmItemConsumeDO;
-import cn.iocoder.yudao.module.mes.dal.dataobject.wm.itemconsume.MesWmItemConsumeDetailDO;
-import cn.iocoder.yudao.module.mes.dal.dataobject.wm.productproduce.MesWmProductProduceDO;
-import cn.iocoder.yudao.module.mes.dal.dataobject.wm.productproduce.MesWmProductProduceDetailDO;
-import cn.iocoder.yudao.module.mes.dal.dataobject.wm.productproduce.MesWmProductProduceLineDO;
-import cn.iocoder.yudao.module.mes.dal.mysql.pro.feedback.MesProFeedbackMapper;
 import cn.iocoder.yudao.module.mes.dal.mysql.wm.batch.MesWmBatchMapper;
-import cn.iocoder.yudao.module.mes.dal.mysql.wm.itemconsume.MesWmItemConsumeDetailMapper;
-import cn.iocoder.yudao.module.mes.dal.mysql.wm.itemconsume.MesWmItemConsumeMapper;
-import cn.iocoder.yudao.module.mes.dal.mysql.wm.productproduce.MesWmProductProduceDetailMapper;
-import cn.iocoder.yudao.module.mes.dal.mysql.wm.productproduce.MesWmProductProduceLineMapper;
-import cn.iocoder.yudao.module.mes.dal.mysql.wm.productproduce.MesWmProductProduceMapper;
 import cn.iocoder.yudao.module.mes.service.md.autocode.MesMdAutoCodeRecordService;
 import cn.iocoder.yudao.module.mes.service.md.item.MesMdItemBatchConfigService;
 import cn.iocoder.yudao.module.mes.service.md.item.MesMdItemService;
 import cn.iocoder.yudao.module.mes.service.wm.barcode.MesWmBarcodeService;
 import jakarta.annotation.Resource;
+import org.junit.jupiter.api.AfterEach;
+import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
+import org.junit.jupiter.params.ParameterizedTest;
+import org.junit.jupiter.params.provider.CsvSource;
 import org.springframework.context.annotation.Import;
+import org.springframework.jdbc.core.JdbcTemplate;
 import org.springframework.test.context.bean.override.mockito.MockitoBean;
+import org.springframework.test.context.jdbc.Sql;
+import org.springframework.test.context.jdbc.SqlMergeMode;
 
-import java.math.BigDecimal;
-import java.time.LocalDateTime;
+import javax.sql.DataSource;
 import java.util.List;
 
 import static cn.iocoder.yudao.framework.test.core.util.RandomUtils.randomLongId;
@@ -37,6 +32,8 @@ import static org.junit.jupiter.api.Assertions.*;
  * @author 芋道源码
  */
 @Import(MesWmBatchServiceImpl.class)
+@Sql(scripts = {"/sql/clean.sql", "/sql/sn_trace_tables.sql"}, executionPhase = Sql.ExecutionPhase.BEFORE_TEST_METHOD)
+@SqlMergeMode(SqlMergeMode.MergeMode.MERGE)
 public class MesWmBatchServiceImplTest extends BaseDbUnitTest {
 
     @Resource
@@ -44,19 +41,6 @@ public class MesWmBatchServiceImplTest extends BaseDbUnitTest {
 
     @Resource
     private MesWmBatchMapper batchMapper;
-
-    @Resource
-    private MesWmItemConsumeMapper consumeMapper;
-    @Resource
-    private MesWmItemConsumeDetailMapper consumeDetailMapper;
-    @Resource
-    private MesProFeedbackMapper feedbackMapper;
-    @Resource
-    private MesWmProductProduceMapper produceMapper;
-    @Resource
-    private MesWmProductProduceLineMapper produceLineMapper;
-    @Resource
-    private MesWmProductProduceDetailMapper produceDetailMapper;
 
     @MockitoBean
     private MesMdItemService itemService;
@@ -66,6 +50,32 @@ public class MesWmBatchServiceImplTest extends BaseDbUnitTest {
     private MesMdAutoCodeRecordService autoCodeRecordService;
     @MockitoBean
     private MesWmBarcodeService barcodeService;
+
+    @Resource
+    private DataSource dataSource;
+    private JdbcTemplate jdbc;
+
+    @BeforeEach
+    void prepareTraceFixture() {
+        jdbc = new JdbcTemplate(dataSource);
+        clearConsumption();
+        TenantContextHolder.setTenantId(0L);
+    }
+
+    @AfterEach
+    void clearTraceFixture() {
+        clearConsumption();
+        jdbc.update("DELETE FROM mes_pro_sn_material");
+        jdbc.update("DELETE FROM mes_pro_sn_station");
+        jdbc.update("DELETE FROM mes_pro_sn_trace");
+        TenantContextHolder.clear();
+    }
+
+    private void clearConsumption() {
+        jdbc.update("DELETE FROM mes_wm_item_consume_detail");
+        jdbc.update("DELETE FROM mes_wm_item_consume_line");
+        jdbc.update("DELETE FROM mes_wm_item_consume");
+    }
 
     // ==================== 向前追溯 ====================
 
@@ -221,187 +231,225 @@ public class MesWmBatchServiceImplTest extends BaseDbUnitTest {
         assertNull(notFound);
     }
 
-    // ==================== 向前追溯（集成测试）====================
+    // ==================== Actual genealogy regression tests ====================
 
-    /**
-     * 向前追溯集成测试：构造完整链路数据
-     * 链路：消耗明细(icd, batchCode=RAW_BATCH) → 消耗单(ic) → 报工(pf) → 入库单(pp) → 入库行(ppl, batchCode=PRODUCT_BATCH)
-     * 预期：查 RAW_BATCH 能找到 PRODUCT_BATCH
-     */
     @Test
-    public void testSelectListByForward_withData() {
-        // 准备：公共 ID
-        Long workOrderId = randomLongId();
-        Long rawItemId = randomLongId();
-        Long productItemId = randomLongId();
-        Long productBatchId = randomLongId();
-        LocalDateTime now = LocalDateTime.now();
-
-        // 1. 报工记录
-        MesProFeedbackDO feedback = MesProFeedbackDO.builder()
-                .workOrderId(workOrderId).itemId(productItemId).build();
-        feedbackMapper.insert(feedback);
-
-        // 2. 消耗单
-        MesWmItemConsumeDO consume = MesWmItemConsumeDO.builder()
-                .workOrderId(workOrderId).taskId(randomLongId()).workstationId(randomLongId())
-                .processId(randomLongId()).feedbackId(feedback.getId()).consumeDate(now).build();
-        consumeMapper.insert(consume);
-
-        // 3. 消耗明细（关联原材料批次 RAW_BATCH）
-        MesWmItemConsumeDetailDO consumeDetail = MesWmItemConsumeDetailDO.builder()
-                .consumeId(consume.getId()).lineId(randomLongId()).itemId(rawItemId)
-                .quantity(BigDecimal.TEN).batchCode("RAW_BATCH")
-                .warehouseId(randomLongId()).locationId(randomLongId()).areaId(randomLongId()).build();
-        consumeDetailMapper.insert(consumeDetail);
-
-        // 4. 生产入库单
-        MesWmProductProduceDO produce = MesWmProductProduceDO.builder()
-                .workOrderId(workOrderId).build();
-        produceMapper.insert(produce);
-
-        // 5. 入库行（关联成品批次 PRODUCT_BATCH）
-        MesWmProductProduceLineDO produceLine = MesWmProductProduceLineDO.builder()
-                .produceId(produce.getId()).itemId(productItemId)
-                .batchId(productBatchId).batchCode("PRODUCT_BATCH").build();
-        produceLineMapper.insert(produceLine);
-
-        // 执行向前追溯
-        List<MesWmBatchDO> result = batchMapper.selectListByForward("RAW_BATCH");
-
-        // 断言
-        assertNotNull(result);
-        assertEquals(1, result.size());
-        assertEquals("PRODUCT_BATCH", result.get(0).getCode());
-        assertEquals(productBatchId, result.get(0).getId());
-        assertEquals(workOrderId, result.get(0).getWorkOrderId());
-        assertEquals(productItemId, result.get(0).getItemId());
+    void sameWorkOrderDifferentFeedbacksNeverCrossLinkBatches() {
+        completedEdge(10, 100, 0, "RAW-A", "P1");
+        completedEdge(20, 100, 0, "RAW-B", "P2");
+        assertEquals(List.of("P1"), forward("RAW-A", 0));
+        assertEquals(List.of("P2"), forward("RAW-B", 0));
+        assertEquals(List.of("RAW-A"), backward("P1", 0));
+        assertEquals(List.of("RAW-B"), backward("P2", 0));
     }
 
-    /**
-     * 向前追溯：已删除的消耗明细应被过滤（icd.deleted = 1）
-     */
-    @Test
-    public void testSelectListByForward_deletedDataFiltered() {
-        Long workOrderId = randomLongId();
-        LocalDateTime now = LocalDateTime.now();
-
-        // 1. 报工记录
-        MesProFeedbackDO feedback = MesProFeedbackDO.builder()
-                .workOrderId(workOrderId).itemId(randomLongId()).build();
-        feedbackMapper.insert(feedback);
-
-        // 2. 消耗单
-        MesWmItemConsumeDO consume = MesWmItemConsumeDO.builder()
-                .workOrderId(workOrderId).taskId(randomLongId()).workstationId(randomLongId())
-                .processId(randomLongId()).feedbackId(feedback.getId()).consumeDate(now).build();
-        consumeMapper.insert(consume);
-
-        // 3. 消耗明细（逻辑删除）
-        MesWmItemConsumeDetailDO consumeDetail = MesWmItemConsumeDetailDO.builder()
-                .consumeId(consume.getId()).lineId(randomLongId()).itemId(randomLongId())
-                .quantity(BigDecimal.TEN).batchCode("RAW_DEL_TEST")
-                .warehouseId(randomLongId()).locationId(randomLongId()).areaId(randomLongId()).build();
-        consumeDetailMapper.insert(consumeDetail);
-        consumeDetailMapper.deleteById(consumeDetail.getId()); // 逻辑删除消耗明细
-
-        // 4. 生产入库单 + 入库行
-        MesWmProductProduceDO produce = MesWmProductProduceDO.builder()
-                .workOrderId(workOrderId).build();
-        produceMapper.insert(produce);
-        MesWmProductProduceLineDO produceLine = MesWmProductProduceLineDO.builder()
-                .produceId(produce.getId()).itemId(randomLongId())
-                .batchId(randomLongId()).batchCode("PRODUCT_DEL_TEST").build();
-        produceLineMapper.insert(produceLine);
-
-        // 执行：消耗明细已删除，应该追溯不到
-        List<MesWmBatchDO> result = batchMapper.selectListByForward("RAW_DEL_TEST");
-        assertNotNull(result);
-        assertTrue(result.isEmpty());
+    @ParameterizedTest
+    @CsvSource({
+            "mes_pro_feedback,10,0", "mes_pro_feedback,10,2", "mes_pro_feedback,10,3",
+            "mes_pro_feedback,10,5", "mes_wm_item_consume,1010,0",
+            "mes_wm_product_produce,2010,0", "mes_wm_product_produce,2010,5"
+    })
+    void unfinishedCancelledAndAwaitingInspectionDocumentsAreNotActualGenealogy(String table, long id, int status) {
+        completedEdge(10, 100, 0, "RAW-A", "P1");
+        jdbc.update("UPDATE " + table + " SET status=? WHERE id=?", status, id);
+        assertTrue(forward("RAW-A", 0).isEmpty());
+        assertTrue(backward("P1", 0).isEmpty());
     }
 
-    // ==================== 向后追溯（集成测试）====================
-
-    /**
-     * 向后追溯集成测试：构造完整链路数据
-     * 链路：入库明细(ppd, batchCode=PRODUCT_BATCH) → 入库单(pp) → 消耗单(ic) → 消耗明细(icd, batchCode=RAW_BATCH)
-     * 预期：查 PRODUCT_BATCH 能找到 RAW_BATCH
-     */
-    @Test
-    public void testSelectListByBackward_withData() {
-        Long workOrderId = randomLongId();
-        Long rawItemId = randomLongId();
-        Long rawBatchId = randomLongId();
-        LocalDateTime now = LocalDateTime.now();
-
-        // 1. 生产入库单
-        MesWmProductProduceDO produce = MesWmProductProduceDO.builder()
-                .workOrderId(workOrderId).build();
-        produceMapper.insert(produce);
-
-        // 2. 入库明细（关联成品批次 PRODUCT_BACK_BATCH）
-        MesWmProductProduceDetailDO produceDetail = MesWmProductProduceDetailDO.builder()
-                .produceId(produce.getId()).itemId(randomLongId())
-                .batchCode("PRODUCT_BACK_BATCH").build();
-        produceDetailMapper.insert(produceDetail);
-
-        // 3. 消耗单
-        MesWmItemConsumeDO consume = MesWmItemConsumeDO.builder()
-                .workOrderId(workOrderId).taskId(randomLongId()).workstationId(randomLongId())
-                .processId(randomLongId()).feedbackId(randomLongId()).consumeDate(now).build();
-        consumeMapper.insert(consume);
-
-        // 4. 消耗明细（关联原材料批次 RAW_BACK_BATCH）
-        MesWmItemConsumeDetailDO consumeDetail = MesWmItemConsumeDetailDO.builder()
-                .consumeId(consume.getId()).lineId(randomLongId()).itemId(rawItemId)
-                .quantity(BigDecimal.ONE).batchId(rawBatchId).batchCode("RAW_BACK_BATCH")
-                .warehouseId(randomLongId()).locationId(randomLongId()).areaId(randomLongId()).build();
-        consumeDetailMapper.insert(consumeDetail);
-
-        // 执行向后追溯
-        List<MesWmBatchDO> result = batchMapper.selectListByBackward("PRODUCT_BACK_BATCH");
-
-        // 断言
-        assertNotNull(result);
-        assertEquals(1, result.size());
-        assertEquals("RAW_BACK_BATCH", result.get(0).getCode());
-        assertEquals(rawBatchId, result.get(0).getId());
-        assertEquals(workOrderId, result.get(0).getWorkOrderId());
-        assertEquals(rawItemId, result.get(0).getItemId());
+    @ParameterizedTest
+    @CsvSource({
+            "mes_wm_item_consume_detail,3010", "mes_wm_item_consume,1010", "mes_pro_feedback,10",
+            "mes_wm_product_produce,2010", "mes_wm_product_produce_detail,4010"
+    })
+    void deletedRowsAtAnyDirectEdgeAreExcluded(String table, long id) {
+        completedEdge(10, 100, 0, "RAW-A", "P1");
+        jdbc.update("UPDATE " + table + " SET deleted=1 WHERE id=?", id);
+        assertTrue(forward("RAW-A", 0).isEmpty());
+        assertTrue(backward("P1", 0).isEmpty());
     }
 
-    /**
-     * 向后追溯：消耗明细 batchCode 为 NULL 的应被过滤
-     */
+    @ParameterizedTest
+    @CsvSource({
+            "mes_wm_item_consume_detail,3010", "mes_wm_item_consume,1010", "mes_pro_feedback,10",
+            "mes_wm_product_produce,2010", "mes_wm_product_produce_detail,4010"
+    })
+    void foreignTenantRowsAtAnyDirectEdgeCannotBridgeTheCurrentTenant(String table, long id) {
+        completedEdge(10, 100, 0, "RAW-A", "P1");
+        jdbc.update("UPDATE " + table + " SET tenant_id=1 WHERE id=?", id);
+        assertTrue(forward("RAW-A", 0).isEmpty());
+        assertTrue(backward("P1", 0).isEmpty());
+        assertTrue(forward("RAW-A", 1).isEmpty());
+        assertTrue(backward("P1", 1).isEmpty());
+    }
+
     @Test
-    public void testSelectListByBackward_nullBatchCodeFiltered() {
-        Long workOrderId = randomLongId();
-        LocalDateTime now = LocalDateTime.now();
+    void tenantContextIsRequiredAndOtherTenantsIdenticalBatchCodesAreInvisible() {
+        completedEdge(10, 100, 1, "RAW-A", "P1");
+        assertTrue(batchService.getForwardBatchList("RAW-A").isEmpty());
+        assertTrue(batchService.getBackwardBatchList("P1").isEmpty());
+        TenantContextHolder.setTenantId(1L);
+        assertEquals(List.of("P1"), codes(batchService.getForwardBatchList("RAW-A")));
+        assertEquals(List.of("RAW-A"), codes(batchService.getBackwardBatchList("P1")));
+        TenantContextHolder.clear();
+        assertThrows(NullPointerException.class, () -> batchService.getForwardBatchList("RAW-A"));
+    }
 
-        // 生产入库单 + 入库明细
-        MesWmProductProduceDO produce = MesWmProductProduceDO.builder()
-                .workOrderId(workOrderId).build();
-        produceMapper.insert(produce);
-        MesWmProductProduceDetailDO produceDetail = MesWmProductProduceDetailDO.builder()
-                .produceId(produce.getId()).itemId(randomLongId())
-                .batchCode("PRODUCT_NULL_TEST").build();
-        produceDetailMapper.insert(produceDetail);
+    @ParameterizedTest
+    @CsvSource({"mes_wm_item_consume_detail,3010", "mes_wm_product_produce_detail,4010"})
+    void zeroOrNegativeDetailQuantityNeverCreatesAnEdge(String table, long id) {
+        completedEdge(10, 100, 0, "RAW-A", "P1");
+        for (int quantity : List.of(0, -1)) {
+            jdbc.update("UPDATE " + table + " SET quantity=? WHERE id=?", quantity, id);
+            assertTrue(forward("RAW-A", 0).isEmpty());
+            assertTrue(backward("P1", 0).isEmpty());
+        }
+    }
 
-        // 消耗单 + 消耗明细（batchCode 为 null）
-        MesWmItemConsumeDO consume = MesWmItemConsumeDO.builder()
-                .workOrderId(workOrderId).taskId(randomLongId()).workstationId(randomLongId())
-                .processId(randomLongId()).feedbackId(randomLongId()).consumeDate(now).build();
-        consumeMapper.insert(consume);
-        MesWmItemConsumeDetailDO consumeDetail = MesWmItemConsumeDetailDO.builder()
-                .consumeId(consume.getId()).lineId(randomLongId()).itemId(randomLongId())
-                .quantity(BigDecimal.ONE).batchCode(null) // 无批次
-                .warehouseId(randomLongId()).locationId(randomLongId()).areaId(randomLongId()).build();
-        consumeDetailMapper.insert(consumeDetail);
+    @Test
+    void sameFeedbackIdCannotBridgeDifferentWorkOrders() {
+        completedEdge(10, 100, 0, "RAW-A", "P1");
+        jdbc.update("UPDATE mes_wm_product_produce SET work_order_id=999 WHERE id=2010");
+        assertTrue(forward("RAW-A", 0).isEmpty());
+        assertTrue(backward("P1", 0).isEmpty());
+    }
 
-        // 执行：应过滤掉 batchCode IS NULL 的消耗明细
-        List<MesWmBatchDO> result = batchMapper.selectListByBackward("PRODUCT_NULL_TEST");
-        assertNotNull(result);
-        assertTrue(result.isEmpty());
+    @Test
+    void outputLineWithoutExecutedActualDetailIsNotTraceable() {
+        consume(10, 100, 0, "RAW-A");
+        jdbc.update("INSERT INTO mes_wm_product_produce(id,work_order_id,feedback_id,status,tenant_id) VALUES(2010,100,10,4,0)");
+        jdbc.update("INSERT INTO mes_wm_product_produce_line(id,produce_id,feedback_id,item_id,quantity,batch_id,batch_code) VALUES(5010,2010,10,300,1,6010,'P1')");
+        assertTrue(forward("RAW-A", 0).isEmpty());
+        assertTrue(backward("P1", 0).isEmpty());
+    }
+
+    @Test
+    void priorProcessMaterialsAreNotInferredFromWorkOrderWithoutExplicitAllocation() {
+        consume(10, 100, 0, "EARLY-RAW");
+        completedEdge(20, 100, 0, "LAST-RAW", "P2");
+        assertTrue(forward("EARLY-RAW", 0).isEmpty());
+        assertEquals(List.of("LAST-RAW"), backward("P2", 0));
+    }
+
+    @Test
+    void completedSnAllocationProvidesRecordedCrossProcessGenealogy() {
+        crossProcessSn("COMPLETED", "P2");
+        assertEquals(List.of("P2"), forward("EARLY-RAW", 0));
+        assertEquals(List.of("EARLY-RAW", "LAST-RAW"), backward("P2", 0));
+        // Direct and SN evidence for the same batch must not duplicate the result.
+        jdbc.update("INSERT INTO mes_pro_sn_material(id,trace_id,station_id,feedback_id,consume_id,consume_line_id,consume_detail_id,material_stock_id,item_id,batch_id,batch_code,quantity,tenant_id) VALUES(4,1,2,20,1020,7020,3020,1,200,6020,'LAST-RAW',1,0)");
+        assertEquals(List.of("EARLY-RAW", "LAST-RAW"), backward("P2", 0));
+    }
+
+    @Test
+    void incompleteSnDoesNotInventCrossProcessEdges() {
+        crossProcessSn("REGISTERED", "P2");
+        assertTrue(forward("EARLY-RAW", 0).isEmpty());
+        assertEquals(List.of("LAST-RAW"), backward("P2", 0));
+    }
+
+    @Test
+    void registeredWorkOrderLotDoesNotReplaceTheOutputStationsActualInventoryBatch() {
+        crossProcessSn("COMPLETED", "WORK-ORDER-LOT");
+        // Another report of this work order was never visited by this SN.
+        completedEdge(30, 100, 0, "UNRELATED-RAW", "P3");
+        assertEquals(List.of("P2"), forward("EARLY-RAW", 0));
+        assertEquals(List.of("EARLY-RAW", "LAST-RAW"), backward("P2", 0));
+        assertEquals(List.of("UNRELATED-RAW"), backward("P3", 0));
+        assertTrue(backward("WORK-ORDER-LOT", 0).isEmpty());
+        // An unbatched work-order identity likewise cannot hide actual inventory genealogy.
+        jdbc.update("UPDATE mes_pro_sn_trace SET product_batch_code=NULL WHERE id=1");
+        assertEquals(List.of("P2"), forward("EARLY-RAW", 0));
+        assertEquals(List.of("EARLY-RAW", "LAST-RAW"), backward("P2", 0));
+        assertEquals(List.of("UNRELATED-RAW"), backward("P3", 0));
+    }
+
+    @ParameterizedTest
+    @CsvSource({
+            "mes_pro_sn_trace,1", "mes_pro_sn_station,1", "mes_pro_sn_station,2", "mes_pro_sn_material,3",
+            "mes_pro_feedback,10", "mes_pro_feedback,20", "mes_wm_item_consume,1010",
+            "mes_wm_item_consume_detail,3010", "mes_wm_product_produce,2020", "mes_wm_product_produce_detail,4020"
+    })
+    void deletedRowsAtAnySnEvidenceLinkExcludeTheCrossProcessEdge(String table, long id) {
+        crossProcessSn("COMPLETED", "P2");
+        jdbc.update("UPDATE " + table + " SET deleted=1 WHERE id=?", id);
+        assertTrue(forward("EARLY-RAW", 0).isEmpty());
+        assertFalse(backward("P2", 0).contains("EARLY-RAW"));
+    }
+
+    @ParameterizedTest
+    @CsvSource({
+            "mes_pro_sn_trace,1", "mes_pro_sn_station,1", "mes_pro_sn_station,2", "mes_pro_sn_material,3",
+            "mes_pro_feedback,10", "mes_pro_feedback,20", "mes_wm_item_consume,1010",
+            "mes_wm_item_consume_detail,3010", "mes_wm_product_produce,2020", "mes_wm_product_produce_detail,4020"
+    })
+    void foreignTenantAtAnySnEvidenceLinkCannotJoinAnotherTenantsHistory(String table, long id) {
+        crossProcessSn("COMPLETED", "P2");
+        jdbc.update("UPDATE " + table + " SET tenant_id=1 WHERE id=?", id);
+        assertTrue(forward("EARLY-RAW", 0).isEmpty());
+        assertFalse(backward("P2", 0).contains("EARLY-RAW"));
+        assertTrue(forward("EARLY-RAW", 1).isEmpty());
+    }
+
+    @Test
+    void staleSnMaterialSnapshotDoesNotOverrideActualBatchIdentity() {
+        crossProcessSn("COMPLETED", "P2");
+        jdbc.update("UPDATE mes_pro_sn_material SET batch_code='ANOTHER-RAW' WHERE id=3");
+        assertTrue(forward("ANOTHER-RAW", 0).isEmpty());
+        assertTrue(forward("EARLY-RAW", 0).isEmpty());
+        assertEquals(List.of("LAST-RAW"), backward("P2", 0));
+    }
+
+    @Test
+    void recursiveTraceDeduplicatesConvergentPathsAndExcludesItsOwnRoot() {
+        completedEdge(10, 100, 0, "A", "P1");
+        completedEdge(20, 200, 0, "P1", "P2");
+        completedEdge(30, 300, 0, "P2", "A");
+        completedEdge(40, 400, 0, "A", "P2");
+        assertEquals(java.util.Set.of("P1", "P2"), new java.util.HashSet<>(codes(batchService.getForwardBatchList("A"))));
+        assertEquals(3, batchService.getForwardBatchList("A").size()); // P2 has two distinct producing work orders.
+        assertEquals(java.util.Set.of("P1", "P2"), new java.util.HashSet<>(codes(batchService.getBackwardBatchList("A"))));
+        assertFalse(codes(batchService.getBackwardBatchList("A")).contains("A"));
+    }
+
+    private void completedEdge(long feedback, long order, long tenant, String raw, String product) {
+        consume(feedback, order, tenant, raw);
+        jdbc.update("INSERT INTO mes_wm_product_produce(id,work_order_id,feedback_id,status,tenant_id) VALUES(?,?,?,?,?)",
+                2000 + feedback, order, feedback, 4, tenant);
+        jdbc.update("INSERT INTO mes_wm_product_produce_detail(id,produce_id,item_id,quantity,batch_id,batch_code,tenant_id) VALUES(?,?,300,1,?,?,?)",
+                4000 + feedback, 2000 + feedback, 8000 + feedback, product, tenant);
+    }
+
+    private void consume(long feedback, long order, long tenant, String raw) {
+        jdbc.update("INSERT INTO mes_pro_feedback(id,work_order_id,item_id,status,tenant_id) VALUES(?,?,300,4,?)",
+                feedback, order, tenant);
+        jdbc.update("INSERT INTO mes_wm_item_consume(id,work_order_id,task_id,workstation_id,process_id,feedback_id,consume_date,status,tenant_id) VALUES(?,?,1,1,1,?,CURRENT_TIMESTAMP,4,?)",
+                1000 + feedback, order, feedback, tenant);
+        jdbc.update("INSERT INTO mes_wm_item_consume_detail(id,consume_id,line_id,item_id,quantity,batch_id,batch_code,warehouse_id,location_id,area_id,tenant_id) VALUES(?,?,?,200,1,?,?,1,1,1,?)",
+                3000 + feedback, 1000 + feedback, 7000 + feedback, 6000 + feedback, raw, tenant);
+    }
+
+    private void crossProcessSn(String state, String productBatch) {
+        consume(10, 100, 0, "EARLY-RAW");
+        completedEdge(20, 100, 0, "LAST-RAW", "P2");
+        jdbc.update("INSERT INTO mes_pro_sn_trace(id,sn_id,sn_code,work_order_id,product_id,product_batch_code,status,tenant_id) VALUES(1,1,'SN-1',100,300,?,?,0)",
+                productBatch, state);
+        for (int station = 1; station <= 2; station++) {
+            jdbc.update("INSERT INTO mes_pro_sn_station(id,trace_id,request_key,request_hash,work_order_id,feedback_id,task_id,route_id,process_id,process_sort,operator_id,station_time,tenant_id) VALUES(?,1,?,'hash',100,?,1,1,?,?,1,CURRENT_TIMESTAMP,0)",
+                    station, "station-" + station, 10L * station, station, station);
+        }
+        jdbc.update("INSERT INTO mes_pro_sn_material(id,trace_id,station_id,feedback_id,consume_id,consume_line_id,consume_detail_id,material_stock_id,item_id,batch_id,batch_code,quantity,tenant_id) VALUES(3,1,1,10,1010,7010,3010,1,200,6010,'EARLY-RAW',1,0)");
+    }
+
+    private List<String> forward(String code, long tenant) {
+        return codes(batchMapper.selectListByForward(code, tenant));
+    }
+
+    private List<String> backward(String code, long tenant) {
+        return codes(batchMapper.selectListByBackward(code, tenant));
+    }
+
+    private static List<String> codes(List<MesWmBatchDO> batches) {
+        return batches.stream().map(MesWmBatchDO::getCode).toList();
     }
 
 }

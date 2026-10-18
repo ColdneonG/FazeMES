@@ -26,6 +26,9 @@ public interface MesWmProductProduceLineService {
      */
     MesWmProductProduceLineDO validateProductProduceLineExists(Long id);
 
+    /** Current read under the owning production document lock, before splitting a pending line. */
+    MesWmProductProduceLineDO validateProductProduceLineExistsForUpdate(Long id);
+
     /**
      * 更新生产入库单行（内部使用）
      *

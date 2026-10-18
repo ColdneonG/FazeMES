@@ -11,6 +11,7 @@ import cn.iocoder.yudao.module.mes.service.md.item.MesMdProductBomService;
 import jakarta.annotation.Resource;
 import org.springframework.context.annotation.Lazy;
 import org.springframework.stereotype.Service;
+import org.springframework.transaction.annotation.Transactional;
 import org.springframework.validation.annotation.Validated;
 
 import java.util.List;
@@ -39,6 +40,7 @@ public class MesProRouteProductBomServiceImpl implements MesProRouteProductBomSe
     private MesMdProductBomService productBomService;
 
     @Override
+    @Transactional(rollbackFor = Exception.class)
     public Long createRouteProductBom(MesProRouteProductBomSaveReqVO createReqVO) {
         // 1. 校验数据
         validateRouteProductBomSaveData(null, createReqVO);
@@ -50,9 +52,15 @@ public class MesProRouteProductBomServiceImpl implements MesProRouteProductBomSe
     }
 
     @Override
+    @Transactional(rollbackFor = Exception.class)
     public void updateRouteProductBom(MesProRouteProductBomSaveReqVO updateReqVO) {
         // 1. 校验存在 + 校验数据
         validateRouteProductBomExists(updateReqVO.getId());
+        MesProRouteProductBomDO original = routeProductBomMapper.selectById(updateReqVO.getId());
+        if (!java.util.Objects.equals(original.getRouteId(), updateReqVO.getRouteId())
+                || !java.util.Objects.equals(original.getProductId(), updateReqVO.getProductId())) {
+            throw cn.iocoder.yudao.module.mes.service.pro.integrity.MesProductionIntegrityService.invalid("工序用料不能移至其他路线或产品");
+        }
         validateRouteProductBomSaveData(updateReqVO.getId(), updateReqVO);
 
         // 2. 更新
@@ -61,6 +69,7 @@ public class MesProRouteProductBomServiceImpl implements MesProRouteProductBomSe
     }
 
     @Override
+    @Transactional(rollbackFor = Exception.class)
     public void deleteRouteProductBom(Long id) {
         // 1.1 校验存在
         MesProRouteProductBomDO bom = routeProductBomMapper.selectById(id);
@@ -86,6 +95,10 @@ public class MesProRouteProductBomServiceImpl implements MesProRouteProductBomSe
      * @param reqVO 保存请求
      */
     private void validateRouteProductBomSaveData(Long id, MesProRouteProductBomSaveReqVO reqVO) {
+        if (reqVO.getQuantity() == null || reqVO.getQuantity().signum() <= 0 || reqVO.getQuantity().scale() > 6
+                || reqVO.getQuantity().precision() - reqVO.getQuantity().scale() > 14) {
+            throw cn.iocoder.yudao.module.mes.service.pro.integrity.MesProductionIntegrityService.invalid("工序用料必须为正数，最多6位小数");
+        }
         // 校验已启用的工艺路线，不允许操作
         routeService.validateRouteNotEnable(reqVO.getRouteId());
         // 校验唯一性
