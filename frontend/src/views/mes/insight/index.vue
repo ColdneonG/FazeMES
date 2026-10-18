@@ -410,7 +410,8 @@
 
         <el-tab-pane label="实时业务助手" name="assistant">
           <p class="section-note"
-            >查询交期、缺料、异常、质量和流程数据。规则答复可直接使用；模型分析复用“AI助手与知识库”的模型配置。</p
+            >查询交期、缺料、异常、质量、流程及指定编码的 BOM
+            成本。成本查询需独立授权；模型分析复用“AI助手与知识库”的模型配置。</p
           >
           <div class="quick-questions"
             ><el-button v-for="q in questions" :key="q" plain @click="askPreset(q)">{{
@@ -514,6 +515,31 @@
                   <el-table-column v-if="answer.topic === 'incidents'" label="处理截止"
                     ><template #default="{ row }">{{ fmt(row.dueAt) }}</template></el-table-column
                   >
+                  <template v-if="answer.topic === 'cost'">
+                    <el-table-column prop="code" label="产品／工单编码" min-width="170" />
+                    <el-table-column prop="costBasis" label="核算口径" min-width="210" />
+                    <el-table-column prop="status" label="核算状态" min-width="110" />
+                    <el-table-column
+                      v-for="column in costColumns"
+                      :key="column.key"
+                      :label="column.label"
+                      min-width="130"
+                    >
+                      <template #default="{ row }">{{
+                        row[column.key] === undefined ? '—' : money(row[column.key])
+                      }}</template>
+                    </el-table-column>
+                    <el-table-column label="缺失依据" min-width="220">
+                      <template #default="{ row }">{{ row.issues?.join('；') || '无' }}</template>
+                    </el-table-column>
+                    <el-table-column label="核对原始记录" min-width="130">
+                      <template #default="{ row }">
+                        <el-button link type="primary" @click="openCostRecord(row)"
+                          >成本明细</el-button
+                        >
+                      </template>
+                    </el-table-column>
+                  </template>
                 </el-table>
                 <el-button link type="primary" @click="showEvidence"
                   >前往分析页查看原始记录</el-button
@@ -793,6 +819,8 @@ import {
 } from '@/api/mes/insight'
 import { checkPermi } from '@/utils/permission'
 import { ElMessage } from 'element-plus'
+import { money } from '@/views/mes/cost/format'
+import { openCostCenter } from '@/views/mes/cost/navigation'
 defineOptions({ name: 'MesInsight' })
 const router = useRouter(),
   route = useRoute()
@@ -818,24 +846,44 @@ const days = ref(30),
 const canModel = computed(() => checkPermi(['mes:assistant:chat']))
 const answerRows = computed(() => {
   const key =
-    answer.value?.topic === 'risks'
-      ? 'orders'
-      : answer.value?.topic === 'quality'
-        ? 'groups'
-        : answer.value?.topic === 'flow'
-          ? 'stations'
-          : 'cases'
+    answer.value?.topic === 'cost'
+      ? 'items'
+      : answer.value?.topic === 'risks'
+        ? 'orders'
+        : answer.value?.topic === 'quality'
+          ? 'groups'
+          : answer.value?.topic === 'flow'
+            ? 'stations'
+            : 'cases'
   return (answer.value?.evidence[key] || []) as Record<string, unknown>[]
 })
 function showEvidence() {
+  if (answer.value?.topic === 'cost') {
+    void openCostCenter(router, {})
+    return
+  }
   if (answer.value && tabs.includes(answer.value.topic)) tab.value = answer.value.topic
 }
+function openCostRecord(row: Record<string, unknown>) {
+  const id = Number(row.recordId)
+  if (!Number.isSafeInteger(id) || id <= 0) return
+  void openCostCenter(router, row.sourceType === 'WORKORDER' ? { workorderId: id } : { itemId: id })
+}
+const costColumns = [
+  { key: 'totalCost', label: '标准单位／实际总额' },
+  { key: 'planTotalCost', label: '工单冻结计划总额' },
+  { key: 'materialCost', label: '材料成本' },
+  { key: 'laborCost', label: '人工成本' },
+  { key: 'overheadCost', label: '制造费用' },
+  { key: 'salePrice', label: '产品参考售价' }
+]
 const questions = [
   '今天哪些工单有交付风险？',
   '当前缺料情况如何？',
   '有哪些待处理异常？',
   '近30天质量有哪些关联差异？',
-  '哪些工作站可能存在流程瓶颈？'
+  '哪些工作站可能存在流程瓶颈？',
+  ...(checkPermi(['mes:cost:query']) ? ['BROKY-FG-V2 的 BOM 标准成本是多少？'] : [])
 ]
 const statusNames: Record<string, string> = {
   OPEN: '待处理',
