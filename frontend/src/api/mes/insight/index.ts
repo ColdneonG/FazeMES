@@ -128,11 +128,14 @@ export interface Incident {
   evidence?: string
   version: number
   createdAt: string
+  departmentId?: number
+  departmentName?: string
 }
 export interface IncidentData {
   cases: Incident[]
   andons: { id: number; reason: string; workOrderId?: number; workstationId?: number }[]
   owners: Option[]
+  departments: Option[]
   truncated: boolean
 }
 export interface IncidentInput {
@@ -144,6 +147,31 @@ export interface IncidentInput {
   ownerId?: number
   dueAt?: string
   description?: string
+  departmentId?: number
+  triageId?: number
+}
+export interface JevSettings {
+  endpoint: string
+  model: string
+  enabled: boolean
+  configured: boolean
+  apiKeyConfigured: boolean
+}
+export interface JevStatus {
+  configured: boolean
+  model: string
+  departments: Option[]
+  stats: { generated: number; reviewed: number; categoryAgreed: number; departmentAgreed: number }
+}
+export interface JevSuggestion {
+  id: number
+  model: string
+  category: string
+  departmentId?: number
+  departmentName: string
+  categoryConfidence: number
+  departmentConfidence: number
+  message: string
 }
 export interface IncidentMove {
   id: number
@@ -175,6 +203,21 @@ export interface Answer {
 }
 const base = '/mes/insight'
 export const InsightApi = {
+  jevStatus: () => request.get<JevStatus>({ url: `${base}/jev/status` }),
+  jevSettings: () => request.get<JevSettings>({ url: `${base}/jev/config` }),
+  saveJevSettings: (data: {
+    model: string
+    apiKey: string
+    clearApiKey: boolean
+    enabled: boolean
+  }) => request.put<JevSettings>({ url: `${base}/jev/config`, data }),
+  testJev: () =>
+    request.post<{ connected: boolean; model: string; message: string }>({
+      url: `${base}/jev/test`,
+      timeout: 90000
+    }),
+  suggestIncident: (data: { title: string; description?: string }) =>
+    request.post<JevSuggestion>({ url: `${base}/jev/suggest`, data, timeout: 90000 }),
   risks: () => request.get<RiskData>({ url: `${base}/risks` }),
   simulate: (data: SimulationInput) =>
     request.post<SimulationData>({ url: `${base}/simulate`, data }),

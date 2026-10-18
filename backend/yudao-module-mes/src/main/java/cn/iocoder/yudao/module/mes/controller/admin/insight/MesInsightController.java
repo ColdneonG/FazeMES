@@ -23,7 +23,12 @@ public class MesInsightController {
                              Long workstationId, @DecimalMin("0.1") @DecimalMax("1000") double manualHours) {}
     public record IncidentCreate(@NotBlank @Size(max=160) String title, @NotBlank @Size(max=30) String category,
                                  Long workOrderId, Long workstationId, Long andonId, Long ownerId,
-                                 LocalDateTime dueAt, @Size(max=2000) String description) {}
+                                 LocalDateTime dueAt, @Size(max=2000) String description,
+                                 Long departmentId, Long triageId) {
+        public IncidentCreate(String title,String category,Long workOrderId,Long workstationId,Long andonId,Long ownerId,LocalDateTime dueAt,String description) {
+            this(title,category,workOrderId,workstationId,andonId,ownerId,dueAt,description,null,null);
+        }
+    }
     public record IncidentMove(@NotNull Long id, @NotNull @Min(0) Integer version, @NotBlank String status,
                                Long ownerId, LocalDateTime dueAt, @Size(max=2000) String rootCause,
                                @Size(max=2000) String correctiveAction, @Size(max=2000) String evidence,

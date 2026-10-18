@@ -44,11 +44,12 @@ public class MesInsightWorkflow {
         if(key.getKey()==null) throw invalid("保存记录失败"); return key.getKey().longValue();
     }
     public Map<String,Object> list() {
-        var cases=jdbc.queryForList("SELECT c.id,c.title,c.category,c.work_order_id AS workOrderId,c.workstation_id AS workstationId,c.andon_id AS andonId,c.owner_id AS ownerId,c.due_at AS dueAt,c.description,c.status,c.root_cause AS rootCause,c.corrective_action AS correctiveAction,c.evidence,c.version,c.create_time AS createdAt,c.closed_at AS closedAt,u.nickname AS ownerName,w.code AS orderCode,ws.name AS stationName FROM mes_insight_incident c LEFT JOIN system_users u ON u.id=c.owner_id AND u.tenant_id=c.tenant_id AND u.deleted=0 LEFT JOIN mes_pro_work_order w ON w.id=c.work_order_id AND w.tenant_id=c.tenant_id AND w.deleted=0 LEFT JOIN mes_md_workstation ws ON ws.id=c.workstation_id AND ws.tenant_id=c.tenant_id AND ws.deleted=0 WHERE c.tenant_id=? AND c.deleted=0 ORDER BY CASE WHEN c.status='CLOSED' THEN 1 ELSE 0 END,c.due_at,c.id DESC LIMIT 501",tenant());
+        var cases=jdbc.queryForList("SELECT c.id,c.title,c.category,c.work_order_id AS workOrderId,c.workstation_id AS workstationId,c.andon_id AS andonId,c.owner_id AS ownerId,c.due_at AS dueAt,c.description,c.status,c.root_cause AS rootCause,c.corrective_action AS correctiveAction,c.evidence,c.version,c.create_time AS createdAt,c.closed_at AS closedAt,u.nickname AS ownerName,w.code AS orderCode,ws.name AS stationName,assign.department_id AS departmentId,dept.name AS departmentName FROM mes_insight_incident c LEFT JOIN system_users u ON u.id=c.owner_id AND u.tenant_id=c.tenant_id AND u.deleted=0 LEFT JOIN mes_pro_work_order w ON w.id=c.work_order_id AND w.tenant_id=c.tenant_id AND w.deleted=0 LEFT JOIN mes_md_workstation ws ON ws.id=c.workstation_id AND ws.tenant_id=c.tenant_id AND ws.deleted=0 LEFT JOIN mes_insight_incident_assignment assign ON assign.incident_id=c.id AND assign.tenant_id=c.tenant_id LEFT JOIN system_dept dept ON dept.id=assign.department_id AND dept.tenant_id=c.tenant_id AND dept.deleted=0 WHERE c.tenant_id=? AND c.deleted=0 ORDER BY CASE WHEN c.status='CLOSED' THEN 1 ELSE 0 END,c.due_at,c.id DESC LIMIT 501",tenant());
         boolean truncated=cases.size()>500; if(truncated) cases=new ArrayList<>(cases.subList(0,500));
         var andons=jdbc.queryForList("SELECT a.id,a.reason,a.work_order_id AS workOrderId,a.workstation_id AS workstationId,a.level,a.create_time AS createdAt FROM mes_pro_andon_record a WHERE a.tenant_id=? AND a.deleted=0 AND a.status=0 AND NOT EXISTS(SELECT 1 FROM mes_insight_incident c WHERE c.andon_id=a.id AND c.tenant_id=a.tenant_id AND c.deleted=0) ORDER BY a.create_time LIMIT 100",tenant());
         var owners=jdbc.queryForList("SELECT id,nickname AS name FROM system_users WHERE tenant_id=? AND deleted=0 AND status=0 ORDER BY nickname LIMIT 500",tenant());
-        return MesReportTimeFormat.isoResponse(map("cases",cases,"andons",andons,"owners",owners,"truncated",truncated));
+        var departments=jdbc.queryForList("SELECT id,name FROM system_dept WHERE tenant_id=? AND deleted=0 AND status=0 ORDER BY sort,id LIMIT 254",tenant());
+        return MesReportTimeFormat.isoResponse(map("cases",cases,"andons",andons,"owners",owners,"departments",departments,"truncated",truncated));
     }
     private Map<String,Object> incident(long id,boolean lock) {
         return one("SELECT * FROM mes_insight_incident WHERE id=? AND tenant_id=? AND deleted=0"+(lock?" FOR UPDATE":""),id,tenant());
@@ -63,6 +64,14 @@ public class MesInsightWorkflow {
     @Transactional(rollbackFor=Exception.class)
     public Long create(IncidentCreate req) {
         if(!Set.of("DELIVERY","MATERIAL","QUALITY","DEVICE","PROCESS","OTHER").contains(req.category())) throw invalid("异常分类无效");
+        if(req.departmentId()!=null) one("SELECT id FROM system_dept WHERE id=? AND tenant_id=? AND deleted=0 AND status=0",req.departmentId(),tenant());
+        if(req.triageId()!=null) {
+            var advice=one("SELECT *, (create_time < TIMESTAMPADD(HOUR,-24,CURRENT_TIMESTAMP)) AS expired FROM mes_insight_jev_triage WHERE id=? AND tenant_id=? AND creator=? FOR UPDATE",req.triageId(),tenant(),user());
+            if(advice.get("incident_id")!=null) throw invalid("该Jev建议已确认并建立异常，请刷新列表");
+            if(!MesJevTriageService.inputHash(req.title(),req.description()).equals(advice.get("input_hash"))) throw invalid("异常内容已改变，请重新分析或清除Jev建议后手动保存");
+            Object expired=advice.get("expired");
+            if(Boolean.TRUE.equals(expired) || expired instanceof Number value && value.intValue()!=0) throw invalid("Jev建议已过期，请重新分析");
+        }
         Long order=req.workOrderId(),station=req.workstationId();
         if(req.andonId()!=null) {
             var andon=one("SELECT work_order_id,workstation_id FROM mes_pro_andon_record WHERE id=? AND tenant_id=? AND deleted=0",req.andonId(),tenant());
@@ -73,7 +82,9 @@ public class MesInsightWorkflow {
         try {
             long id=insert("INSERT INTO mes_insight_incident(tenant_id,title,category,work_order_id,workstation_id,andon_id,owner_id,due_at,description,creator,updater) VALUES(?,?,?,?,?,?,?,?,?,?,?)",
                     tenant(),req.title().strip(),req.category(),order,station,req.andonId(),req.ownerId(),req.dueAt(),req.description(),user(),user());
-            event(id,"","OPEN","创建异常",null,null,null,req.ownerId(),req.dueAt()); return id;
+            if(req.departmentId()!=null || req.triageId()!=null) jdbc.update("INSERT INTO mes_insight_incident_assignment(incident_id,tenant_id,department_id,triage_id) VALUES(?,?,?,?)",id,tenant(),req.departmentId(),req.triageId());
+            if(req.triageId()!=null) jdbc.update("UPDATE mes_insight_jev_triage SET incident_id=?,final_category=?,final_department_id=?,reviewed_at=CURRENT_TIMESTAMP WHERE id=? AND tenant_id=? AND creator=? AND incident_id IS NULL",id,req.category(),req.departmentId(),req.triageId(),tenant(),user());
+            event(id,"","OPEN",req.triageId()==null?"创建异常":"创建异常；人工确认Jev建议 #"+req.triageId(),null,null,null,req.ownerId(),req.dueAt()); return id;
         } catch(DuplicateKeyException ex) { throw invalid("该安灯已存在闭环记录，请刷新列表"); }
     }
     private String nonblank(String value) { return value==null?"":value.strip(); }

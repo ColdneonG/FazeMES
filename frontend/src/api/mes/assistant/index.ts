@@ -17,7 +17,7 @@ export interface KnowledgeDocument {
   chunkCount: number
   version: number
   status: 'DRAFT' | 'PUBLISHED'
-  createTime: string
+  createTime: number | string
 }
 export interface Citation {
   chunkId: number
@@ -42,12 +42,12 @@ export interface AssistantMessage {
   status: 'ANSWERED' | 'MODEL_NOT_CONFIGURED' | 'MODEL_ERROR'
   citations: Citation[]
   modelName: string
-  createTime: string
+  createTime: number | string
 }
 export interface AssistantSession {
   id: number
   title: string
-  updateTime: string
+  updateTime: number | string
   messages?: AssistantMessage[]
 }
 export interface ModelStatus {

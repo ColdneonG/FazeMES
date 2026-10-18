@@ -10,7 +10,12 @@
         }}
       </el-tag>
     </div>
-    <el-button v-hasPermi="['mes:insight:query', 'mes:insight:chat']" class="mb-16px" @click="$router.push({ path: '/mes/insight', query: { tab: 'assistant' } })">查询实时生产业务与交期风险</el-button>
+    <el-button
+      v-hasPermi="['mes:insight:query', 'mes:insight:chat']"
+      class="mb-16px"
+      @click="$router.push({ path: '/mes/insight', query: { tab: 'assistant' } })"
+      >查询实时生产业务与交期风险</el-button
+    >
     <el-alert
       v-if="error"
       :title="error"
@@ -468,6 +473,7 @@ import {
   type SearchResult
 } from '@/api/mes/assistant'
 import { checkPermi } from '@/utils/permission'
+import { formatAssistantTime as time } from './assistantTime'
 
 defineOptions({ name: 'MesAssistant' })
 const canChat = checkPermi(['mes:assistant:chat'])
@@ -526,7 +532,6 @@ const configSaving = ref(false)
 const testing = ref(false)
 const connectionMessage = ref('')
 const connectionSuccess = ref(false)
-const time = (value: string) => (value ? value.replace('T', ' ').slice(0, 16) : '')
 const failure = (exception: unknown, fallback: string) => {
   error.value = exception instanceof Error ? exception.message : fallback
 }

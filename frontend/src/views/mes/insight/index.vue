@@ -332,6 +332,8 @@
           <div class="toolbar"
             ><el-button v-hasPermi="['mes:insight:manage']" type="primary" @click="newIncident()"
               >建立异常跟进</el-button
+            ><el-button v-hasPermi="['mes:assistant:config']" @click="jevConfigOpen = true"
+              >Jev分流配置</el-button
             ><el-select v-model="caseFilter" clearable placeholder="全部状态"
               ><el-option
                 v-for="(label, key) in statusNames"
@@ -358,7 +360,15 @@
                   statusNames[row.status]
                 }}</el-tag></template
               ></el-table-column
-            ><el-table-column prop="ownerName" label="负责人" /><el-table-column label="处理截止"
+            ><el-table-column label="分类" width="100"
+              ><template #default="{ row }">{{
+                categories[row.category] || row.category
+              }}</template></el-table-column
+            ><el-table-column
+              prop="departmentName"
+              label="处理部门"
+              min-width="120"
+            /><el-table-column prop="ownerName" label="负责人" /><el-table-column label="处理截止"
               ><template #default="{ row }"
                 ><span :class="overdue(row) ? 'danger' : ''">{{ fmt(row.dueAt) }}</span></template
               ></el-table-column
@@ -639,7 +649,13 @@
         ></el-timeline
       ></el-drawer
     >
-    <el-dialog v-model="createDialog" title="建立异常跟进" width="min(650px,95vw)"
+    <JevSettingsDialog v-model="jevConfigOpen" />
+    <el-dialog
+      v-model="createDialog"
+      title="建立异常跟进"
+      width="min(650px,95vw)"
+      top="4vh"
+      body-class="insight-incident-body"
       ><el-form label-position="top"
         ><el-form-item label="异常标题" required
           ><el-input v-model="incidentForm.title" maxlength="160" /></el-form-item
@@ -650,6 +666,13 @@
               :key="key"
               :value="key"
               :label="label" /></el-select></el-form-item
+        ><el-form-item label="处理部门（人工确认）"
+          ><el-select v-model="incidentForm.departmentId" clearable placeholder="可手动选择处理部门"
+            ><el-option
+              v-for="dept in incidentData?.departments || []"
+              :key="dept.id"
+              :value="dept.id"
+              :label="dept.name" /></el-select></el-form-item
         ><el-form-item label="关联工单"
           ><el-select
             v-model="incidentForm.workOrderId"
@@ -674,11 +697,15 @@
             type="datetime"
             value-format="YYYY-MM-DDTHH:mm:ss" /></el-form-item
         ><el-form-item label="问题描述"
-          ><el-input
-            v-model="incidentForm.description"
-            type="textarea"
-            :rows="4"
-            maxlength="2000" /></el-form-item></el-form
+          ><el-input v-model="incidentForm.description" type="textarea" :rows="4" maxlength="2000"
+        /></el-form-item>
+        <JevIncidentAssist
+          v-if="createDialog"
+          :title="incidentForm.title"
+          :description="incidentForm.description"
+          @evaluated="incidentForm.triageId = $event"
+          @apply="applyJevSuggestion"
+        /> </el-form
       ><template #footer
         ><el-button @click="createDialog = false">取消</el-button
         ><el-button type="primary" :loading="busy" @click="saveIncident"
@@ -746,6 +773,8 @@
 </template>
 
 <script setup lang="ts">
+import JevSettingsDialog from './JevSettingsDialog.vue'
+import JevIncidentAssist from './JevIncidentAssist.vue'
 import {
   InsightApi,
   type RiskData,
@@ -759,7 +788,8 @@ import {
   type IncidentInput,
   type IncidentMove,
   type Answer,
-  type Draft
+  type Draft,
+  type JevSuggestion
 } from '@/api/mes/insight'
 import { checkPermi } from '@/utils/permission'
 import { ElMessage } from 'element-plus'
@@ -925,6 +955,12 @@ async function showHistory(id: number) {
   })
 }
 const incidentForm = ref<IncidentInput>({ title: '', category: 'OTHER', description: '' })
+const jevConfigOpen = ref(false)
+function applyJevSuggestion(suggestion: JevSuggestion) {
+  if (suggestion.category !== 'UNKNOWN') incidentForm.value.category = suggestion.category
+  if (suggestion.departmentId) incidentForm.value.departmentId = suggestion.departmentId
+  ElMessage.success('建议已填入；请确认分类和处理部门后再建立跟进')
+}
 async function newIncident(order?: RiskOrder) {
   await run(async () => {
     await loadIncidents()
@@ -1307,5 +1343,11 @@ p {
   .expanded {
     padding: 8px;
   }
+}
+</style>
+<style>
+.insight-incident-body {
+  max-height: calc(88vh - 130px);
+  overflow-y: auto;
 }
 </style>
