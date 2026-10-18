@@ -1,0 +1,2 @@
+# Used by init-local.ps1 to generate the local administrator password hash.
+bcrypt==5.0.0

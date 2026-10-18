@@ -1,0 +1,4 @@
+FazeMES
+
+Spring Boot Version: ${spring-boot.version}
+Application Version: ${yudao.info.version}

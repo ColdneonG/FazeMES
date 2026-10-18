@@ -1,0 +1,13 @@
+{
+  "asset": "china-provinces.geo.json",
+  "copiedOn": "2026-10-18",
+  "source": ".runtime/reference-audit/yunshu-mes-all/frontend/web-admin/public/map/china.json",
+  "sourceRepository": "https://github.com/Xavier-ky/yunshu-mes-all",
+  "sourceCommit": "daf2dab464fe41ff2f673eacadf0235cd889f690",
+  "sourceUrl": "https://github.com/Xavier-ky/yunshu-mes-all/blob/daf2dab464fe41ff2f673eacadf0235cd889f690/frontend/web-admin/public/map/china.json",
+  "sourceSha256": "99adfeded5223848bbe37a0a12f8023e11ee12161c7800521c27db42fdeac275",
+  "changes": "Copied byte-for-byte; 35 original features, including Taiwan, Hong Kong, Macau and the original maritime boundary geometry, are preserved.",
+  "licenseStatus": "No asset-specific source attribution or license was found in the provided reference project. No ownership or reuse license is asserted by this copy. Confirm upstream rights before external redistribution.",
+  "usage": "Served locally for ECharts province outlines. No CDN, remote geocoding, or coordinate upload is used.",
+  "referenceVisual": ".runtime/reference-audit/yunshu-mes-all/frontend/web-admin/src/views/new-dashboard/BigScreenView.vue:869"
+}

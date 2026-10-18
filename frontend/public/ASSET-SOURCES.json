@@ -1,0 +1,17 @@
+{
+  "assets": [
+    {
+      "path": "/fazemes-logo.svg",
+      "name": "FaZe Clan red team logo",
+      "localUse": "FazeMES system logo, loading mark and favicon",
+      "sourcePage": "https://commons.wikimedia.org/wiki/File:Faze_Clan.svg",
+      "downloadUrl": "https://upload.wikimedia.org/wikipedia/commons/4/4d/Faze_Clan.svg",
+      "referencePage": "https://fazeclan.com/pages/about",
+      "creator": "FaZe Clan",
+      "sourceDescription": "2019 FaZe Clan logo; source lists public domain simple geometry and a trademark notice.",
+      "downloadedAt": "2026-10-17",
+      "sha256": "002dcad8a8b27fcc9805966ebd83d58e86b854c7cb98ba104987bda45aa11607",
+      "modifications": "None; original downloaded SVG retained."
+    }
+  ]
+}

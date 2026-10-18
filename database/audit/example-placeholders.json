@@ -1,0 +1,56 @@
+{
+  "migration": "database/migrations/20261017_example_placeholders.sql",
+  "migration_sha256": "42585889a9ba831cbd4107050f697972bcf4795978cba66b8bd843ecdab1eb57",
+  "database": "yudao_mes",
+  "port": 3308,
+  "default_tenant": [
+    "1",
+    "示例企业"
+  ],
+  "default_admin": [
+    "1",
+    "admin",
+    "示例管理员",
+    "http://127.0.0.1:5173/placeholder-avatar.svg"
+  ],
+  "local_file_configuration": [
+    "29",
+    "示例本地附件"
+  ],
+  "remaining_upstream_display_counts": {
+    "user_display_names": 0,
+    "tenant_display": 0,
+    "department_display": 0,
+    "oauth_display": 0,
+    "menu_display_links": 0,
+    "notice_display": 0,
+    "storage_display": 0,
+    "upstream_sample_storage_directory": 0,
+    "social_display_names": 0,
+    "mail_template_display": 0,
+    "mail_sample_host": 0,
+    "notification_display": 0,
+    "sample_contacts": 0,
+    "sample_categories": 0,
+    "upstream_file_images": 0
+  },
+  "preserved_technical_identifiers": [
+    "system_users.username",
+    "system_oauth2_client.client_id",
+    "infra_file_config.config.@class",
+    "Local project filesystem path D:/indus_app/yudao-mes",
+    "Java packages / API identifiers / table names / permission strings"
+  ],
+  "repeat_application_verified": true,
+  "protected_invariants_unchanged": true,
+  "protected_invariant_names": [
+    "accounts_digest",
+    "cloud_credentials_digest",
+    "permissions_digest",
+    "role_links_digest",
+    "stock_digest",
+    "table_count",
+    "work_orders_digest"
+  ],
+  "all_targeted_display_checks_clear": true
+}

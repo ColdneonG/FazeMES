@@ -1,0 +1,31 @@
+{
+  "references": [
+    {
+      "project": "AeroForgeMES",
+      "repository": "https://github.com/ColdneonG/AeroForgeMES",
+      "commit": "eda07cd827914faa91ed45da809efbe81ee9dbfb",
+      "sources": [
+        "frontend/src/views/ReportsControlCenterView.vue",
+        "frontend/src/components/LoginBackground.vue"
+      ],
+      "adaptedInto": [
+        "effects/useAeroThreeEffects.ts",
+        "effects/useAeroAmbientEffects.ts",
+        "effects/aero-effects.scss"
+      ],
+      "features": "46 hover particles, two rotating rings, pointer card perspective, 220 floating background particles and 18 blue light particles with camera drift, panel glow and scanning, ambient flylines, hero orbit, status radar and decorative station flow",
+      "licenseStatus": "No independent upstream license declaration was found; this attribution does not assert a license."
+    },
+    {
+      "project": "yunshu-mes-all",
+      "repository": "https://github.com/Xavier-ky/yunshu-mes-all",
+      "commit": "daf2dab464fe41ff2f673eacadf0235cd889f690",
+      "source": "frontend/web-admin/src/views/new-dashboard/BigScreenView.vue",
+      "adaptedInto": ["components/ChinaDistributionMap.vue", "components/chinaDistribution.ts"],
+      "features": "China province outlines, city ripple points and gradient ranking; original static sales values are available only in explicitly labelled example mode",
+      "mapAssetAttribution": "/maps/china-provinces.source.json",
+      "licenseStatus": "No independent upstream license declaration was found; this attribution does not assert a license."
+    }
+  ],
+  "businessData": "FazeMES production and equipment data remain sourced from its own dashboard API. The default map aggregates distinct work orders by the client's recognized city within the selected task/date/workshop/station scope."
+}
