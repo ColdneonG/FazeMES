@@ -53,6 +53,7 @@ class MesProTaskScheduleProgressTest {
     @Mock private MesProRouteProductService routeProductService;
     @Mock private MesProRouteProcessService routeProcessService;
     @Mock private MesMdAutoCodeRecordService autoCodeRecordService;
+    @Mock private cn.iocoder.yudao.module.mes.service.pro.sop.MesProSopService sopService;
 
     private final Map<Long, MesProTaskDO> tasks = new LinkedHashMap<>();
     private final Map<Long, BigDecimal> scheduled = new HashMap<>();

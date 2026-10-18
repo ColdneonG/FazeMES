@@ -32,6 +32,7 @@ class MesWmTransactionOwnershipTest {
     @Mock private MesWmWarehouseService warehouseService;
     @Mock private MesWmWarehouseLocationService locationService;
     @Mock private MesWmWarehouseAreaService areaService;
+    @Mock private cn.iocoder.yudao.module.mes.service.pro.kitting.MesProKittingService kittingService;
 
     @BeforeEach
     void setup() {

@@ -8,6 +8,7 @@ import cn.iocoder.yudao.framework.common.util.object.BeanUtils;
 import cn.iocoder.yudao.framework.common.util.servlet.ServletUtils;
 import cn.iocoder.yudao.framework.common.util.validation.ValidationUtils;
 import cn.iocoder.yudao.framework.datapermission.core.annotation.DataPermission;
+import cn.iocoder.yudao.framework.tenant.core.context.TenantContextHolder;
 import cn.iocoder.yudao.module.system.api.logger.dto.LoginLogCreateReqDTO;
 import cn.iocoder.yudao.module.system.api.sms.SmsCodeApi;
 import cn.iocoder.yudao.module.system.api.sms.dto.code.SmsCodeUseReqDTO;
@@ -129,6 +130,14 @@ public class AdminAuthServiceImpl implements AdminAuthService {
         }
         // 发送验证码
         smsCodeApi.sendSmsCode(AuthConvert.INSTANCE.convert(reqVO).setCreateIp(getClientIP()));
+    }
+
+    @Override
+    @DataPermission(enable = false)
+    public AuthLoginRespVO loginByVerifiedFace(Long userId) {
+        AdminUserDO user = userService.getUser(userId);
+        if (user == null || !Objects.equals(user.getTenantId(), TenantContextHolder.getTenantId())) throw exception(AUTH_LOGIN_BAD_CREDENTIALS);
+        return createTokenAfterLoginSuccess(user, user.getUsername(), LoginLogTypeEnum.LOGIN_FACE);
     }
 
     @Override

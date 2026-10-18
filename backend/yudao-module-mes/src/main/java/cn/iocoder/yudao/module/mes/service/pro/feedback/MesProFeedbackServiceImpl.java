@@ -20,6 +20,7 @@ import cn.iocoder.yudao.module.mes.enums.wm.MesWmQualityStatusEnum;
 import cn.iocoder.yudao.module.mes.service.md.workstation.MesMdWorkstationService;
 import cn.iocoder.yudao.module.mes.service.pro.route.MesProRouteProcessService;
 import cn.iocoder.yudao.module.mes.service.pro.task.MesProTaskService;
+import cn.iocoder.yudao.module.mes.service.pro.sop.MesProSopService;
 import cn.iocoder.yudao.module.mes.service.pro.workorder.MesProWorkOrderService;
 import cn.iocoder.yudao.module.mes.service.wm.itemconsume.MesWmItemConsumeService;
 import cn.iocoder.yudao.module.mes.service.wm.productproduce.MesWmProductProduceLineService;
@@ -64,6 +65,8 @@ public class MesProFeedbackServiceImpl implements MesProFeedbackService {
     private MesWmProductProduceService productProduceService;
     @Resource
     private MesWmProductProduceLineService produceLineService;
+    @Resource
+    private MesProSopService sopService;
 
     @Override
     public Long createFeedback(MesProFeedbackSaveReqVO createReqVO) {
@@ -123,6 +126,8 @@ public class MesProFeedbackServiceImpl implements MesProFeedbackService {
         // Resources may change while a draft is saved. Enforce availability at
         // production submission, while allowing later approval across shifts.
         workstationService.validateWorkstationAvailable(feedback.getWorkstationId());
+        taskService.validateTaskNotFinishedForUpdate(feedback.getTaskId(), feedback.getWorkOrderId());
+        sopService.validateTaskExecution(feedback.getTaskId());
 
         // 2. 更新状态为审批中（报工人和报工时间由表单保存时确定，提交不覆盖）
         feedbackMapper.updateById(new MesProFeedbackDO().setId(id)
@@ -160,6 +165,7 @@ public class MesProFeedbackServiceImpl implements MesProFeedbackService {
         }
         // 1.3 校验任务未完成
         taskService.validateTaskNotFinishedForUpdate(feedback.getTaskId(), feedback.getWorkOrderId());
+        sopService.validateTaskExecution(feedback.getTaskId());
 
         // 2.1 查询工序的关键工序标识 + 检验标识（需在 uncheckQuantity 校验之前，因为质检工序允许 uncheckQuantity > 0）
         MesProRouteProcessDO routeProcess = routeProcessService.getRouteProcessByRouteIdAndProcessId(

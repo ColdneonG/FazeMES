@@ -17,6 +17,7 @@ import cn.iocoder.yudao.module.mes.enums.wm.MesWmProductIssueStatusEnum;
 import cn.iocoder.yudao.module.mes.enums.wm.MesWmTransactionTypeEnum;
 import cn.iocoder.yudao.module.mes.service.md.workstation.MesMdWorkstationService;
 import cn.iocoder.yudao.module.mes.service.pro.workorder.MesProWorkOrderService;
+import cn.iocoder.yudao.module.mes.service.pro.kitting.MesProKittingService;
 import cn.iocoder.yudao.module.mes.service.wm.transaction.MesWmTransactionService;
 import cn.iocoder.yudao.module.mes.service.wm.transaction.dto.MesWmTransactionSaveReqDTO;
 import cn.iocoder.yudao.module.mes.service.wm.warehouse.MesWmWarehouseAreaService;
@@ -64,6 +65,8 @@ public class MesWmProductIssueServiceImpl implements MesWmProductIssueService {
     private MesWmWarehouseLocationService locationService;
     @Resource
     private MesWmWarehouseAreaService areaService;
+    @Resource
+    private MesProKittingService kittingService;
 
     @Override
     @Transactional(rollbackFor = Exception.class)
@@ -150,11 +153,18 @@ public class MesWmProductIssueServiceImpl implements MesWmProductIssueService {
     }
 
     @Override
-    @Transactional(rollbackFor = Exception.class)
+    @Transactional(rollbackFor = Exception.class, isolation = org.springframework.transaction.annotation.Isolation.READ_COMMITTED)
     public void finishProductIssue(Long id) {
-        // 1. 校验存在
+        // Match reservation and closure lock order: order -> issue -> stock.
+        MesWmProductIssueDO snapshot = issueMapper.selectById(id);
+        if (snapshot == null) throw exception(WM_PRODUCT_ISSUE_NOT_EXISTS);
+        var workOrder = workOrderService.validateWorkOrderExistsForUpdate(snapshot.getWorkOrderId());
+        if (!java.util.Objects.equals(workOrder.getStatus(), 1)) throw exception(PRO_WORK_ORDER_NOT_CONFIRMED);
         MesWmProductIssueDO issue = issueMapper.selectByIdForUpdate(id);
         if (issue == null) throw exception(WM_PRODUCT_ISSUE_NOT_EXISTS);
+        if (!java.util.Objects.equals(issue.getWorkOrderId(), snapshot.getWorkOrderId())) {
+            throw exception(WM_PRODUCT_ISSUE_STATUS_INVALID);
+        }
         if (ObjUtil.notEqual(MesWmProductIssueStatusEnum.APPROVED.getStatus(), issue.getStatus())) {
             throw exception(WM_PRODUCT_ISSUE_STATUS_INVALID);
         }
@@ -170,6 +180,7 @@ public class MesWmProductIssueServiceImpl implements MesWmProductIssueService {
 
         // 2. 遍历所有明细，创建库存事务（扣减库存 + 记录流水）
         createTransactionList(issue);
+        kittingService.releaseExcessAfterIssue(issue.getWorkOrderId());
 
         // 3. 更新出库单状态 + 领料日期
         issueMapper.updateById(new MesWmProductIssueDO()
@@ -185,12 +196,17 @@ public class MesWmProductIssueServiceImpl implements MesWmProductIssueService {
 
         // 2. 遍历明细，每条明细产生 OUT（实际仓库扣减）+ IN（虚拟线边库增加）
         List<MesWmProductIssueDetailDO> details = issueDetailService.getProductIssueDetailListByIssueId(issue.getId());
+        List<Long> areas = new java.util.ArrayList<>();
+        areas.add(virtualArea.getId());
+        details.stream().map(MesWmProductIssueDetailDO::getAreaId).forEach(areas::add);
+        kittingService.lockForIssue(issue.getWorkOrderId(), areas);
         for (MesWmProductIssueDetailDO detail : details) {
             // 2.1 先从实际仓库出库（库存减少）
             Long outTransactionId = wmTransactionService.createTransaction(new MesWmTransactionSaveReqDTO()
                     .setType(MesWmTransactionTypeEnum.OUT.getType()).setItemId(detail.getItemId())
                 .setMaterialStockId(detail.getMaterialStockId())
                     .setQuantity(detail.getQuantity().negate()) // 库存减少
+                    .setWorkOrderId(issue.getWorkOrderId())
                     .setBatchId(detail.getBatchId()).setBatchCode(detail.getBatchCode())
                     .setWarehouseId(detail.getWarehouseId()).setLocationId(detail.getLocationId()).setAreaId(detail.getAreaId())
                     .setBizType(MesBizTypeConstants.WM_ISSUE).setBizId(issue.getId())

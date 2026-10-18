@@ -133,10 +133,38 @@
                   @click="openQuality"
                   >进入当前任务质检</el-button
                 >
+                <el-button
+                  v-hasPermi="['mes:sn-trace:query']"
+                  size="large"
+                  class="mt-16px"
+                  @click="
+                    router.push({
+                      path: '/mes/sntrace',
+                      query: { workOrderId: context.task.workOrderId }
+                    })
+                  "
+                  >单件 SN 用料追溯</el-button
+                >
+                <el-button
+                  v-hasPermi="['mes:kitting:query']"
+                  size="large"
+                  class="mt-16px"
+                  @click="
+                    router.push({
+                      path: '/mes/kitting',
+                      query: { workOrderId: context.task.workOrderId }
+                    })
+                  "
+                  >工单齐套分析</el-button
+                >
               </el-card>
 
               <el-card shadow="never">
-                <template #header>当前产品 · 当前工序 SOP</template>
+                <template #header>受控 SOP · 任务执行记录</template>
+                <TaskExecution :key="context.task.id" :task-id="context.task.id" />
+              </el-card>
+              <el-card shadow="never">
+                <template #header>产品工序参考资料</template>
                 <el-empty
                   v-if="!context.sops.length"
                   description="当前产品与工序尚未配置作业指导书"
@@ -261,11 +289,13 @@ import {
 import { formatDate } from '@/utils/formatTime'
 import { checkPermi } from '@/utils/permission'
 import WorkbenchEquipment from './WorkbenchEquipment.vue'
+import TaskExecution from '@/views/mes/pro/sop/TaskExecution.vue'
 import type { FormInstance, FormRules } from 'element-plus'
 
 defineOptions({ name: 'MesProWorkbench' })
 const message = useMessage()
 const router = useRouter()
+const route = useRoute()
 const activeTab = ref('production')
 const canQueryEquipment = computed(() => checkPermi(['mes:dv-check-plan:query']))
 const openQuality = () => {
@@ -438,7 +468,12 @@ const submit = async () => {
 onMounted(async () => {
   try {
     stations.value = await WorkbenchApi.getWorkstations()
-    stationId.value = stations.value[0]?.id
+    const requestedStation = Number(route.query.workstationId)
+    stationId.value =
+      stations.value.find((station) => station.id === requestedStation)?.id || stations.value[0]?.id
+    const requestedTask = Number(route.query.taskId)
+    if (Number.isSafeInteger(requestedTask) && requestedTask > 0)
+      selectedTaskId.value = requestedTask
     await loadTasks()
   } catch (error) {
     loadError.value = errorText(error, '工作站列表加载失败')

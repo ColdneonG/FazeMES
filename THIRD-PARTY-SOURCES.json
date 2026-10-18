@@ -1,0 +1,48 @@
+{
+  "referenceProject": {
+    "name": "yunshu-mes-all",
+    "repository": "https://github.com/Xavier-ky/yunshu-mes-all",
+    "commit": "daf2dab464fe41ff2f673eacadf0235cd889f690",
+    "licenseStatus": "No independent upstream license declaration was found. This record identifies reference material and does not assert a reuse license."
+  },
+  "modules": [
+    {
+      "feature": "Visual report designer",
+      "reference": "frontend/web-admin/src/yunshu-ui/analytics/report/designer",
+      "implementation": "frontend/src/views/mes/report",
+      "adaptation": "Reimplemented the template library and visual composition workflow against FazeMES JSON versions and whitelisted datasets. UReport XML, scripts and arbitrary SQL execution are not imported."
+    },
+    {
+      "feature": "AI assistant and retrieval-augmented generation",
+      "reference": [
+        "agent-system/backend/app",
+        "frontend/web-admin/src/views/agent"
+      ],
+      "implementation": [
+        "backend/yudao-module-mes/src/main/java/cn/iocoder/yudao/module/mes/service/assistant",
+        "frontend/src/views/mes/assistant"
+      ],
+      "adaptation": "Native Spring/Vue document ingestion, published-document BM25 retrieval, source citations, private sessions and configurable OpenAI-compatible/Ollama generation. Qdrant and local transformer models are not bundled."
+    },
+    {
+      "feature": "Customer self-service portal",
+      "reference": "frontend/web-admin client portal and backend /api/client endpoints",
+      "implementation": [
+        "frontend/src/views/customer-portal",
+        "backend/yudao-module-mes/src/main/java/cn/iocoder/yudao/module/mes/service/portal"
+      ],
+      "adaptation": "Customer accounts bind to actual FazeMES clients; separate sessions, explicit published product catalog, ordering requests with review and scoped production progress replace fixed-customer sample data."
+    },
+    {
+      "feature": "Face login",
+      "reference": "face-auth/app/main.py and frontend/web-admin/src/views/login/LoginView.vue",
+      "implementation": [
+        "face-auth",
+        "frontend/src/views/mes/face",
+        "frontend/src/views/Login/components/FaceLoginDialog.vue"
+      ],
+      "adaptation": "Loopback SFace worker, YuNet landmark alignment and self-enrollment protected by the current password. Features are encrypted per tenant/user; no upstream personal face photographs are copied.",
+      "modelNotices": "face-auth/model-sources.json"
+    }
+  ]
+}

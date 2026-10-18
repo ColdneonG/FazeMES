@@ -63,6 +63,8 @@ public class MesProFeedbackServiceImplTest extends BaseDbUnitTest {
     private MesWmProductProduceService productProduceService;
     @MockitoBean
     private MesWmProductProduceLineService produceLineService;
+    @MockitoBean
+    private cn.iocoder.yudao.module.mes.service.pro.sop.MesProSopService sopService;
 
     @BeforeEach
     void loginApprover() {

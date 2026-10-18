@@ -11,11 +11,13 @@ import cn.iocoder.yudao.module.mes.dal.dataobject.md.item.MesMdProductBomDO;
 import cn.iocoder.yudao.module.mes.dal.dataobject.pro.workorder.MesProWorkOrderBomDO;
 import cn.iocoder.yudao.module.mes.dal.dataobject.pro.workorder.MesProWorkOrderDO;
 import cn.iocoder.yudao.module.mes.dal.mysql.pro.workorder.MesProWorkOrderBomMapper;
+import cn.iocoder.yudao.module.mes.dal.mysql.pro.workorder.MesProWorkOrderMapper;
 import cn.iocoder.yudao.module.mes.service.md.item.MesMdItemService;
 import cn.iocoder.yudao.module.mes.service.md.item.MesMdProductBomService;
 import jakarta.annotation.Resource;
 import org.springframework.context.annotation.Lazy;
 import org.springframework.stereotype.Service;
+import org.springframework.transaction.annotation.Transactional;
 import org.springframework.validation.annotation.Validated;
 
 import java.util.ArrayList;
@@ -40,6 +42,8 @@ public class MesProWorkOrderBomServiceImpl implements MesProWorkOrderBomService 
 
     @Resource
     private MesProWorkOrderBomMapper workOrderBomMapper;
+    @Resource
+    private MesProWorkOrderMapper workOrderMapper;
 
     @Resource
     @Lazy // 延迟加载，避免循环依赖
@@ -50,7 +54,9 @@ public class MesProWorkOrderBomServiceImpl implements MesProWorkOrderBomService 
     private MesMdProductBomService productBomService;
 
     @Override
+    @Transactional(rollbackFor = Exception.class)
     public Long createWorkOrderBom(MesProWorkOrderBomSaveReqVO createReqVO) {
+        lockDraft(createReqVO.getWorkOrderId());
         // 校验数据
         validateWorkOrderBomSaveData(createReqVO);
 
@@ -61,9 +67,15 @@ public class MesProWorkOrderBomServiceImpl implements MesProWorkOrderBomService 
     }
 
     @Override
+    @Transactional(rollbackFor = Exception.class)
     public void updateWorkOrderBom(MesProWorkOrderBomSaveReqVO updateReqVO) {
         // 校验存在
         validateWorkOrderBomExists(updateReqVO.getId());
+        var original = workOrderBomMapper.selectById(updateReqVO.getId());
+        lockDraft(original.getWorkOrderId());
+        if (!java.util.Objects.equals(original.getWorkOrderId(), updateReqVO.getWorkOrderId())) {
+            throw exception(cn.iocoder.yudao.module.mes.enums.pro.MesProKittingErrors.BOM_LOCKED);
+        }
         // 校验数据
         validateWorkOrderBomSaveData(updateReqVO);
 
@@ -73,12 +85,22 @@ public class MesProWorkOrderBomServiceImpl implements MesProWorkOrderBomService 
     }
 
     @Override
+    @Transactional(rollbackFor = Exception.class)
     public void deleteWorkOrderBom(Long id) {
         // 校验存在
         validateWorkOrderBomExists(id);
+        lockDraft(workOrderBomMapper.selectById(id).getWorkOrderId());
 
         // 删除
         workOrderBomMapper.deleteById(id);
+    }
+
+    private void lockDraft(Long workOrderId) {
+        var order = workOrderMapper.selectByIdForUpdate(workOrderId);
+        if (order == null) throw exception(cn.iocoder.yudao.module.mes.enums.pro.MesProKittingErrors.ORDER_NOT_FOUND);
+        if (!java.util.Objects.equals(order.getStatus(), 0)) {
+            throw exception(cn.iocoder.yudao.module.mes.enums.pro.MesProKittingErrors.BOM_LOCKED);
+        }
     }
 
     private void validateWorkOrderBomExists(Long id) {

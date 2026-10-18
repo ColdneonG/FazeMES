@@ -29,6 +29,11 @@ const whiteList = [
 router.beforeEach(async (to, from, next) => {
   start()
   loadStart()
+  // The client portal owns its session and never inherits the administrator token or menu.
+  if (to.path === '/customer-portal' || to.path.startsWith('/customer-portal/')) {
+    next()
+    return
+  }
   if (getAccessToken()) {
     if (to.path === '/login') {
       next({ path: '/' })

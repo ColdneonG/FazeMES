@@ -1,6 +1,5 @@
 <!-- MES 生产工单列表 -->
 <template>
-
   <ContentWrap>
     <!-- 搜索工作栏 -->
     <el-form
@@ -153,8 +152,15 @@
         :formatter="dateFormatter"
         width="180"
       />
-      <el-table-column label="操作" align="center" width="200" fixed="right">
+      <el-table-column label="操作" align="center" width="260" fixed="right">
         <template #default="scope">
+          <el-button
+            link
+            type="primary"
+            v-hasPermi="['mes:kitting:query']"
+            @click="router.push({ path: '/mes/kitting', query: { workOrderId: scope.row.id } })"
+            >齐套</el-button
+          >
           <!-- 草稿状态：编辑、确认、删除 -->
           <el-button
             link
@@ -255,6 +261,7 @@ import {
 defineOptions({ name: 'MesProWorkOrder' })
 
 const message = useMessage() // 消息弹窗
+const router = useRouter()
 const { t } = useI18n() // 国际化
 
 const loading = ref(true) // 列表的加载中

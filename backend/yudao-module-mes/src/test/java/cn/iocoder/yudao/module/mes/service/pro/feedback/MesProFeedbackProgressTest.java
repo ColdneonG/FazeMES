@@ -50,6 +50,7 @@ class MesProFeedbackProgressTest {
     @Mock private MesWmProductProduceService productProduceService;
     @Mock private MesWmProductProduceLineService produceLineService;
     @Mock private MesMdWorkstationService workstationService;
+    @Mock private cn.iocoder.yudao.module.mes.service.pro.sop.MesProSopService sopService;
 
     @BeforeEach
     void loginApprover() {
@@ -271,6 +272,47 @@ class MesProFeedbackProgressTest {
         verify(workstationService, times(1)).validateWorkstationAvailable(6L);
         verify(taskService).updateProducedQuantity(2L, new BigDecimal("50"),
                 new BigDecimal("45"), new BigDecimal("5"));
+    }
+
+    @Test
+    void incompleteSopRejectsSubmissionBeforeFeedbackOrProductionWrites() {
+        MesProFeedbackDO feedback = prepare(false, false).setWorkstationId(6L)
+                .setStatus(MesProFeedbackStatusEnum.PREPARE.getStatus());
+        doThrow(new ServiceException(cn.iocoder.yudao.module.mes.service.pro.sop.SopErrorConstants.INCOMPLETE))
+                .when(sopService).validateTaskExecution(2L);
+
+        ServiceException failure = assertThrows(ServiceException.class, () -> service.submitFeedback(1L));
+
+        assertEquals(cn.iocoder.yudao.module.mes.service.pro.sop.SopErrorConstants.INCOMPLETE.getCode(), failure.getCode());
+        assertEquals(MesProFeedbackStatusEnum.PREPARE.getStatus(), feedback.getStatus());
+        verify(mapper, never()).updateById(any(MesProFeedbackDO.class));
+        verify(taskService, never()).updateProducedQuantity(anyLong(), any(), any(), any());
+        verify(workOrderService, never()).updateProducedQuantity(anyLong(), any());
+        verifyNoInteractions(itemConsumeService, productProduceService, produceLineService);
+        var order = inOrder(workOrderService, taskService, sopService);
+        order.verify(workOrderService).validateWorkOrderExistsForUpdate(3L);
+        order.verify(taskService).validateTaskNotFinishedForUpdate(2L, 3L);
+        order.verify(sopService).validateTaskExecution(2L);
+    }
+
+    @Test
+    void disabledSopRejectsApprovalBeforeConsumptionOutputAndProgressWrites() {
+        MesProFeedbackDO feedback = prepare(true, false);
+        doThrow(new ServiceException(cn.iocoder.yudao.module.mes.service.pro.sop.SopErrorConstants.DISABLED))
+                .when(sopService).validateTaskExecution(2L);
+
+        ServiceException failure = assertThrows(ServiceException.class, () -> service.approveFeedback(1L));
+
+        assertEquals(cn.iocoder.yudao.module.mes.service.pro.sop.SopErrorConstants.DISABLED.getCode(), failure.getCode());
+        assertEquals(MesProFeedbackStatusEnum.APPROVING.getStatus(), feedback.getStatus());
+        verify(mapper, never()).updateById(any(MesProFeedbackDO.class));
+        verify(taskService, never()).updateProducedQuantity(anyLong(), any(), any(), any());
+        verify(workOrderService, never()).updateProducedQuantity(anyLong(), any());
+        verifyNoInteractions(itemConsumeService, productProduceService, produceLineService);
+        var order = inOrder(workOrderService, taskService, sopService);
+        order.verify(workOrderService).validateWorkOrderExistsForUpdate(3L);
+        order.verify(taskService).validateTaskNotFinishedForUpdate(2L, 3L);
+        order.verify(sopService).validateTaskExecution(2L);
     }
 
     private MesProFeedbackDO prepare(boolean key, boolean check) {

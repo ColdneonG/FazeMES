@@ -213,6 +213,12 @@ const remainingRouter: AppRouteRecordRaw[] = [
     }
   },
   {
+    path: '/customer-portal',
+    component: () => import('@/views/customer-portal/index.vue'),
+    name: 'MesCustomerPortal',
+    meta: { hidden: true, title: '客户自助门户', noTagsView: true }
+  },
+  {
     path: '/pms/kb/document/share/:token',
     component: () => import('@/views/pms/kb/document/share/index.vue'),
     name: 'PmsKnowledgeDocumentShare',

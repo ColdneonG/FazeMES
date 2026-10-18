@@ -14,6 +14,7 @@ import cn.iocoder.yudao.module.mes.enums.wm.BarcodeBizTypeEnum;
 import cn.iocoder.yudao.module.mes.service.md.item.MesMdItemBatchConfigService;
 import cn.iocoder.yudao.module.mes.service.md.item.MesMdItemService;
 import cn.iocoder.yudao.module.mes.service.pro.task.MesProTaskService;
+import cn.iocoder.yudao.module.mes.service.pro.kitting.MesProKittingService;
 import cn.iocoder.yudao.module.mes.service.wm.barcode.MesWmBarcodeService;
 import jakarta.annotation.Resource;
 import org.springframework.stereotype.Service;
@@ -51,6 +52,8 @@ public class MesProWorkOrderServiceImpl implements MesProWorkOrderService {
     private MesWmBarcodeService barcodeService;
     @Resource
     private MesProTaskService taskService;
+    @Resource
+    private MesProKittingService kittingService;
 
     @Override
     @Transactional(rollbackFor = Exception.class)
@@ -80,7 +83,7 @@ public class MesProWorkOrderServiceImpl implements MesProWorkOrderService {
     @Transactional(rollbackFor = Exception.class)
     public void updateWorkOrder(MesProWorkOrderSaveReqVO updateReqVO) {
         // 1.1 校验存在 + 只有草稿状态才能编辑
-        MesProWorkOrderDO oldWorkOrder = validateWorkOrderExists(updateReqVO.getId());
+        MesProWorkOrderDO oldWorkOrder = validateWorkOrderExistsForUpdate(updateReqVO.getId());
         if (ObjUtil.notEqual(oldWorkOrder.getStatus(), MesProWorkOrderStatusEnum.PREPARE.getStatus())) {
             throw exception(PRO_WORK_ORDER_NOT_PREPARE);
         }
@@ -103,7 +106,7 @@ public class MesProWorkOrderServiceImpl implements MesProWorkOrderService {
     @Transactional(rollbackFor = Exception.class)
     public void deleteWorkOrder(Long id) {
         // 1.1 校验存在
-        MesProWorkOrderDO workOrder = validateWorkOrderExists(id);
+        MesProWorkOrderDO workOrder = validateWorkOrderExistsForUpdate(id);
         // 1.2 只能删除草稿状态的工单
         if (ObjUtil.notEqual(workOrder.getStatus(), MesProWorkOrderStatusEnum.PREPARE.getStatus())) {
             throw exception(PRO_WORK_ORDER_NOT_PREPARE);
@@ -170,9 +173,10 @@ public class MesProWorkOrderServiceImpl implements MesProWorkOrderService {
     }
 
     @Override
+    @Transactional(rollbackFor = Exception.class)
     public void confirmWorkOrder(Long id) {
         // 1.1 校验存在
-        MesProWorkOrderDO workOrder = validateWorkOrderExists(id);
+        MesProWorkOrderDO workOrder = validateWorkOrderExistsForUpdate(id);
         // 1.2 只有草稿状态才能确认
         if (ObjUtil.notEqual(workOrder.getStatus(), MesProWorkOrderStatusEnum.PREPARE.getStatus())) {
             throw exception(PRO_WORK_ORDER_NOT_PREPARE);
@@ -184,7 +188,7 @@ public class MesProWorkOrderServiceImpl implements MesProWorkOrderService {
     }
 
     @Override
-    @Transactional(rollbackFor = Exception.class)
+    @Transactional(rollbackFor = Exception.class, isolation = org.springframework.transaction.annotation.Isolation.READ_COMMITTED)
     public void finishWorkOrder(Long id) {
         // 1. 校验存在 + 只有已确认状态才能完成
         MesProWorkOrderDO workOrder = validateWorkOrderExistsForUpdate(id);
@@ -194,6 +198,7 @@ public class MesProWorkOrderServiceImpl implements MesProWorkOrderService {
 
         // 2. 级联完成所有关联任务
         taskService.finishTaskByOrderId(id);
+        kittingService.releaseForClosedOrder(id);
 
         // 3. 更新工单状态为已完成
         workOrderMapper.updateById(new MesProWorkOrderDO().setId(id)
@@ -202,7 +207,7 @@ public class MesProWorkOrderServiceImpl implements MesProWorkOrderService {
     }
 
     @Override
-    @Transactional(rollbackFor = Exception.class)
+    @Transactional(rollbackFor = Exception.class, isolation = org.springframework.transaction.annotation.Isolation.READ_COMMITTED)
     public void cancelWorkOrder(Long id) {
         // 1. 校验存在 + 只有已确认状态才能取消
         MesProWorkOrderDO workOrder = validateWorkOrderExistsForUpdate(id);
@@ -212,6 +217,7 @@ public class MesProWorkOrderServiceImpl implements MesProWorkOrderService {
 
         // 2. 级联取消所有关联任务
         taskService.cancelTaskByOrderId(id);
+        kittingService.releaseForClosedOrder(id);
 
         // 3. 更新工单状态为已取消
         workOrderMapper.updateById(new MesProWorkOrderDO().setId(id)

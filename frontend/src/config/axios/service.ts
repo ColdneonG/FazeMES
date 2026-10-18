@@ -95,7 +95,7 @@ service.interceptors.request.use(
           config.headers[ApiEncrypt.getEncryptHeader()] = 'true'
         }
       } catch (error) {
-        console.error('请求数据加密失败:', error)
+        console.error('请求数据加密失败')
         throw error
       }
     }
@@ -103,7 +103,6 @@ service.interceptors.request.use(
   },
   (error: AxiosError) => {
     // Do something with request error
-    console.log(error) // for debug
     return Promise.reject(error)
   }
 )
@@ -128,7 +127,7 @@ service.interceptors.response.use(
         // 解密响应数据
         data = ApiEncrypt.decryptResponse(data)
       } catch (error) {
-        console.error('响应数据解密失败:', error)
+        console.error('响应数据解密失败')
         throw new Error('响应数据解密失败: ' + (error as Error).message)
       }
     }
@@ -204,7 +203,6 @@ service.interceptors.response.use(
     } else if (code !== 0 && code !== 200) {
       if (msg === '无效的刷新令牌') {
         // hard coding：忽略这个提示，直接登出
-        console.log(msg)
         return handleAuthorized()
       } else {
         ElNotification.error({ title: msg })
@@ -215,7 +213,6 @@ service.interceptors.response.use(
     }
   },
   (error: AxiosError) => {
-    console.log('err' + error) // for debug
     let { message } = error
     const { t } = useI18n()
     if (message === 'Network Error') {

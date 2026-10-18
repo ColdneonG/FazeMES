@@ -2,7 +2,7 @@
 $ErrorActionPreference = 'Stop'
 $projectRoot = Split-Path -Parent $PSScriptRoot
 $runtimeRoot = Join-Path $projectRoot '.runtime'
-foreach ($name in @('frontend','backend','redis','mysql')) {
+foreach ($name in @('frontend','backend','face-auth','redis','mysql')) {
     $pidPath = Join-Path $runtimeRoot "$name.pid"
     if (-not (Test-Path -LiteralPath $pidPath)) { continue }
     $taskPid = [int](Get-Content -LiteralPath $pidPath -Raw).Trim()

@@ -31,6 +31,9 @@ public interface AdminAuthService {
      */
     AuthLoginRespVO login(@Valid AuthLoginReqVO reqVO);
 
+    /** Internal token issuer: call only after trusted local 1:1 face verification. */
+    AuthLoginRespVO loginByVerifiedFace(Long userId);
+
     /**
      * 基于 token 退出登录
      *

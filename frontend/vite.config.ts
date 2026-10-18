@@ -32,6 +32,10 @@ export default ({command, mode}: ConfigEnv): UserConfig => {
             strictPort: true,
             open: env.VITE_OPEN === 'true',
             proxy: env.VITE_API_PROXY_TARGET ? {
+                '/app-api': {
+                    target: env.VITE_API_PROXY_TARGET,
+                    changeOrigin: true,
+                },
                 '/admin-api': {
                     target: env.VITE_API_PROXY_TARGET,
                     changeOrigin: true,

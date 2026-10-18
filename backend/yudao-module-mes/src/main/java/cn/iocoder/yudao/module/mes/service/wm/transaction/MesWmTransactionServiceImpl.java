@@ -13,6 +13,8 @@ import cn.iocoder.yudao.module.mes.dal.dataobject.wm.warehouse.MesWmWarehouseDO;
 import cn.iocoder.yudao.module.mes.dal.dataobject.wm.warehouse.MesWmWarehouseLocationDO;
 import cn.iocoder.yudao.module.mes.dal.mysql.wm.transaction.MesWmTransactionMapper;
 import cn.iocoder.yudao.module.mes.enums.wm.MesWmTransactionTypeEnum;
+import cn.iocoder.yudao.module.mes.enums.MesBizTypeConstants;
+import cn.iocoder.yudao.module.mes.service.pro.kitting.MesProKittingService;
 import cn.iocoder.yudao.module.mes.service.md.item.MesMdItemService;
 import cn.iocoder.yudao.module.mes.service.wm.batch.MesWmBatchService;
 import cn.iocoder.yudao.module.mes.service.wm.materialstock.MesWmMaterialStockService;
@@ -54,6 +56,8 @@ public class MesWmTransactionServiceImpl implements MesWmTransactionService {
     private MesWmWarehouseLocationService locationService;
     @Resource
     private MesWmWarehouseAreaService areaService;
+    @Resource
+    private MesProKittingService kittingService;
 
     @Override
     @Transactional(rollbackFor = Exception.class)
@@ -102,6 +106,11 @@ public class MesWmTransactionServiceImpl implements MesWmTransactionService {
         }
         // 2.2 冻结校验（仓库、库区、库位、库存记录）
         checkFrozen(reqDTO, materialStock);
+        if (!inbound && !workInProcess) {
+            kittingService.validateAndConsumeOutbound(materialStock.getId(), reqDTO.getQuantity().abs(),
+                    java.util.Objects.equals(reqDTO.getBizType(), MesBizTypeConstants.WM_ISSUE)
+                            ? reqDTO.getWorkOrderId() : null, reqDTO.getBizId());
+        }
         // 2.3 更新库存数量
         materialStockService.updateMaterialStockQuantity(materialStock.getId(), reqDTO.getQuantity(), true);
 
@@ -124,6 +133,10 @@ public class MesWmTransactionServiceImpl implements MesWmTransactionService {
         if (CollUtil.isEmpty(reqDTOs)) {
             throw exception(WM_TRANSACTION_LIST_EMPTY);
         }
+        // Reserve all participating areas in one order before any stock row is
+        // changed; otherwise a multi-area outbound can invert kitting's lock order.
+        reqDTOs.stream().map(MesWmTransactionSaveReqDTO::getAreaId).filter(java.util.Objects::nonNull)
+                .distinct().sorted().forEach(materialStockService::lockStockArea);
         reqDTOs.forEach(this::createTransaction);
     }
 

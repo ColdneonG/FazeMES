@@ -46,6 +46,8 @@ public class MesWmSnServiceImpl implements MesWmSnService {
     private MesProWorkOrderService workOrderService;
     @Resource
     private MesWmBarcodeService barcodeService;
+    @Resource
+    private cn.iocoder.yudao.module.mes.service.pro.sntrace.MesProSnTraceService snTraceService;
 
     @Override
     @Transactional(rollbackFor = Exception.class)
@@ -91,6 +93,8 @@ public class MesWmSnServiceImpl implements MesWmSnService {
         if (CollUtil.isEmpty(sns)) {
             return;
         }
+
+        snTraceService.ensureSnUntracked(convertList(sns, MesWmSnDO::getId));
 
         // 删除 SN 码关联的条码记录
         barcodeService.deleteBarcodeByBizTypeAndBizIds(BarcodeBizTypeEnum.SN.getValue(),

@@ -1,6 +1,5 @@
 <!-- MES 生产报工列表 -->
 <template>
-
   <ContentWrap>
     <!-- 搜索工作栏 -->
     <el-form
@@ -146,6 +145,19 @@
         <template #default="scope">
           <!-- 草稿状态：编辑、提交、删除 -->
           <el-button
+            v-if="scope.row.status === MesProFeedbackStatusEnum.FINISHED"
+            v-hasPermi="['mes:sn-trace:query']"
+            link
+            type="primary"
+            @click="
+              router.push({
+                path: '/mes/sntrace',
+                query: { workOrderId: scope.row.workOrderId, feedbackId: scope.row.id }
+              })
+            "
+            >SN 用料绑定</el-button
+          >
+          <el-button
             link
             type="primary"
             @click="openForm('update', scope.row.id)"
@@ -216,6 +228,7 @@ import { getCurrentUserId } from '@/utils/auth'
 defineOptions({ name: 'MesProFeedback' })
 
 const message = useMessage() // 消息弹窗
+const router = useRouter()
 const { t } = useI18n() // 国际化
 const currentUserId = getCurrentUserId() // 当前登录用户 ID
 

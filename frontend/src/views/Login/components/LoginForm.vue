@@ -83,6 +83,23 @@
         mode="pop"
         @success="handleLogin"
       />
+      <el-col :span="24" class="px-10px">
+        <el-form-item>
+          <el-button class="w-full" :disabled="loginLoading" @click="openFaceLogin">
+            <Icon icon="ep:camera" class="mr-8px" />本人人脸登录
+          </el-button>
+        </el-form-item>
+        <el-form-item
+          ><el-button link type="primary" class="w-full" @click="push('/customer-portal')"
+            >进入客户自助门户</el-button
+          ></el-form-item
+        >
+      </el-col>
+      <FaceLoginDialog
+        v-model="faceLoginOpen"
+        :username="loginData.loginForm.username"
+        @success="handleFaceLogin"
+      />
       <el-col v-if="!localMes" :span="24" class="px-10px">
         <el-form-item>
           <el-row :gutter="5" justify="space-between" style="width: 100%">
@@ -128,6 +145,8 @@
 <script lang="ts" setup>
 import { ElLoading } from 'element-plus'
 import LoginFormTitle from './LoginFormTitle.vue'
+import FaceLoginDialog from './FaceLoginDialog.vue'
+import type { TokenType } from '@/api/login/types'
 import type { RouteLocationNormalizedLoaded } from 'vue-router'
 
 import { useIcon } from '@/hooks/web/useIcon'
@@ -152,6 +171,7 @@ const { currentRoute, push } = useRouter()
 const permissionStore = usePermissionStore()
 const redirect = ref<string>('')
 const loginLoading = ref(false)
+const faceLoginOpen = ref(false)
 const verify = ref()
 const captchaType = ref('blockPuzzle') // blockPuzzle 滑块 clickWord 点击文字 pictureWord 文字验证码
 
@@ -199,6 +219,20 @@ const getTenantId = async () => {
     const res = await LoginApi.getTenantIdByName(loginData.loginForm.tenantName)
     authUtil.setTenantId(res)
   }
+}
+const openFaceLogin = async () => {
+  if (!loginData.loginForm.username.trim()) {
+    message.warning('请先填写需要核验的账号')
+    return
+  }
+  await getTenantId()
+  faceLoginOpen.value = true
+}
+const handleFaceLogin = async (result: TokenType) => {
+  authUtil.setToken(result)
+  const target =
+    redirect.value.startsWith('/') && !redirect.value.startsWith('//') ? redirect.value : '/'
+  await push(target)
 }
 // 记住我
 const getLoginFormCache = () => {

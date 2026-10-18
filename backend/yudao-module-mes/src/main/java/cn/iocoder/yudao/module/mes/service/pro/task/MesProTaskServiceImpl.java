@@ -26,6 +26,7 @@ import cn.iocoder.yudao.module.mes.service.pro.route.MesProRouteService;
 import cn.iocoder.yudao.module.mes.service.pro.route.MesProRouteProductService;
 import cn.iocoder.yudao.module.mes.service.pro.route.MesProRouteProcessService;
 import cn.iocoder.yudao.module.mes.service.pro.workorder.MesProWorkOrderService;
+import cn.iocoder.yudao.module.mes.service.pro.sop.MesProSopService;
 import jakarta.annotation.Resource;
 import org.springframework.context.annotation.Lazy;
 import org.springframework.stereotype.Service;
@@ -77,6 +78,8 @@ public class MesProTaskServiceImpl implements MesProTaskService {
     private MesProRouteProcessService routeProcessService;
     @Resource
     private MesMdAutoCodeRecordService autoCodeRecordService;
+    @Resource
+    private MesProSopService sopService;
 
     @Override
     @Transactional(rollbackFor = Exception.class)
@@ -97,6 +100,7 @@ public class MesProTaskServiceImpl implements MesProTaskService {
         }
         // 2.2 插入
         taskMapper.insert(task);
+        sopService.lockForTask(task);
         updateWorkOrderScheduledQuantity(task.getWorkOrderId());
         return task.getId();
     }
@@ -133,6 +137,7 @@ public class MesProTaskServiceImpl implements MesProTaskService {
                 .setStartTime(effective.getStartTime()).setDuration(effective.getDuration())
                 .setEndTime(effective.getEndTime());
         taskMapper.updateById(updateObj);
+        sopService.lockForTask(taskMapper.selectById(task.getId()));
         updateWorkOrderScheduledQuantity(task.getWorkOrderId());
         if (!Objects.equals(task.getWorkOrderId(), workOrderId)) {
             updateWorkOrderScheduledQuantity(workOrderId);

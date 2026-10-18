@@ -62,6 +62,48 @@ public class AdminAuthServiceImplTest extends BaseDbUnitTest {
     @MockitoBean
     private Validator validator;
 
+    @Test
+    public void testVerifiedFace_usesStandardTokenIssuerAndFaceAudit() {
+        cn.iocoder.yudao.framework.tenant.core.context.TenantContextHolder.setTenantId(1L);
+        try {
+            AdminUserDO user = new AdminUserDO();
+            user.setId(91L); user.setTenantId(1L); user.setUsername("face-owner"); user.setStatus(0);
+            when(userService.getUser(91L)).thenReturn(user);
+            OAuth2AccessTokenDO token = new OAuth2AccessTokenDO();
+            token.setUserId(91L); token.setAccessToken("synthetic-face-token"); token.setRefreshToken("synthetic-refresh");
+            when(oauth2TokenService.createAccessToken(eq(91L), eq(2), eq("default"), isNull())).thenReturn(token);
+            AuthLoginRespVO result = authService.loginByVerifiedFace(91L);
+            assertEquals("synthetic-face-token", result.getAccessToken());
+            verify(loginLogService).createLoginLog(argThat(log -> log.getLogType().equals(105) && log.getUserId().equals(91L)
+                    && log.getResult().equals(LoginResultEnum.SUCCESS.getResult())));
+            verify(userService).updateUserLogin(eq(91L), any());
+        } finally { cn.iocoder.yudao.framework.tenant.core.context.TenantContextHolder.clear(); }
+    }
+
+    @Test
+    public void testVerifiedFace_rejectsForeignTenantBeforeIssuingToken() {
+        cn.iocoder.yudao.framework.tenant.core.context.TenantContextHolder.setTenantId(1L);
+        try {
+            AdminUserDO user = new AdminUserDO();
+            user.setId(91L); user.setTenantId(2L); user.setUsername("foreign"); user.setStatus(0);
+            when(userService.getUser(91L)).thenReturn(user);
+            assertServiceException(() -> authService.loginByVerifiedFace(91L), AUTH_LOGIN_BAD_CREDENTIALS);
+            verifyNoInteractions(oauth2TokenService);
+        } finally { cn.iocoder.yudao.framework.tenant.core.context.TenantContextHolder.clear(); }
+    }
+
+    @Test
+    public void testVerifiedFace_rejectsDisabledUserBeforeIssuingToken() {
+        cn.iocoder.yudao.framework.tenant.core.context.TenantContextHolder.setTenantId(1L);
+        try {
+            AdminUserDO user = new AdminUserDO();
+            user.setId(91L); user.setTenantId(1L); user.setUsername("disabled"); user.setStatus(1);
+            when(userService.getUser(91L)).thenReturn(user);
+            assertServiceException(() -> authService.loginByVerifiedFace(91L), AUTH_LOGIN_USER_DISABLED);
+            verifyNoInteractions(oauth2TokenService);
+        } finally { cn.iocoder.yudao.framework.tenant.core.context.TenantContextHolder.clear(); }
+    }
+
     @BeforeEach
     public void setUp() {
         authService.setCaptchaEnable(true);
