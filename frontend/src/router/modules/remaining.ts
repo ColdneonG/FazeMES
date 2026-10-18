@@ -1149,6 +1149,18 @@ const remainingRouter: AppRouteRecordRaw[] = [
     },
     children: [
       {
+        path: 'cost-analysis',
+        component: () => import('@/views/mes/cost/index.vue'),
+        name: 'MesCostAnalysis',
+        meta: {
+          title: '产品价格与成本',
+          hidden: true,
+          canTo: true,
+          noCache: true,
+          activeMenu: '/mes/md/cost'
+        }
+      },
+      {
         path: 'workbench',
         component: () => import('@/views/mes/pro/workbench/index.vue'),
         name: 'MesProWorkbench',

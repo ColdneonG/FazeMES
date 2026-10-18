@@ -58,6 +58,9 @@ public class MesWmTransactionServiceImpl implements MesWmTransactionService {
     private MesWmWarehouseAreaService areaService;
     @Resource
     private MesProKittingService kittingService;
+    @Resource
+    @org.springframework.context.annotation.Lazy
+    private cn.iocoder.yudao.module.mes.service.cost.MesCostService costService;
 
     @Override
     @Transactional(rollbackFor = Exception.class)
@@ -72,6 +75,7 @@ public class MesWmTransactionServiceImpl implements MesWmTransactionService {
         checkQuantity(reqDTO, inbound);
         // 1.3 入库事务：批次号校验 + batchId/batchCode 互补
         checkBatch(reqDTO, inbound);
+        lockCostWorkOrder(reqDTO);
         areaService.validateWarehouseAreaExists(reqDTO.getWarehouseId(), reqDTO.getLocationId(), reqDTO.getAreaId());
         materialStockService.lockStockArea(reqDTO.getAreaId());
         // 1.4 入库事务：库位混放规则校验
@@ -124,6 +128,7 @@ public class MesWmTransactionServiceImpl implements MesWmTransactionService {
                 .relatedTransactionId(reqDTO.getRelatedTransactionId())
                 .build();
         transactionMapper.insert(transaction);
+        costService.recordTransaction(transaction, materialStock);
         return transaction.getId();
     }
 
@@ -133,6 +138,10 @@ public class MesWmTransactionServiceImpl implements MesWmTransactionService {
         if (CollUtil.isEmpty(reqDTOs)) {
             throw exception(WM_TRANSACTION_LIST_EMPTY);
         }
+        // Production order locks precede all inventory-area and FIFO-layer locks.
+        reqDTOs.stream().filter(req -> isProductionCostEvent(req.getBizType()))
+                .map(MesWmTransactionSaveReqDTO::getWorkOrderId).filter(java.util.Objects::nonNull)
+                .distinct().sorted().forEach(costService::assertWorkOrderMutable);
         // Reserve all participating areas in one order before any stock row is
         // changed; otherwise a multi-area outbound can invert kitting's lock order.
         reqDTOs.stream().map(MesWmTransactionSaveReqDTO::getAreaId).filter(java.util.Objects::nonNull)
@@ -141,6 +150,18 @@ public class MesWmTransactionServiceImpl implements MesWmTransactionService {
     }
 
     // ==================== 私有校验方法 ====================
+
+    private boolean isProductionCostEvent(Integer bizType) {
+        return java.util.Objects.equals(bizType, MesBizTypeConstants.WM_ITEM_CONSUME)
+                || java.util.Objects.equals(bizType, MesBizTypeConstants.WM_PRODUCT_PRODUCE);
+    }
+
+    private void lockCostWorkOrder(MesWmTransactionSaveReqDTO req) {
+        if (isProductionCostEvent(req.getBizType())) {
+            if (req.getWorkOrderId() == null) throw exception(WM_MATERIAL_STOCK_SELECTION_MISMATCH);
+            costService.assertWorkOrderMutable(req.getWorkOrderId());
+        }
+    }
 
     /**
      * 校验数量正负号与事务方向一致

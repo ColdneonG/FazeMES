@@ -1,5 +1,4 @@
 <template>
-
   <ContentWrap>
     <el-form
       class="-mb-15px"
@@ -119,8 +118,15 @@
           <dict-tag :type="DICT_TYPE.MES_WM_PRODUCT_SALES_STATUS" :value="scope.row.status" />
         </template>
       </el-table-column>
-      <el-table-column label="操作" align="center" width="240" fixed="right">
+      <el-table-column label="操作" align="center" width="340" fixed="right">
         <template #default="scope">
+          <el-button
+            link
+            type="primary"
+            v-hasPermi="['mes:cost:query']"
+            @click="openCostCenter(router, { salesId: scope.row.id })"
+            >价格 / 毛利</el-button
+          >
           <!-- 草稿：编辑、提交、删除 -->
           <el-button
             link
@@ -205,6 +211,7 @@ import { dateFormatter2 } from '@/utils/formatTime'
 import { DICT_TYPE, getIntDictOptions } from '@/utils/dict'
 import download from '@/utils/download'
 import { WmProductSalesApi, WmProductSalesVO } from '@/api/mes/wm/productsales'
+import { openCostCenter } from '@/views/mes/cost/navigation'
 import MdClientSelect from '@/views/mes/md/client/components/MdClientSelect.vue'
 import ProductSalesForm from './ProductSalesForm.vue'
 import { MesWmProductSalesStatusEnum } from '@/views/mes/utils/constants'
@@ -212,6 +219,7 @@ import { MesWmProductSalesStatusEnum } from '@/views/mes/utils/constants'
 defineOptions({ name: 'MesWmProductSales' })
 
 const message = useMessage() // 消息弹窗
+const router = useRouter()
 const { t } = useI18n() // 国际化
 
 const loading = ref(true) // 列表的加载中

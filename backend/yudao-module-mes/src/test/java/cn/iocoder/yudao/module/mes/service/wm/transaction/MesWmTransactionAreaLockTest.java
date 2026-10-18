@@ -15,6 +15,7 @@ import static org.mockito.Mockito.*;
 class MesWmTransactionAreaLockTest {
     @Spy @InjectMocks private MesWmTransactionServiceImpl service;
     @Mock private MesWmMaterialStockService materialStockService;
+    @Mock private cn.iocoder.yudao.module.mes.service.cost.MesCostService costService;
 
     @Test
     void batchPrelocksDistinctAreasInOrderBeforeAnyMovement() {

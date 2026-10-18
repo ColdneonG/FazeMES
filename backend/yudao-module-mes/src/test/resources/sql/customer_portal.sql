@@ -72,3 +72,4 @@ CREATE TABLE IF NOT EXISTS mes_portal_request_line (
   unit_name VARCHAR(255) NOT NULL DEFAULT '',
   quantity DECIMAL(20,6) NOT NULL
 );
+CREATE TABLE mes_cost_profile(id BIGINT AUTO_INCREMENT PRIMARY KEY,tenant_id BIGINT NOT NULL,item_id BIGINT NOT NULL,version INT NOT NULL,sale_price DECIMAL(18,6),deleted INT DEFAULT 0);

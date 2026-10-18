@@ -11,7 +11,7 @@ export interface MdItemBatchConfigVO {
   clientFlag: boolean // 批次属性-客户
   salesOrderCodeFlag: boolean // 批次属性-销售订单编号
   purchaseOrderCodeFlag: boolean // 批次属性-采购订单编号
-  workorderFlag: boolean // 批次属性-生产工单
+  workOrderFlag: boolean // 批次属性-生产工单
   taskFlag: boolean // 批次属性-生产任务
   workstationFlag: boolean // 批次属性-工作站
   toolFlag: boolean // 批次属性-工具

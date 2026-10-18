@@ -41,9 +41,18 @@
         {{ detailData.workstationCode }}
       </el-descriptions-item>
     </el-descriptions>
+    <el-alert
+      class="mt-10px"
+      type="info"
+      :closable="false"
+      show-icon
+      title="追溯依据"
+      description="仅展示同次已完成报工的实际耗料与产出，或已完成 SN 过站分配所确认的批次关系。跨工序未登记 SN 用料分配时不推断关联；无查询结果不代表该物料未被使用。"
+    />
     <el-tabs type="border-card" class="mt-10px">
       <el-tab-pane label="向前追溯">
         <BatchTraceDetailList
+          :key="`forward-${queryVersion}`"
           :batchId="detailData.id"
           :batchCode="detailData.code"
           direction="forward"
@@ -51,6 +60,7 @@
       </el-tab-pane>
       <el-tab-pane label="向后追溯">
         <BatchTraceDetailList
+          :key="`backward-${queryVersion}`"
           :batchId="detailData.id"
           :batchCode="detailData.code"
           direction="backward"
@@ -68,11 +78,13 @@ defineOptions({ name: 'BatchTraceDetail' })
 
 const dialogVisible = ref(false) // 弹窗的是否展示
 const detailData = ref<BatchVO>({} as BatchVO) // 详情数据
+const queryVersion = ref(0)
 
 /** 打开弹窗 */
 const open = async (data: BatchVO) => {
-  dialogVisible.value = true
   detailData.value = data
+  queryVersion.value++
+  dialogVisible.value = true
 }
 defineExpose({ open }) // 提供 open 方法，用于打开弹窗
 </script>

@@ -49,9 +49,10 @@ public interface MesWmBatchService {
     MesWmBatchDO getOrGenerateBatchCode(MesWmBatchGenerateReqVO reqVO);
 
     /**
-     * 批次向前追溯（递归查询）
+     * 批次向前追溯（最多 20 层）
      * <p>
-     * 查询当前批次被哪些工单的哪些批次产品消耗
+     * 只沿同次已完成报工或已完成 SN 分配的实际批次关系查询下游。
+     * 未绑定的跨工序材料不凭工单推断，结果不声明完整谱系。
      *
      * @param code 批次编码
      * @return 批次列表
@@ -59,9 +60,10 @@ public interface MesWmBatchService {
     List<MesWmBatchDO> getForwardBatchList(String code);
 
     /**
-     * 批次向后追溯（递归查询）
+     * 批次向后追溯（最多 20 层）
      * <p>
-     * 查询当前批次的产品使用了哪些批次的物资
+     * 只沿同次已完成报工或已完成 SN 分配的实际批次关系查询上游。
+     * 未绑定的跨工序材料不凭工单推断，结果不声明完整谱系。
      *
      * @param code 批次编码
      * @return 批次列表

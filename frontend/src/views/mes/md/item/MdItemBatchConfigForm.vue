@@ -24,7 +24,7 @@
       <template v-if="itemOrProduct === MesItemOrProductEnum.PRODUCT.value">
         <el-checkbox v-model="formData.clientFlag">客户</el-checkbox>
         <el-checkbox v-model="formData.salesOrderCodeFlag">销售订单编号</el-checkbox>
-        <el-checkbox v-model="formData.workorderFlag">生产工单</el-checkbox>
+        <el-checkbox v-model="formData.workOrderFlag">生产工单</el-checkbox>
         <el-checkbox v-model="formData.taskFlag">生产任务</el-checkbox>
         <el-checkbox v-model="formData.workstationFlag">工作站</el-checkbox>
         <el-checkbox v-model="formData.toolFlag">工具</el-checkbox>
@@ -57,7 +57,7 @@ const formData = ref<MdItemBatchConfigVO>({
   clientFlag: false,
   salesOrderCodeFlag: false,
   purchaseOrderCodeFlag: false,
-  workorderFlag: false,
+  workOrderFlag: false,
   taskFlag: false,
   workstationFlag: false,
   toolFlag: false,
@@ -91,7 +91,7 @@ const handleSave = async () => {
     formData.value.clientFlag ||
     formData.value.salesOrderCodeFlag ||
     formData.value.purchaseOrderCodeFlag ||
-    formData.value.workorderFlag ||
+    formData.value.workOrderFlag ||
     formData.value.taskFlag ||
     formData.value.workstationFlag ||
     formData.value.toolFlag ||

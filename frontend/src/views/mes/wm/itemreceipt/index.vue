@@ -1,5 +1,4 @@
 <template>
-
   <ContentWrap>
     <el-form
       class="-mb-15px"
@@ -88,8 +87,15 @@
           <dict-tag :type="DICT_TYPE.MES_WM_ITEM_RECEIPT_STATUS" :value="scope.row.status" />
         </template>
       </el-table-column>
-      <el-table-column label="操作" align="center" width="240" fixed="right">
+      <el-table-column label="操作" align="center" width="320" fixed="right">
         <template #default="scope">
+          <el-button
+            link
+            type="primary"
+            v-hasPermi="['mes:cost:query']"
+            @click="openCostCenter(router, { receiptId: scope.row.id })"
+            >采购价格</el-button
+          >
           <!-- 草稿：编辑、提交、删除 -->
           <el-button
             link
@@ -161,6 +167,7 @@ import { dateFormatter2 } from '@/utils/formatTime'
 import { DICT_TYPE } from '@/utils/dict'
 import download from '@/utils/download'
 import { WmItemReceiptApi, WmItemReceiptVO } from '@/api/mes/wm/itemreceipt'
+import { openCostCenter } from '@/views/mes/cost/navigation'
 import MdVendorSelect from '@/views/mes/md/vendor/components/MdVendorSelect.vue'
 import ItemReceiptForm from './ItemReceiptForm.vue'
 import { MesWmItemReceiptStatusEnum } from '@/views/mes/utils/constants'
@@ -168,6 +175,7 @@ import { MesWmItemReceiptStatusEnum } from '@/views/mes/utils/constants'
 defineOptions({ name: 'MesWmItemReceipt' })
 
 const message = useMessage() // 消息弹窗
+const router = useRouter()
 const { t } = useI18n() // 国际化
 
 const loading = ref(true) // 列表的加载中

@@ -9,6 +9,7 @@ import cn.iocoder.yudao.module.mes.controller.admin.wm.batch.vo.MesWmBatchPageRe
 import cn.iocoder.yudao.module.mes.dal.dataobject.wm.batch.MesWmBatchDO;
 import com.baomidou.mybatisplus.core.conditions.query.LambdaQueryWrapper;
 import org.apache.ibatis.annotations.Mapper;
+import org.apache.ibatis.annotations.Param;
 
 import java.util.List;
 
@@ -140,17 +141,19 @@ public interface MesWmBatchMapper extends BaseMapperX<MesWmBatchDO> {
     /**
      * 查询向前追溯批次列表
      * <p>
-     * 查询当前批次被哪些工单的哪些批次产品消耗
-     * SQL 逻辑：从领料明细 -> 领料单 -> 报工记录 -> 生产入库单 -> 生产入库行
+     * 只返回同次已完成报工的产出，或已完成 SN 过站报工的实际产出批次。
+     * 未绑定 SN 的跨工序消耗不能仅凭工单推断归属。
      */
-    List<MesWmBatchDO> selectListByForward(String batchCode);
+    List<MesWmBatchDO> selectListByForward(@Param("batchCode") String batchCode,
+                                         @Param("tenantId") Long tenantId);
 
     /**
      * 查询向后追溯批次列表
      * <p>
-     * 查询当前批次的产品使用了哪些批次的物资
-     * SQL 逻辑：从生产入库明细 -> 生产入库单 -> 领料单 -> 领料明细
+     * 只返回同次已完成报工的消耗，或已完成 SN 明确分配的原料批次。
+     * 返回结果表示已记录的关系，不能视为未登记 SN 产品的完整多工序谱系。
      */
-    List<MesWmBatchDO> selectListByBackward(String batchCode);
+    List<MesWmBatchDO> selectListByBackward(@Param("batchCode") String batchCode,
+                                          @Param("tenantId") Long tenantId);
 
 }

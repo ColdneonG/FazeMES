@@ -87,19 +87,19 @@ class MesProFeedbackProgressTest {
     }
 
     @Test
-    void nonKeyApprovalWithNoClassifiedQuantitiesUsesZero() {
+    void nonKeyInspectionCannotDiscardPendingQuantityByFinishingImmediately() {
         MesProFeedbackDO feedback = prepare(false, true);
         feedback.setQualifiedQuantity(null).setUnqualifiedQuantity(null).setUncheckQuantity(new BigDecimal("50"));
 
-        assertTrue(service.approveFeedback(1L));
+        ServiceException failure = assertThrows(ServiceException.class, () -> service.approveFeedback(1L));
 
-        verify(taskService).updateProducedQuantity(2L, new BigDecimal("50"), BigDecimal.ZERO, BigDecimal.ZERO);
+        assertEquals(cn.iocoder.yudao.module.mes.enums.ErrorCodeConstants.PRO_FEEDBACK_NON_KEY_CHECK_UNSUPPORTED.getCode(), failure.getCode());
+        assertEquals(MesProFeedbackStatusEnum.APPROVING.getStatus(), feedback.getStatus());
+        assertEquals(0, new BigDecimal("50").compareTo(feedback.getUncheckQuantity()));
+        verify(taskService, never()).updateProducedQuantity(anyLong(), any(), any(), any());
         verify(workOrderService, never()).updateProducedQuantity(anyLong(), any());
-        verifyNoInteractions(productProduceService, produceLineService);
-        var order = inOrder(workOrderService, taskService);
-        order.verify(workOrderService).validateWorkOrderExistsForUpdate(3L);
-        order.verify(taskService).validateTaskNotFinishedForUpdate(2L, 3L);
-        order.verify(taskService).updateProducedQuantity(anyLong(), any(), any(), any());
+        verifyNoInteractions(itemConsumeService, productProduceService, produceLineService);
+        verify(mapper, never()).updateById(any(MesProFeedbackDO.class));
     }
 
     @Test
@@ -320,6 +320,10 @@ class MesProFeedbackProgressTest {
                 .setApproveUserId(1L).setRouteId(4L).setProcessId(5L).setStatus(MesProFeedbackStatusEnum.APPROVING.getStatus())
                 .setFeedbackQuantity(new BigDecimal("50")).setQualifiedQuantity(new BigDecimal("45"))
                 .setUnqualifiedQuantity(new BigDecimal("5")).setUncheckQuantity(BigDecimal.ZERO);
+        if (check) {
+            feedback.setQualifiedQuantity(BigDecimal.ZERO).setUnqualifiedQuantity(BigDecimal.ZERO)
+                    .setUncheckQuantity(feedback.getFeedbackQuantity());
+        }
         when(mapper.selectById(1L)).thenReturn(feedback);
         when(mapper.selectByIdForUpdate(1L)).thenReturn(feedback);
         lenient().when(routeProcessService.getRouteProcessByRouteIdAndProcessId(4L, 5L))

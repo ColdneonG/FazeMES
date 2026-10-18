@@ -2,6 +2,8 @@ package cn.iocoder.yudao.module.mes.controller.admin.pro.route.vo.productbom;
 
 import io.swagger.v3.oas.annotations.media.Schema;
 import jakarta.validation.constraints.NotNull;
+import jakarta.validation.constraints.DecimalMin;
+import jakarta.validation.constraints.Digits;
 import lombok.Data;
 
 import java.math.BigDecimal;
@@ -30,6 +32,9 @@ public class MesProRouteProductBomSaveReqVO {
     private Long itemId;
 
     @Schema(description = "用料比例", example = "1.50")
+    @NotNull(message = "用料比例不能为空")
+    @DecimalMin(value = "0", inclusive = false, message = "用料比例必须大于零")
+    @Digits(integer = 14, fraction = 6)
     private BigDecimal quantity;
 
     @Schema(description = "备注")

@@ -110,6 +110,12 @@ public class MesProWorkOrderBomServiceImpl implements MesProWorkOrderBomService 
     }
 
     private void validateWorkOrderBomSaveData(MesProWorkOrderBomSaveReqVO reqVO) {
+        validateQuantity(reqVO.getQuantity());
+        boolean duplicate = workOrderBomMapper.selectList(new cn.iocoder.yudao.framework.mybatis.core.query.LambdaQueryWrapperX<MesProWorkOrderBomDO>()
+                .eq(MesProWorkOrderBomDO::getWorkOrderId, reqVO.getWorkOrderId()).last("FOR UPDATE"))
+                .stream().anyMatch(row -> java.util.Objects.equals(row.getItemId(), reqVO.getItemId())
+                        && !java.util.Objects.equals(row.getId(), reqVO.getId()));
+        if (duplicate) throw cn.iocoder.yudao.module.mes.service.pro.integrity.MesProductionIntegrityService.invalid("工单不能重复添加相同BOM物料");
         // 校验工单存在
         MesProWorkOrderDO workOrder = workOrderService.validateWorkOrderExists(reqVO.getWorkOrderId());
         // DONE @AI：增加注释
@@ -119,6 +125,13 @@ public class MesProWorkOrderBomServiceImpl implements MesProWorkOrderBomService 
         if (!CollUtil.anyMatch(productBomService.getProductBomListByItemId(workOrder.getProductId()),
                 productBom -> productBom.getBomItemId().equals(reqVO.getItemId()))) {
             throw exception(MD_PRODUCT_BOM_ITEM_INVALID);
+        }
+    }
+
+    private void validateQuantity(java.math.BigDecimal quantity) {
+        if (quantity == null || quantity.signum() <= 0 || quantity.scale() > 6
+                || quantity.precision() - quantity.scale() > 14) {
+            throw cn.iocoder.yudao.module.mes.service.pro.integrity.MesProductionIntegrityService.invalid("工单BOM用量必须大于零，最多十四位整数及六位小数");
         }
     }
 
@@ -166,8 +179,10 @@ public class MesProWorkOrderBomServiceImpl implements MesProWorkOrderBomService 
         // 3. 构建工单 BOM 列表并批量插入
         List<MesProWorkOrderBomDO> bomList = new ArrayList<>(productBomList.size());
         for (MesMdProductBomDO productBom : productBomList) {
+            java.math.BigDecimal quantity = reqVO.getQuantity().multiply(productBom.getQuantity()).stripTrailingZeros();
+            validateQuantity(quantity);
             bomList.add(new MesProWorkOrderBomDO().setWorkOrderId(workOrderId).setItemId(productBom.getBomItemId())
-                    .setQuantity(reqVO.getQuantity().multiply(productBom.getQuantity())));
+                    .setQuantity(quantity));
         }
         workOrderBomMapper.insertBatch(bomList);
     }

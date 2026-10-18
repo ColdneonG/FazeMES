@@ -21,6 +21,9 @@ export interface PortalProduct {
   unitName?: string
   description: string
   enabled?: boolean
+  referenceSalePrice?: string | null
+  currency?: 'CNY'
+  taxBasis?: 'EXCLUSIVE'
 }
 export interface PortalRequestLine {
   productId: number

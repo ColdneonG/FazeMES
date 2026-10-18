@@ -1,7 +1,10 @@
 package cn.iocoder.yudao.module.mes.controller.admin.pro.feedback.vo;
 
 import io.swagger.v3.oas.annotations.media.Schema;
+import jakarta.validation.constraints.DecimalMin;
+import jakarta.validation.constraints.Digits;
 import jakarta.validation.constraints.NotNull;
+import jakarta.validation.constraints.PositiveOrZero;
 import lombok.Data;
 
 import java.math.BigDecimal;
@@ -57,24 +60,38 @@ public class MesProFeedbackSaveReqVO {
 
     @Schema(description = "本次报工数量", requiredMode = Schema.RequiredMode.REQUIRED, example = "500.00")
     @NotNull(message = "报工数量不能为空")
+    @DecimalMin(value = "0", inclusive = false, message = "报工数量必须大于 0")
+    @Digits(integer = 14, fraction = 6, message = "报工数量最多支持 14 位整数和 6 位小数")
     private BigDecimal feedbackQuantity;
 
     @Schema(description = "合格品数量", example = "490.00")
+    @PositiveOrZero(message = "合格品数量不能为负数")
+    @Digits(integer = 14, fraction = 6)
     private BigDecimal qualifiedQuantity;
 
     @Schema(description = "不良品数量", example = "10.00")
+    @PositiveOrZero(message = "不良品数量不能为负数")
+    @Digits(integer = 14, fraction = 6)
     private BigDecimal unqualifiedQuantity;
 
     @Schema(description = "待检测数量", example = "0")
+    @PositiveOrZero(message = "待检测数量不能为负数")
+    @Digits(integer = 14, fraction = 6)
     private BigDecimal uncheckQuantity;
 
     @Schema(description = "工废数量", example = "6.00")
+    @PositiveOrZero(message = "工废数量不能为负数")
+    @Digits(integer = 14, fraction = 6)
     private BigDecimal laborScrapQuantity;
 
     @Schema(description = "料废数量", example = "4.00")
+    @PositiveOrZero(message = "料废数量不能为负数")
+    @Digits(integer = 14, fraction = 6)
     private BigDecimal materialScrapQuantity;
 
     @Schema(description = "其他废品数量", example = "0")
+    @PositiveOrZero(message = "其他废品数量不能为负数")
+    @Digits(integer = 14, fraction = 6)
     private BigDecimal otherScrapQuantity;
 
     @Schema(description = "报工人编号", requiredMode = Schema.RequiredMode.REQUIRED, example = "1")
@@ -92,4 +109,4 @@ public class MesProFeedbackSaveReqVO {
     @Schema(description = "备注", example = "备注")
     private String remark;
 
-    }
+}

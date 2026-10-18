@@ -52,6 +52,8 @@ public class MesWmProductReceiptServiceImpl implements MesWmProductReceiptServic
     @Resource
     private MesWmProductReceiptDetailService productReceiptDetailService;
     @Resource
+    private MesProductReceiptQualityService productReceiptQualityService;
+    @Resource
     private MesWmTransactionService wmTransactionService;
     @Resource
     private MesProWorkOrderService workOrderService;
@@ -164,9 +166,19 @@ public class MesWmProductReceiptServiceImpl implements MesWmProductReceiptServic
     @Override
     @Transactional(rollbackFor = Exception.class)
     public void finishProductReceipt(Long id) {
-        // 校验存在
+        // Work order serializes production/QC and every receipt of the same
+        // batch, including different receipt documents. Locate, lock, re-read.
+        MesWmProductReceiptDO located = productReceiptMapper.selectById(id);
+        if (located == null) throw exception(WM_PRODUCT_RECPT_NOT_EXISTS);
+        if (located.getWorkOrderId() == null) {
+            throw cn.iocoder.yudao.module.mes.service.pro.integrity.MesProductionIntegrityService.invalid("产品入库必须关联来源工单");
+        }
+        workOrderService.validateWorkOrderExistsForUpdate(located.getWorkOrderId());
         MesWmProductReceiptDO receipt = productReceiptMapper.selectByIdForUpdate(id);
         if (receipt == null) throw exception(WM_PRODUCT_RECPT_NOT_EXISTS);
+        if (!java.util.Objects.equals(located.getWorkOrderId(), receipt.getWorkOrderId())) {
+            throw cn.iocoder.yudao.module.mes.service.pro.integrity.MesProductionIntegrityService.invalid("产品入库来源工单已变化，请重新加载");
+        }
         if (ObjUtil.notEqual(MesWmProductReceiptStatusEnum.APPROVED.getStatus(), receipt.getStatus())) {
             throw exception(WM_PRODUCT_RECPT_STATUS_ERROR);
         }
@@ -194,6 +206,10 @@ public class MesWmProductReceiptServiceImpl implements MesWmProductReceiptServic
 
         // 2. 遍历明细，每条明细产生 OUT（虚拟线边库扣减）+ IN（实际仓库增加）
         for (MesWmProductReceiptDetailDO detail : details) {
+            // Recalculate per detail after earlier OUT rows in this transaction;
+            // no repeated detail can spend the same qualified quantity twice.
+            productReceiptQualityService.validateAvailable(receipt.getWorkOrderId(), detail.getItemId(),
+                    detail.getBatchId(), detail.getQuantity());
             // 2.1 先从虚拟线边库出库（库存减少）
             Long outTransactionId = wmTransactionService.createTransaction(new MesWmTransactionSaveReqDTO()
                     .setType(MesWmTransactionTypeEnum.OUT.getType()).setItemId(detail.getItemId())

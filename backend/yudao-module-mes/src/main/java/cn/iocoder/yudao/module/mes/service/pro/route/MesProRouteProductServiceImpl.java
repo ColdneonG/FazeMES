@@ -36,6 +36,7 @@ public class MesProRouteProductServiceImpl implements MesProRouteProductService 
     private MesProRouteProductBomService routeProductBomService;
 
     @Override
+    @Transactional(rollbackFor = Exception.class)
     public Long createRouteProduct(MesProRouteProductSaveReqVO createReqVO) {
         // 1.0 已启用的工艺路线，不允许操作
         routeService.validateRouteNotEnable(createReqVO.getRouteId());
@@ -49,11 +50,17 @@ public class MesProRouteProductServiceImpl implements MesProRouteProductService 
     }
 
     @Override
+    @Transactional(rollbackFor = Exception.class)
     public void updateRouteProduct(MesProRouteProductSaveReqVO updateReqVO) {
         // 1.0 已启用的工艺路线，不允许操作
         routeService.validateRouteNotEnable(updateReqVO.getRouteId());
         // 1.1 校验存在
         validateRouteProductExists(updateReqVO.getId());
+        MesProRouteProductDO original = routeProductMapper.selectById(updateReqVO.getId());
+        if (!java.util.Objects.equals(original.getRouteId(), updateReqVO.getRouteId())
+                || !java.util.Objects.equals(original.getItemId(), updateReqVO.getItemId())) {
+            throw cn.iocoder.yudao.module.mes.service.pro.integrity.MesProductionIntegrityService.invalid("不能更换工艺产品关联，请删除后重新添加并配置用料");
+        }
         // 1.2 校验产品唯一性
         validateItemUnique(updateReqVO.getId(), updateReqVO.getItemId());
 

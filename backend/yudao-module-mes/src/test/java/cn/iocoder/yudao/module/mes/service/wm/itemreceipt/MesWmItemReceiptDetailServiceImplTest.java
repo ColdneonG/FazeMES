@@ -33,7 +33,7 @@ class MesWmItemReceiptDetailServiceImplTest extends BaseMockitoUnitTest {
     @Mock private MesWmBatchService batchService;
 
     private MesWmItemReceiptDetailSaveReqVO prepare(Long batchId, boolean batchFlag) {
-        when(itemReceiptLineService.getItemReceiptLine(11L)).thenReturn(
+        when(itemReceiptLineService.getItemReceiptLineForUpdate(11L)).thenReturn(
                 new MesWmItemReceiptLineDO().setId(11L).setReceiptId(1L).setItemId(2L).setBatchId(batchId));
         when(itemService.validateItemExists(2L)).thenReturn(new MesMdItemDO().setId(2L).setBatchFlag(batchFlag));
         return new MesWmItemReceiptDetailSaveReqVO().setReceiptId(1L).setLineId(11L)

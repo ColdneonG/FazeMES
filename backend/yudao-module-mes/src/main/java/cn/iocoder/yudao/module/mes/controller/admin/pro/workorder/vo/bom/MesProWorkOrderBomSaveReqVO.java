@@ -2,6 +2,8 @@ package cn.iocoder.yudao.module.mes.controller.admin.pro.workorder.vo.bom;
 
 import io.swagger.v3.oas.annotations.media.Schema;
 import jakarta.validation.constraints.NotNull;
+import jakarta.validation.constraints.DecimalMin;
+import jakarta.validation.constraints.Digits;
 import lombok.Data;
 
 import java.math.BigDecimal;
@@ -23,6 +25,8 @@ public class MesProWorkOrderBomSaveReqVO {
 
     @Schema(description = "预计使用量", requiredMode = Schema.RequiredMode.REQUIRED, example = "10.00")
     @NotNull(message = "预计使用量不能为空")
+    @DecimalMin(value = "0", inclusive = false, message = "预计使用量必须大于零")
+    @Digits(integer = 14, fraction = 6)
     private BigDecimal quantity;
 
     @Schema(description = "备注", example = "备注")

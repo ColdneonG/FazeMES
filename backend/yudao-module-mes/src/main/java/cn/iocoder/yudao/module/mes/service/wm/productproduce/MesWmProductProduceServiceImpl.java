@@ -35,6 +35,7 @@ import java.math.BigDecimal;
 import java.time.LocalDate;
 import java.time.LocalDateTime;
 import java.util.List;
+import java.util.Objects;
 
 import static cn.iocoder.yudao.framework.common.exception.util.ServiceExceptionUtil.exception;
 import static cn.iocoder.yudao.module.mes.enums.ErrorCodeConstants.*;
@@ -88,12 +89,28 @@ public class MesWmProductProduceServiceImpl implements MesWmProductProduceServic
     private void createTransactionList(Long produceId, List<MesWmProductProduceLineDO> lines) {
         MesWmProductProduceDO produce = productProduceMapper.selectById(produceId);
         for (MesWmProductProduceLineDO line : lines) {
+            if (!Objects.equals(line.getProduceId(), produceId) || line.getQuantity() == null
+                    || line.getQuantity().signum() < 0
+                    || (!Objects.equals(line.getQualityStatus(), MesWmQualityStatusEnum.PASS.getStatus())
+                    && !Objects.equals(line.getQualityStatus(), MesWmQualityStatusEnum.FAIL.getStatus()))) {
+                throw exception(WM_PRODUCT_PRODUCE_DETAIL_QUANTITY_MISMATCH);
+            }
             // 1. 校验每行明细数量之和等于行数量
             List<MesWmProductProduceDetailDO> details = productProduceDetailService.getProductProduceDetailListByLineId(
                     line.getId());
+            for (MesWmProductProduceDetailDO detail : details) {
+                if (!Objects.equals(detail.getProduceId(), produceId)
+                        || !Objects.equals(detail.getLineId(), line.getId())
+                        || !Objects.equals(detail.getItemId(), line.getItemId())
+                        || !Objects.equals(detail.getBatchId(), line.getBatchId())
+                        || !Objects.equals(detail.getBatchCode(), line.getBatchCode())
+                        || detail.getQuantity() == null || detail.getQuantity().signum() <= 0) {
+                    throw exception(WM_PRODUCT_PRODUCE_DETAIL_QUANTITY_MISMATCH);
+                }
+            }
             BigDecimal totalDetailQty = CollectionUtils.getSumValue(details,
                     MesWmProductProduceDetailDO::getQuantity, BigDecimal::add, BigDecimal.ZERO);
-            if (line.getQuantity() != null && totalDetailQty.compareTo(line.getQuantity()) != 0) {
+            if (totalDetailQty.compareTo(line.getQuantity()) != 0) {
                 throw exception(WM_PRODUCT_PRODUCE_DETAIL_QUANTITY_MISMATCH);
             }
             // 2. 按明细创建库存事务（产品产出到线边库）
@@ -215,7 +232,10 @@ public class MesWmProductProduceServiceImpl implements MesWmProductProduceServic
      * 校验生产入库单存在且为准备中状态
      */
     private MesWmProductProduceDO validateProductProduceExistsAndPrepare(Long id) {
-        MesWmProductProduceDO produce = validateProductProduceExists(id);
+        MesWmProductProduceDO produce = productProduceMapper.selectByIdForUpdate(id);
+        if (produce == null) {
+            throw exception(WM_PRODUCT_PRODUCE_NOT_EXISTS);
+        }
         if (ObjUtil.notEqual(produce.getStatus(), MesWmProductProduceStatusEnum.PREPARE.getStatus())) {
             throw exception(WM_PRODUCT_PRODUCE_STATUS_INVALID);
         }
@@ -227,17 +247,31 @@ public class MesWmProductProduceServiceImpl implements MesWmProductProduceServic
     public void splitPendingAndFinishProduce(Long feedbackId, Long sourceLineId,
                                               BigDecimal qualifiedQty, BigDecimal unqualifiedQty) {
         // 1.1 查询产出单
-        MesWmProductProduceDO produce = productProduceMapper.selectByFeedbackId(feedbackId);
+        MesWmProductProduceDO produce = productProduceMapper.selectByFeedbackIdForUpdate(feedbackId);
         if (produce == null) {
             throw exception(WM_PRODUCT_PRODUCE_NOT_EXISTS);
+        }
+        if (!Objects.equals(produce.getStatus(), MesWmProductProduceStatusEnum.PREPARE.getStatus())) {
+            throw exception(WM_PRODUCT_PRODUCE_STATUS_INVALID);
+        }
+        // Recheck ownership and conservation before changing either quality rows or stock.
+        MesWmProductProduceLineDO pendingLine = productProduceLineService
+                .validateProductProduceLineExistsForUpdate(sourceLineId);
+        if (!Objects.equals(pendingLine.getProduceId(), produce.getId())
+                || !Objects.equals(pendingLine.getFeedbackId(), feedbackId)
+                || !Objects.equals(pendingLine.getQualityStatus(), MesWmQualityStatusEnum.PENDING.getStatus())
+                || pendingLine.getQuantity() == null || pendingLine.getQuantity().signum() <= 0
+                || qualifiedQty == null || qualifiedQty.signum() < 0
+                || unqualifiedQty == null || unqualifiedQty.signum() < 0
+                || qualifiedQty.stripTrailingZeros().scale() > 6
+                || unqualifiedQty.stripTrailingZeros().scale() > 6
+                || qualifiedQty.add(unqualifiedQty).compareTo(pendingLine.getQuantity()) != 0) {
+            throw exception(WM_PRODUCT_PRODUCE_DETAIL_QUANTITY_MISMATCH);
         }
         // 1.2 获取虚拟线边库
         MesWmWarehouseDO virtualWarehouse = warehouseService.getWarehouseByCode(MesWmWarehouseDO.WIP_VIRTUAL_WAREHOUSE);
         MesWmWarehouseLocationDO virtualLocation = locationService.getWarehouseLocationByCode(MesWmWarehouseLocationDO.WIP_VIRTUAL_LOCATION);
         MesWmWarehouseAreaDO virtualArea = areaService.getWarehouseAreaByCode(MesWmWarehouseAreaDO.WIP_VIRTUAL_AREA);
-
-        // 2. 通过 sourceLineId 直接定位待检验行
-        MesWmProductProduceLineDO pendingLine = productProduceLineService.validateProductProduceLineExists(sourceLineId);
 
         // 3A. 情况一：存在不合格品数量，需要拆分行
         if (unqualifiedQty != null && unqualifiedQty.compareTo(BigDecimal.ZERO) > 0) {

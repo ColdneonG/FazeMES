@@ -54,6 +54,10 @@ class MesProTaskScheduleProgressTest {
     @Mock private MesProRouteProcessService routeProcessService;
     @Mock private MesMdAutoCodeRecordService autoCodeRecordService;
     @Mock private cn.iocoder.yudao.module.mes.service.pro.sop.MesProSopService sopService;
+    @Mock private cn.iocoder.yudao.module.mes.service.pro.integrity.MesProductionIntegrityService integrityService;
+    @Mock private cn.iocoder.yudao.module.mes.dal.mysql.pro.feedback.MesProFeedbackMapper feedbackMapper;
+    @Mock private cn.iocoder.yudao.module.mes.dal.mysql.pro.sop.MesSopTaskSnapshotMapper sopSnapshotMapper;
+    @Mock private cn.iocoder.yudao.module.mes.dal.mysql.pro.sop.MesSopStepRecordMapper sopRecordMapper;
 
     private final Map<Long, MesProTaskDO> tasks = new LinkedHashMap<>();
     private final Map<Long, BigDecimal> scheduled = new HashMap<>();
@@ -63,7 +67,7 @@ class MesProTaskScheduleProgressTest {
     void mapperState() {
         lenient().when(workOrderService.validateWorkOrderExistsForUpdate(anyLong()))
                 .thenAnswer(i -> new MesProWorkOrderDO().setId(i.getArgument(0)).setProductId(9L)
-                        .setStatus(MesProWorkOrderStatusEnum.CONFIRMED.getStatus()));
+                        .setQuantity(new BigDecimal("1000")).setStatus(MesProWorkOrderStatusEnum.CONFIRMED.getStatus()));
         lenient().doAnswer(i -> { scheduled.put(i.getArgument(0), i.getArgument(1)); return null; })
                 .when(workOrderService).updateScheduledQuantity(anyLong(), any());
         lenient().when(itemService.validateItemExistsAndEnable(anyLong()))

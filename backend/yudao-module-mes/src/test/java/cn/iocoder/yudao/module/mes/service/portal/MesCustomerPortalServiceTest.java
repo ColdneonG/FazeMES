@@ -103,6 +103,15 @@ class MesCustomerPortalServiceTest {
     }
 
     @Test
+    void catalogPriceIsLatestTenantScopedSaleOnlyAndKeepsExactDecimalText() {
+        publish();String token=login();
+        jdbc.update("INSERT INTO mes_cost_profile(tenant_id,item_id,version,sale_price) VALUES(1,101,1,299),(1,101,2,279.123456),(2,101,99,999)");
+        var row=service.catalog(token).get(0);assertEquals("279.123456",row.get("referenceSalePrice"));assertEquals("CNY",row.get("currency"));assertEquals("EXCLUSIVE",row.get("taxBasis"));
+        assertFalse(row.containsKey("purchasePrice"));assertFalse(row.containsKey("totalCost"));assertFalse(row.containsKey("grossMargin"));
+        jdbc.update("INSERT INTO mes_cost_profile(tenant_id,item_id,version,sale_price) VALUES(1,101,3,NULL)");assertNull(service.catalog(token).get(0).get("referenceSalePrice"));
+    }
+
+    @Test
     void checkoutIsIdempotentAndRequestLinesAndHistoryAreCustomerScoped() {
         publish(); String token = login(); String requestKey = key();
         var created = service.submit(token,request(requestKey));

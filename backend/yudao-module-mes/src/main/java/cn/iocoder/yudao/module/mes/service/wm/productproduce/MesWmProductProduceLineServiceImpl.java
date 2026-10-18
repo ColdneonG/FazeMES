@@ -38,6 +38,15 @@ public class MesWmProductProduceLineServiceImpl implements MesWmProductProduceLi
     }
 
     @Override
+    public MesWmProductProduceLineDO validateProductProduceLineExistsForUpdate(Long id) {
+        MesWmProductProduceLineDO line = productProduceLineMapper.selectByIdForUpdate(id);
+        if (line == null) {
+            throw exception(WM_PRODUCT_PRODUCE_LINE_NOT_EXISTS);
+        }
+        return line;
+    }
+
+    @Override
     public void updateProductProduceLine(MesWmProductProduceLineDO line) {
         productProduceLineMapper.updateById(line);
     }

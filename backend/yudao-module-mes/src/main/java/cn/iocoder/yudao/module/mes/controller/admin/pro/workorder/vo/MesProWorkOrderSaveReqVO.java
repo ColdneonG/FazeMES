@@ -1,8 +1,13 @@
 package cn.iocoder.yudao.module.mes.controller.admin.pro.workorder.vo;
 
+import cn.iocoder.yudao.framework.common.validation.InEnum;
+import cn.iocoder.yudao.module.mes.enums.pro.MesProWorkOrderTypeEnum;
+import cn.iocoder.yudao.module.mes.enums.pro.MesProWorkOrderSourceTypeEnum;
 import io.swagger.v3.oas.annotations.media.Schema;
 import jakarta.validation.constraints.NotEmpty;
 import jakarta.validation.constraints.NotNull;
+import jakarta.validation.constraints.DecimalMin;
+import jakarta.validation.constraints.Digits;
 import lombok.Data;
 
 import java.math.BigDecimal;
@@ -25,10 +30,12 @@ public class MesProWorkOrderSaveReqVO {
 
     @Schema(description = "工单类型", requiredMode = Schema.RequiredMode.REQUIRED, example = "1")
     @NotNull(message = "工单类型不能为空")
+    @InEnum(MesProWorkOrderTypeEnum.class)
     private Integer type;
 
     @Schema(description = "来源类型", requiredMode = Schema.RequiredMode.REQUIRED, example = "1")
     @NotNull(message = "来源类型不能为空")
+    @InEnum(MesProWorkOrderSourceTypeEnum.class)
     private Integer orderSourceType;
 
     @Schema(description = "来源单据编号", example = "SO-001")
@@ -40,6 +47,8 @@ public class MesProWorkOrderSaveReqVO {
 
     @Schema(description = "生产数量", requiredMode = Schema.RequiredMode.REQUIRED, example = "100.00")
     @NotNull(message = "生产数量不能为空")
+    @DecimalMin(value = "0", inclusive = false, message = "生产数量必须大于零")
+    @Digits(integer = 14, fraction = 6, message = "生产数量最多十四位整数及六位小数")
     private BigDecimal quantity;
 
     @Schema(description = "已生产数量", example = "0")

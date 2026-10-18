@@ -328,6 +328,11 @@ public interface ErrorCodeConstants {
     ErrorCode PRO_FEEDBACK_QUALIFIED_UNQUALIFIED_REQUIRED = new ErrorCode(1_040_506_011, "请输入合格品和不良品数量，且合计须大于 0");
     ErrorCode PRO_FEEDBACK_UNCHECK_QUANTITY_EXISTS = new ErrorCode(1_040_506_012, "当前报工单未完成检验（待检数量：{}），无法执行报工");
     ErrorCode PRO_FEEDBACK_APPROVER_MISMATCH = new ErrorCode(1_040_506_013, "只有指定审核人才能审批或驳回该报工单");
+    ErrorCode PRO_FEEDBACK_QUANTITY_NEGATIVE = new ErrorCode(1_040_506_014, "报工的合格、不良、待检及废品数量不能为负数");
+    ErrorCode PRO_FEEDBACK_QUANTITY_PRECISION = new ErrorCode(1_040_506_015, "报工数量最多支持 14 位整数和 6 位小数");
+    ErrorCode PRO_FEEDBACK_PENDING_QUANTITY_MISMATCH = new ErrorCode(1_040_506_016, "质检工序必须全量待检，不能提前填写合格、不良或废品数量");
+    ErrorCode PRO_FEEDBACK_SCRAP_QUANTITY_EXCEED = new ErrorCode(1_040_506_017, "工废、料废和其他废品数量之和不能超过不良品数量");
+    ErrorCode PRO_FEEDBACK_NON_KEY_CHECK_UNSUPPORTED = new ErrorCode(1_040_506_018, "当前仅支持关键工序质检，请将需要检验的工序设为关键工序，或取消检验标识");
 
     // ========== MES 生产管理-生产流转卡（1-040-507-000） ==========
     ErrorCode PRO_CARD_NOT_EXISTS = new ErrorCode(1_040_507_000, "生产流转卡不存在");
@@ -494,14 +499,21 @@ public interface ErrorCodeConstants {
     ErrorCode WM_ITEM_RECEIPT_CANCEL_NOT_ALLOWED = new ErrorCode(1_040_705_006, "已完成或已取消的入库单不允许取消");
     ErrorCode WM_ITEM_RECEIPT_IQC_VENDOR_MISMATCH = new ErrorCode(1_040_705_007, "来料检验单的供应商与入库单不一致");
     ErrorCode WM_ITEM_RECEIPT_IQC_NOT_FINISHED = new ErrorCode(1_040_705_008, "只能关联已完成的来料检验单");
+    ErrorCode WM_ITEM_RECEIPT_HEADER_HAS_LINE = new ErrorCode(1_040_705_009,
+            "已有入库单行，不能修改供应商、入库日期或采购订单号；请先删除单行");
+    ErrorCode WM_ITEM_RECEIPT_BATCH_ATTRIBUTES_MISMATCH = new ErrorCode(1_040_705_010,
+            "入库单的物料批次属性与已分配批次不一致，请重新分配批次");
     ErrorCode WM_ITEM_RECEIPT_LINE_NOT_EXISTS = new ErrorCode(1_040_705_100, "采购入库单行不存在");
     ErrorCode WM_ITEM_RECEIPT_LINE_ARRIVAL_NOTICE_LINE_REQUIRED = new ErrorCode(1_040_705_101,
             "入库单关联了到货通知单，必须选择到货通知单行");
     ErrorCode WM_ITEM_RECEIPT_LINE_ARRIVAL_NOTICE_LINE_NOT_ALLOWED = new ErrorCode(1_040_705_102,
             "入库单未关联到货通知单，不能选择到货通知单行");
+    ErrorCode WM_ITEM_RECEIPT_LINE_HAS_DETAIL = new ErrorCode(1_040_705_103,
+            "已有上架明细，不能修改物料或批次属性；请先删除上架明细");
     ErrorCode WM_ITEM_RECEIPT_DETAIL_NOT_EXISTS = new ErrorCode(1_040_705_200, "采购入库明细不存在");
     ErrorCode WM_ITEM_RECEIPT_DETAIL_LINE_MISMATCH = new ErrorCode(1_040_705_201, "入库单行与上架明细的单据或物料不一致");
     ErrorCode WM_ITEM_RECEIPT_DETAIL_QUANTITY_EXCEED = new ErrorCode(1_040_705_202, "上架明细总数量不能超过行入库数量");
+    ErrorCode WM_ITEM_RECEIPT_DETAIL_BATCH_MISMATCH = new ErrorCode(1_040_705_203, "上架明细批次与入库单行批次不一致");
 
     // ========== MES 仓库管理-领料申请单（1-040-706-000） ==========
     ErrorCode WM_MATERIAL_REQUEST_NOT_EXISTS = new ErrorCode(1_040_706_000, "领料申请单不存在");
