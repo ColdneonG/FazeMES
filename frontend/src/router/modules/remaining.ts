@@ -59,13 +59,10 @@ const remainingRouter: AppRouteRecordRaw[] = [
     children: [
       {
         path: 'index',
-        component:
-          import.meta.env.VITE_APP_LOCAL_MES === 'true'
-            ? () => import('@/views/Home/MesWorkspace.vue')
-            : () => import('@/views/Home/Index.vue'),
+        component: () => import('@/views/Home/MesWorkspace.vue'),
         name: 'Index',
         meta: {
-          title: import.meta.env.VITE_APP_LOCAL_MES === 'true' ? 'MES 工作台' : t('router.home'),
+          title: '工作台',
           icon: 'ep:home-filled',
           noCache: false,
           affix: true
@@ -1168,11 +1165,11 @@ const remainingRouter: AppRouteRecordRaw[] = [
         component: () => import('@/views/mes/qc/mobile/QualityWorkbench.vue'),
         name: 'MesQualityWorkbench',
         meta: {
-          title: '工位质检',
+          title: '现场质检',
           hidden: true,
           canTo: true,
           noCache: true,
-          activeMenu: '/mes/workbench'
+          activeMenu: '/mes/quality-workbench'
         }
       },
       {

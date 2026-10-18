@@ -5,6 +5,8 @@ const avatarImg = '/placeholder-avatar.svg'
 import { useDesign } from '@/hooks/web/useDesign'
 import { useTagsViewStore } from '@/store/modules/tagsView'
 import { useUserStore } from '@/store/modules/user'
+import { usePermissionStore } from '@/store/modules/permission'
+import { pathResolve } from '@/utils/routerHelper'
 import LockDialog from './components/LockDialog.vue'
 import LockPage from './components/LockPage.vue'
 import { useLockStore } from '@/store/modules/lock'
@@ -16,6 +18,19 @@ const { t } = useI18n()
 const { push, replace } = useRouter()
 
 const userStore = useUserStore()
+const permissionStore = usePermissionStore()
+
+const faceSettingsPath = '/mes/face'
+const hasFaceSettingsRoute = (routes: AppRouteRecordRaw[], parent = ''): boolean =>
+  routes.some((route) => {
+    const path = pathResolve(parent, route.path)
+    return (
+      path === faceSettingsPath ||
+      (route.children ? hasFaceSettingsRoute(route.children, path) : false)
+    )
+  })
+// 人脸入口从业务导航移到个人菜单，仍只对已获得该页面授权的用户显示。
+const canManageFaceLogin = computed(() => hasFaceSettingsRoute(permissionStore.getAddRouters))
 
 const tagsViewStore = useTagsViewStore()
 
@@ -49,6 +64,9 @@ const loginOut = async () => {
 const toProfile = async () => {
   push('/user/profile')
 }
+const toFaceSettings = () => {
+  push(faceSettingsPath)
+}
 </script>
 
 <template>
@@ -64,6 +82,10 @@ const toProfile = async () => {
         <ElDropdownItem>
           <Icon icon="ep:tools" />
           <div @click="toProfile">{{ t('common.profile') }}</div>
+        </ElDropdownItem>
+        <ElDropdownItem v-if="canManageFaceLogin" @click="toFaceSettings">
+          <Icon icon="ep:camera" />
+          <div>人脸登录设置</div>
         </ElDropdownItem>
         <ElDropdownItem divided>
           <Icon icon="ep:lock" />

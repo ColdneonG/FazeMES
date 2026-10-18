@@ -209,7 +209,9 @@ export default defineComponent({
       if (props.rootOnly) {
         return []
       }
-      return findOpenMenuPaths(unref(routers), normalizeMenuTargetPath(unref(activeMenu)))
+      const targetPath = normalizeMenuTargetPath(unref(activeMenu))
+      const root = getRootMenuRoute(unref(routers), targetPath)
+      return root ? findOpenMenuPaths([root.route], targetPath) : []
     })
 
     let lastAutoOpeneds: string[] = []

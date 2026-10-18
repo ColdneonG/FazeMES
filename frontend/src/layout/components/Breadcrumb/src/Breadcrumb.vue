@@ -4,7 +4,7 @@ import { ref, watch, computed, unref, defineComponent, TransitionGroup } from 'v
 import { useRouter } from 'vue-router'
 import { usePermissionStore } from '@/store/modules/permission'
 import { filterBreadcrumb } from './helper'
-import { filter, treeToList } from '@/utils/tree'
+import { getMenuBreadcrumb } from '@/layout/components/Menu/src/menuRoute'
 import type { RouteLocationNormalizedLoaded, RouteMeta } from 'vue-router'
 
 import { Icon } from '@/components/Icon'
@@ -37,20 +37,19 @@ export default defineComponent({
     })
 
     const getBreadcrumb = () => {
-      const currentPath = currentRoute.value.matched.slice(-1)[0].path
-
-      levelList.value = filter<AppRouteRecordRaw>(unref(menuRouters), (node: AppRouteRecordRaw) => {
-        return node.path === currentPath
-      })
+      levelList.value = getMenuBreadcrumb(unref(menuRouters), currentRoute.value)
     }
 
     const renderBreadcrumb = () => {
-      const breadcrumbList = treeToList<AppRouteRecordRaw[]>(unref(levelList))
-      return breadcrumbList.map((v) => {
-        const disabled = !v.redirect || v.redirect === 'noredirect'
+      return unref(levelList).map((v, index) => {
+        const redirect =
+          typeof v.redirect === 'string' && v.redirect !== 'noredirect' ? v.redirect : undefined
+        // 分组只是展示投影，其 path 可能没有真实路由；点击父级应进入分组默认页。
+        const target =
+          index < unref(levelList).length - 1 ? { path: redirect || v.path } : undefined
         const meta = v.meta as RouteMeta
         return (
-          <ElBreadcrumbItem to={{ path: disabled ? '' : v.path }} key={v.name}>
+          <ElBreadcrumbItem to={v.redirect === 'noredirect' ? undefined : target} key={v.name}>
             {meta?.icon && breadcrumbIcon.value ? (
               <div class="flex items-center">
                 <Icon icon={meta.icon} class="mr-[2px]" svgClass="inline-block"></Icon>
@@ -65,8 +64,8 @@ export default defineComponent({
     }
 
     watch(
-      () => currentRoute.value,
-      (route: RouteLocationNormalizedLoaded) => {
+      () => [currentRoute.value, unref(menuRouters)] as const,
+      ([route]: readonly [RouteLocationNormalizedLoaded, AppRouteRecordRaw[]]) => {
         if (route.path.startsWith('/redirect/')) {
           return
         }
