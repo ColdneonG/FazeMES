@@ -64,6 +64,8 @@ python -X utf8 deploy/verify-broky-product.py --base http://127.0.0.1:48080/admi
 
 MySQL 程序需位于 `C:\Program Files\MySQL\MySQL Server 8.0\bin`，当前脚本按此位置查找程序。首次安装和启动需要访问 npm、Maven 仓库、PyPI 及 GitHub；脚本自动准备 Redis 和人脸模型运行时，并校验模型摘要。
 
+Java 优先使用 `JAVA_HOME\bin\java.exe`，未设置 `JAVA_HOME` 时从 `PATH` 查找；Maven、Node.js 和 PowerShell 从 `PATH` 查找。`JAVA_HOME` 如已设置，必须指向有效的 JDK 17 安装目录。`deploy/machine-local.ps1` 也使用这些环境变量，不再依赖某位开发者的用户目录。
+
 ## 首次启动
 
 在 PowerShell 7 中依次执行：
@@ -97,9 +99,14 @@ pwsh -NoProfile -File deploy/start-local.ps1
 
 - 启动：`pwsh -NoProfile -File deploy/start-local.ps1`
 - 停止：`pwsh -NoProfile -File deploy/stop-local.ps1`
-- 后端修改后：先停止服务，再运行 `pwsh -NoProfile -File deploy/start-local.ps1 -Build`。
+- 更新代码或后端修改后：运行 `pwsh -NoProfile -File deploy/start-local.ps1 -Build`。已有安装先校验工具与配置、执行待应用的数据库迁移并备份旧 JAR，再停止受管理后端、构建和启动新后端，以避开 Windows 对运行中 JAR 的文件锁。
+- 仅重建并重启后端（MySQL 和 Redis 已运行）：`pwsh -NoProfile -File deploy/restart-backend.ps1 -Build`。
 
 前端使用 Vite 热更新。本地运行配置、随机密码、MySQL 数据、附件和日志保存在 `.runtime/`，该目录不提交 Git。
+
+构建失败时后端保持停止，数据库及其他服务继续保留。修复构建后再次运行 `-Build`，或将 `.runtime/backups/yudao-server.previous.jar` 恢复到 `backend/yudao-server/target/yudao-server.jar` 后运行 `deploy/restart-backend.ps1`；备份仅在此前存在可运行 JAR 时生成。
+
+更新前请使用 MySQL 备份工具备份 `yudao_mes`，并另存本地配置。已有安装的日常启动只复用原数据，并通过 `fazemes_schema_migration` 的文件名和 SHA-256 记录顺序执行待应用迁移，不再导入初始化 SQL 或示例数据。同日迁移按声明的先决依赖排序，例如 Broky 产品配置会等待成本和受控 SOP 表就绪。已执行迁移的内容如有变化会中止，请添加新迁移文件。`-InitializeDatabase` 只用于显式的首次初始化或配置修复，不是日常升级命令；已有数据但配置不完整时，默认启动会报错，不会自动重新导入数据。
 
 ## 目录结构
 

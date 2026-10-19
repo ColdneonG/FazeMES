@@ -4,12 +4,16 @@ param([switch]$Build,[switch]$InitializeDatabase)
 $ErrorActionPreference = 'Stop'
 $projectRoot = Split-Path -Parent $PSScriptRoot
 $runtimeRoot = Join-Path $projectRoot '.runtime'
-# Everyday startup must reuse existing data after reboot, without rerunning SQL imports.
-if (-not $InitializeDatabase -and (Test-Path -LiteralPath (Join-Path $runtimeRoot 'mysql\data\auto.cnf')) -and (Test-Path -LiteralPath (Join-Path $runtimeRoot 'application-meslocal.yaml'))) {
-    & (Join-Path $PSScriptRoot 'resume-local.ps1')
-    if ($Build) { & (Join-Path $PSScriptRoot 'restart-backend.ps1') -Build }
+. (Join-Path $PSScriptRoot 'local-tools.ps1')
+# Existing installations only resume and apply pending migrations, never import seed SQL.
+# An incomplete installation must also fail safely instead of implicitly reinitializing data.
+if (-not $InitializeDatabase -and ((Test-Path -LiteralPath (Join-Path $runtimeRoot 'mysql\data\auto.cnf')) -or (Test-Path -LiteralPath (Join-Path $runtimeRoot 'application-meslocal.yaml')))) {
+    & (Join-Path $PSScriptRoot 'resume-local.ps1') -Build:$Build
     return
 }
+$javaExe = Resolve-LocalTool -Name java.exe -HomeVariable JAVA_HOME -HomeRelativePath 'bin\java.exe'
+$nodeExe = Resolve-LocalTool -Name node.exe
+if ($Build) { Build-LocalBackend -ProjectRoot $projectRoot }
 $logRoot = Join-Path $runtimeRoot 'logs'
 New-Item -ItemType Directory -Force -Path $logRoot | Out-Null
 function Test-Port([int]$Port) {
@@ -17,10 +21,8 @@ function Test-Port([int]$Port) {
     try { return $socket.ConnectAsync('127.0.0.1',$Port).Wait(300) -and $socket.Connected }
     catch { return $false } finally { $socket.Dispose() }
 }
-if ($InitializeDatabase -or -not (Test-Path -LiteralPath (Join-Path $runtimeRoot 'application-meslocal.yaml')) -or -not (Test-Port 3308)) {
-    & (Join-Path $PSScriptRoot 'init-local.ps1')
-}
-& (Join-Path $PSScriptRoot 'apply-migrations.ps1')
+# init-local also applies migrations. Only first setup or explicit repair can reach it.
+& (Join-Path $PSScriptRoot 'init-local.ps1')
 function Start-Managed([string]$Name,[int]$Port,[string]$Executable,[string[]]$ProcessArgs,[string]$Directory) {
     $pidPath = Join-Path $runtimeRoot "$Name.pid"
     if (Test-Port $Port) {
@@ -31,13 +33,10 @@ function Start-Managed([string]$Name,[int]$Port,[string]$Executable,[string[]]$P
         }
         throw "Port $Port is occupied by an unrelated process. It has not been stopped."
     }
-    $taskProcess = Start-Process -FilePath $Executable -ArgumentList $ProcessArgs -WorkingDirectory $Directory -WindowStyle Hidden -PassThru -RedirectStandardOutput (Join-Path $logRoot "$Name.stdout.log") -RedirectStandardError (Join-Path $logRoot "$Name.stderr.log")
+    $quotedArgs = @($ProcessArgs | ForEach-Object { if ($_ -match '\s') { '"' + $_ + '"' } else { $_ } })
+    $taskProcess = Start-Process -FilePath $Executable -ArgumentList $quotedArgs -WorkingDirectory $Directory -WindowStyle Hidden -PassThru -RedirectStandardOutput (Join-Path $logRoot "$Name.stdout.log") -RedirectStandardError (Join-Path $logRoot "$Name.stderr.log")
     Set-Content -LiteralPath $pidPath -Value $taskProcess.Id
     Write-Host "Started $Name (PID $($taskProcess.Id)); see $logRoot"
-}
-if ($Build) {
-    Push-Location (Join-Path $projectRoot 'backend')
-    try { & mvn.cmd -s (Join-Path $PSScriptRoot 'maven-local-settings.xml') -B -ntp -pl yudao-server -am package -DskipTests; if ($LASTEXITCODE -ne 0) { throw 'Backend build failed.' } } finally { Pop-Location }
 }
 $redisBin = Join-Path $runtimeRoot 'redis-bin'
 if (-not (Test-Path -LiteralPath (Join-Path $redisBin 'redis-server.exe'))) {
@@ -56,10 +55,10 @@ if (-not (Test-Path -LiteralPath $facePython) -or -not (Test-Path -LiteralPath $
 Start-Managed 'face-auth' 8091 $facePython @((Join-Path $projectRoot 'face-auth\app.py'),'--model-dir',(Join-Path $faceRuntime 'models'),'--token-file',$faceTokenFile) $projectRoot
 $jarPath = Join-Path $projectRoot 'backend\yudao-server\target\yudao-server.jar'
 if (-not (Test-Path -LiteralPath $jarPath)) { throw 'Backend JAR missing. Run with -Build first.' }
-Start-Managed 'backend' 48080 (Get-Command java.exe).Source @('-Xms128m','-Xmx1536m','-Dfile.encoding=UTF-8','-jar',$jarPath,'--spring.profiles.active=meslocal',('--spring.config.additional-location=file:'+(Join-Path $runtimeRoot 'application-meslocal.yaml').Replace('\','/'))) $projectRoot
+Start-Managed 'backend' 48080 $javaExe @('-Xms128m','-Xmx1536m','-Dfile.encoding=UTF-8','-jar',$jarPath,'--spring.profiles.active=meslocal',('--spring.config.additional-location=file:'+(Join-Path $runtimeRoot 'application-meslocal.yaml').Replace('\','/'))) $projectRoot
 $vitePath = Join-Path $projectRoot 'frontend\node_modules\vite\bin\vite.js'
 if (-not (Test-Path -LiteralPath $vitePath)) { throw 'Frontend dependencies missing. Run pnpm install in frontend first.' }
-Start-Managed 'frontend' 5173 (Get-Command node.exe).Source @('--max-old-space-size=4096',$vitePath,'--mode','env.local','--host','127.0.0.1','--port','5173','--strictPort') (Join-Path $projectRoot 'frontend')
+Start-Managed 'frontend' 5173 $nodeExe @('--max-old-space-size=4096',$vitePath,'--mode','env.local','--host','127.0.0.1','--port','5173','--strictPort') (Join-Path $projectRoot 'frontend')
 foreach ($service in @(@{Name='backend'; Url='http://127.0.0.1:48080/admin-api/system/tenant/get-by-website?website=127.0.0.1:5173'},@{Name='frontend'; Url='http://127.0.0.1:5173/'},@{Name='face-auth'; Url='http://127.0.0.1:8091/health'; Headers=@{'X-Faze-Face-Token'=(Get-Content -LiteralPath $faceTokenFile -Raw).Trim()}})) {
     $ready = $false
     for ($attempt=0; $attempt -lt 90; $attempt++) {

@@ -2,7 +2,7 @@
 
 访问 `http://127.0.0.1:5173/mes/insight`，或从 MES 工作台右上角进入。
 
-当前运行副本：`C:\Users\mm\Documents\Codex\FazeMES-main`。桌面原项目保留不变。
+以下命令在仓库根目录通过 PowerShell 7 执行，Java、Maven 的选择遵循项目 README 的环境要求。
 
 ## 六项功能
 
@@ -39,10 +39,10 @@
 修改后端后，保持现有 MySQL/Redis 运行，使用仅重启后端的脚本：
 
 ```powershell
-& 'C:\Users\mm\.cache\codex-runtimes\codex-primary-runtime\dependencies\native\powershell\pwsh.exe' -NoProfile -ExecutionPolicy Bypass -File 'C:\Users\mm\Documents\Codex\FazeMES-main\deploy\restart-backend.ps1' -Build
+pwsh -NoProfile -File deploy/restart-backend.ps1 -Build
 ```
 
-该脚本备份旧 JAR 到 `.runtime/backups/yudao-server.previous.jar`，不会停止数据库或导入初始化 SQL。前端代码通过当前 Vite 服务热更新。
+该脚本先校验环境、应用待执行的增量迁移，并备份旧 JAR 到 `.runtime/backups/yudao-server.previous.jar`，再停止受管理后端并构建，避免 Windows 对运行中 JAR 的文件锁。构建失败时后端保持停止，可修复后重试或恢复备份 JAR。数据库不会被停止，也不导入初始化 SQL。前端代码通过当前 Vite 服务热更新。
 
 ## 验证
 
