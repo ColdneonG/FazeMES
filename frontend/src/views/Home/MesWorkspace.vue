@@ -7,7 +7,15 @@
           <h1>{{ userStore.getUser.nickname }}，欢迎进入工作台</h1>
           <p>查看生产动态、处理岗位待办，快速进入日常业务。</p>
         </div>
-        <el-button v-if="canLoadData" :loading="loading" @click="loadData">刷新数据</el-button>
+        <div>
+          <el-button
+            v-if="checkPermi(['mes:insight:query'])"
+            type="primary"
+            @click="router.push('/mes/insight')"
+            >进入生产决策中心</el-button
+          >
+          <el-button v-if="canLoadData" :loading="loading" @click="loadData">刷新数据</el-button>
+        </div>
       </div>
     </el-card>
 

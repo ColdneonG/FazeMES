@@ -177,6 +177,12 @@ public class MesAssistantModelGateway {
         } catch (Exception exception) { throw MesAssistantErrors.invalid("模型地址无效：仅允许HTTPS公共服务或127.0.0.1本地服务，禁止私网、metadata和URL凭据/查询参数"); }
     }
 
+    /** Shared bounded JSON transport: validate and pin DNS, verify TLS, reject redirects. */
+    public static byte[] postJson(String baseUrl, String suffix, byte[] body, String apiKey) throws Exception {
+        Target target = validateTarget(baseUrl);
+        return post(target, target.uri().getRawPath() + suffix, body, apiKey);
+    }
+
     private static byte[] post(Target target, String path, byte[] body, String apiKey) throws Exception {
         Socket socket = new Socket();
         try {

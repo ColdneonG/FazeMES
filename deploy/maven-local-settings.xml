@@ -1,0 +1,17 @@
+<settings xmlns="http://maven.apache.org/SETTINGS/1.2.0">
+  <profiles>
+    <profile>
+      <id>local-repositories</id>
+      <repositories>
+        <repository><id>public</id><url>https://repo.maven.apache.org/maven2/</url></repository>
+        <repository><id>huaweicloud</id><url>https://repo.maven.apache.org/maven2/</url></repository>
+        <repository><id>aliyunmaven</id><url>https://repo.maven.apache.org/maven2/</url></repository>
+      </repositories>
+      <pluginRepositories>
+        <pluginRepository><id>public</id><url>https://repo.maven.apache.org/maven2/</url></pluginRepository>
+        <pluginRepository><id>huaweicloud</id><url>https://repo.maven.apache.org/maven2/</url></pluginRepository>
+      </pluginRepositories>
+    </profile>
+  </profiles>
+  <activeProfiles><activeProfile>local-repositories</activeProfile></activeProfiles>
+</settings>

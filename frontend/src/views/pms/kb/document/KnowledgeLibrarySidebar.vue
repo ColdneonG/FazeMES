@@ -137,6 +137,7 @@
 </template>
 
 <script lang="ts" setup>
+import { ElTree } from 'element-plus'
 import {
   getKnowledgeTreeNodeIcon,
   type KnowledgeContentView,

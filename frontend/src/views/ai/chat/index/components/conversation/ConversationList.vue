@@ -134,6 +134,7 @@
 </template>
 
 <script setup lang="ts">
+import { ElMessage, ElMessageBox } from 'element-plus'
 import { ChatConversationApi, ChatConversationVO } from '@/api/ai/chat/conversation'
 import RoleRepository from '../role/RoleRepository.vue'
 import { Bottom, Top } from '@element-plus/icons-vue'

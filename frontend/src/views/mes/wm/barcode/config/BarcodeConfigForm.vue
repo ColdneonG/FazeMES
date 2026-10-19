@@ -81,6 +81,7 @@
 </template>
 
 <script setup lang="ts">
+import { ElMessage } from 'element-plus'
 import { getIntDictOptions, DICT_TYPE } from '@/utils/dict'
 import {
   WmBarcodeConfigApi as BarcodeConfigApi,

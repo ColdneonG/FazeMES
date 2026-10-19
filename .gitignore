@@ -1,5 +1,6 @@
 # Machine-specific services, credentials and generated acceptance evidence
 /.runtime/
+/work/
 /output/
 **/output/
 *.local.ini
