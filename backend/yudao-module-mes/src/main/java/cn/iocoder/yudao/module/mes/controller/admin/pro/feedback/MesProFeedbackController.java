@@ -60,6 +60,8 @@ public class MesProFeedbackController {
     @Resource
     private MesProFeedbackService feedbackService;
     @Resource
+    private cn.iocoder.yudao.module.mes.service.pro.feedback.MesProFeedbackFlowService flowService;
+    @Resource
     private MesMdWorkstationService workstationService;
     @Resource
     private MesProRouteService routeService;
@@ -78,6 +80,14 @@ public class MesProFeedbackController {
 
     @Resource
     private AdminUserApi adminUserApi;
+
+    @GetMapping("/source-options")
+    @Operation(summary = "查询报工相邻工序来源及当前已选分配")
+    @PreAuthorize("@ss.hasAnyPermissions('mes:pro-feedback:query','mes:pro-feedback:create','mes:pro-feedback:update','mes:pro-feedback:approve')")
+    public CommonResult<cn.iocoder.yudao.module.mes.controller.admin.pro.feedback.vo.MesProFeedbackFlowVO.Context> sources(
+            @RequestParam("taskId") Long taskId, @RequestParam(value="feedbackId", required=false) Long feedbackId) {
+        return success(flowService.context(taskId, feedbackId));
+    }
 
     @PostMapping("/create")
     @Operation(summary = "创建生产报工")

@@ -1,15 +1,16 @@
 import request from '@/config/axios'
+import type { SalesFulfillment } from '@/api/mes/wm/salesnotice/line'
 
 // MES 销售出库单行 VO
-export interface WmProductSalesLineVO {
+export interface WmProductSalesLineVO extends SalesFulfillment {
   id: number
   salesId: number
   noticeLineId: number
   itemId: number
   itemCode: string
   itemName: string
-  quantity: number
-  pickedQuantity: number
+  quantity: number | string
+  pickedQuantity: number | string
   batchId: number
   batchCode: string
   oqcCheckFlag: boolean

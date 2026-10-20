@@ -33,8 +33,31 @@ export interface ProWorkOrderVO {
   remark: string // 备注
 }
 
+export interface LossClosurePreview {
+  workOrderId: number
+  plannedQuantity: string
+  producedQuantity: string
+  qualifiedQuantity: string
+  lossQuantity: string
+}
+
+export interface LossClosureRecord extends LossClosurePreview {
+  reason: string
+  closedBy: string | number
+  closedAt: string | number
+}
+
 // MES 生产工单 API
 export const ProWorkOrderApi = {
+  getLossPreview: async (id: number): Promise<LossClosurePreview> => {
+    return await request.get({ url: '/mes/pro/work-order/loss-preview', params: { id } })
+  },
+  getLossRecord: async (id: number): Promise<LossClosureRecord | null> => {
+    return await request.get({ url: '/mes/pro/work-order/loss-record', params: { id } })
+  },
+  closeWithLoss: async (data: { id: number; expectedProducedQuantity: string; reason: string }) => {
+    return await request.put({ url: '/mes/pro/work-order/close-with-loss', data })
+  },
   // 查询生产工单分页
   getWorkOrderPage: async (params: any) => {
     return await request.get({ url: `/mes/pro/work-order/page`, params })

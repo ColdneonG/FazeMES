@@ -32,7 +32,13 @@ class MesWmDocumentExecutionGuardTest {
         var mapperType=type("dal.mysql.wm."+c.module()+".MesWm"+c.name()+"Mapper");
         Object mapper=mock(mapperType),document=data(c,"");set(document,"Id",Long.class,1L);set(document,"Status",Integer.class,status);
         when(mapperType.getMethod("selectForUpdate",Long.class).invoke(mapper,1L)).thenReturn(document);
-        ReflectionTestUtils.setField(service,c.prefix()+"Mapper",mapper);return mapper;
+        ReflectionTestUtils.setField(service,c.prefix()+"Mapper",mapper);
+        if(c.module().equals("productsales")){
+            var fulfillment=mock(cn.iocoder.yudao.module.mes.service.wm.salesnotice.MesWmSalesNoticeFulfillmentService.class);
+            when(fulfillment.lockSales(1L)).thenAnswer(invocation->mapperType.getMethod("selectForUpdate",Long.class).invoke(mapper,1L));
+            ReflectionTestUtils.setField(service,"fulfillmentService",fulfillment);
+        }
+        return mapper;
     }
     void rejectedBeforeMovement(Case c,Object service) throws Exception {
         var failure=assertThrows(InvocationTargetException.class,()->service.getClass().getMethod(c.finish(),Long.class).invoke(service,1L));
@@ -62,6 +68,15 @@ class MesWmDocumentExecutionGuardTest {
                 when(detailType.getMethod("get"+c.name()+"DetailListBy"+c.key()+"Id",Long.class).invoke(detailService,1L)).thenReturn(List.of(detail));
                 ReflectionTestUtils.setField(service,c.prefix()+"LineService",lineService);
                 ReflectionTestUtils.setField(service,c.prefix()+"DetailService",detailService);
+                if(c.module().equals("returnsales")){
+                    var sources=mock(cn.iocoder.yudao.module.mes.service.wm.returnsales.MesWmReturnSalesSourceService.class);
+                    when(sources.lockDocumentSources(1L)).thenReturn(List.of((cn.iocoder.yudao.module.mes.dal.dataobject.wm.returnsales.MesWmReturnSalesLineDO)line));
+                    var detailMapper=mock(cn.iocoder.yudao.module.mes.dal.mysql.wm.returnsales.MesWmReturnSalesDetailMapper.class);
+                    when(detailMapper.selectListByReturnIdForUpdate(1L)).thenReturn(List.of((cn.iocoder.yudao.module.mes.dal.dataobject.wm.returnsales.MesWmReturnSalesDetailDO)detail));
+                    ReflectionTestUtils.setField(service,"sourceService",sources);
+                    ReflectionTestUtils.setField(service,"returnSalesDetailMapper",detailMapper);
+                    ReflectionTestUtils.setField(service,"deliveryService",mock(cn.iocoder.yudao.module.mes.service.wm.returnsales.MesWmReturnSalesDeliveryService.class));
+                }
                 rejectedBeforeMovement(c,service);
             }));
     }
@@ -88,10 +103,13 @@ class MesWmDocumentExecutionGuardTest {
                 failure.getCause().printStackTrace(new java.io.PrintWriter(trace));
                 return c.module()+" unexpected failure: "+trace;
             });
-            assertEquals(100L,requestType.getMethod("get"+c.key()+"Id").invoke(req));
+            // Request mutation is not the invariant: the original persisted parent must be checked and preserved.
+            assertEquals(990001,((ServiceException)failure.getCause()).getCode());
+            assertEquals(100L,line.getClass().getMethod("get"+c.key()+"Id").invoke(line));
             parentType.getMethod(validators.get(c.module()),Long.class).invoke(verify(parent),100L);
+            parentType.getMethod(validators.get(c.module()),Long.class).invoke(verify(parent,never()),999L);
             assertTrue(mockingDetails(mapper).getInvocations().stream()
-                .noneMatch(inv->inv.getMethod().getName().equals("updateById")),
+                .noneMatch(inv->Set.of("updateById","update").contains(inv.getMethod().getName())),
                 "A closed parent must be rejected before any line update");
         }));
     }

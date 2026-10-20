@@ -95,6 +95,7 @@ if (Test-Path -LiteralPath (Join-Path $fixtureProject 'fail-migration')) { throw
 '@ | Set-Content -LiteralPath (Join-Path $fixtureDeploy 'apply-migrations.ps1')
         $eventsPath = Join-Path $fixtureRoot 'events.txt'
         function Invoke-FixtureRestart {
+            param([bool]$Rebuild = $true)
             & {
                 function Get-NetTCPConnection {
                     $events = @(Get-Content -LiteralPath $eventsPath -ErrorAction SilentlyContinue)
@@ -109,21 +110,24 @@ if (Test-Path -LiteralPath (Join-Path $fixtureProject 'fail-migration')) { throw
                     [pscustomobject]@{ Id=4242; HasExited=$false }
                 }
                 function Invoke-RestMethod { [pscustomobject]@{ code=0 } }
-                & (Join-Path $fixtureDeploy 'restart-backend.ps1') -Build
+                & (Join-Path $fixtureDeploy 'restart-backend.ps1') -Build:$Rebuild
             }
         }
         Set-Content -LiteralPath $eventsPath -Value @()
         Invoke-FixtureRestart
-        Assert-Startup (((Get-Content -LiteralPath $eventsPath) -join ',') -eq 'migrate,stop,build,start') 'Restart must migrate, stop the old JAR owner, build, then start.'
+        Assert-Startup (((Get-Content -LiteralPath $eventsPath) -join ',') -eq 'stop,migrate,build,start') 'Restart must stop old writers before data-quality migrations, then build and start.'
+        Set-Content -LiteralPath $eventsPath -Value @()
+        Invoke-FixtureRestart -Rebuild $false
+        Assert-Startup (((Get-Content -LiteralPath $eventsPath) -join ',') -eq 'stop,migrate,start') 'Resuming without a build must also stop old writers before migrations.'
         Set-Content -LiteralPath $eventsPath -Value @()
         New-Item -ItemType File -Path (Join-Path $fixtureRoot 'fail-migration') | Out-Null
         Assert-StartupThrows { Invoke-FixtureRestart } 'Simulated migration failure'
-        Assert-Startup (((Get-Content -LiteralPath $eventsPath) -join ',') -eq 'migrate') 'A migration failure must preserve the current backend.'
+        Assert-Startup (((Get-Content -LiteralPath $eventsPath) -join ',') -eq 'stop,migrate') 'A migration failure must leave the backend stopped so old writers cannot bypass new quality guards.'
         Remove-Item -LiteralPath (Join-Path $fixtureRoot 'fail-migration')
         Set-Content -LiteralPath $eventsPath -Value @()
         New-Item -ItemType File -Path (Join-Path $fixtureRoot 'fail-build') | Out-Null
         Assert-StartupThrows { Invoke-FixtureRestart } 'Backend remains stopped'
-        Assert-Startup (((Get-Content -LiteralPath $eventsPath) -join ',') -eq 'migrate,stop,build') 'A compiler failure must report the stopped backend without starting a bad JAR.'
+        Assert-Startup (((Get-Content -LiteralPath $eventsPath) -join ',') -eq 'stop,migrate,build') 'A compiler failure must report the stopped backend without starting a bad JAR.'
         Assert-Startup ((Get-FileHash -LiteralPath (Join-Path $fixtureRoot '.runtime\backups\yudao-server.previous.jar')).Hash -eq $jarHash) 'The prior runnable JAR must survive a failed restart build.'
     } finally { foreach ($listener in $probeListeners) { $listener.Stop() } }
 

@@ -27,7 +27,7 @@ public class MesWmProductSalesDetailMapperTest extends BaseDbUnitTest {
     // ==================== 辅助方法 ====================
 
     /**
-     * 创建明细 DO，固定 BigDecimal 精度为 2 位，避免 H2 decimal(14,2) 精度不匹配
+     * 数量按数值比较；数据库现在保留六位小数，不能用 BigDecimal.equals 比较显示 scale。
      */
     private MesWmProductSalesDetailDO createDetailPojo(Consumer<MesWmProductSalesDetailDO> consumer) {
         return randomPojo(MesWmProductSalesDetailDO.class, o -> {
@@ -52,7 +52,8 @@ public class MesWmProductSalesDetailMapperTest extends BaseDbUnitTest {
         List<MesWmProductSalesDetailDO> result = detailMapper.selectListByLineId(lineId);
 
         assertEquals(1, result.size());
-        assertPojoEquals(match, result.get(0));
+        assertPojoEquals(match, result.get(0), "quantity");
+        assertEquals(0, match.getQuantity().compareTo(result.get(0).getQuantity()));
     }
 
     @Test
@@ -103,7 +104,8 @@ public class MesWmProductSalesDetailMapperTest extends BaseDbUnitTest {
         List<MesWmProductSalesDetailDO> result = detailMapper.selectListBySalesId(salesId);
 
         assertEquals(1, result.size());
-        assertPojoEquals(match, result.get(0));
+        assertPojoEquals(match, result.get(0), "quantity");
+        assertEquals(0, match.getQuantity().compareTo(result.get(0).getQuantity()));
     }
 
     @Test

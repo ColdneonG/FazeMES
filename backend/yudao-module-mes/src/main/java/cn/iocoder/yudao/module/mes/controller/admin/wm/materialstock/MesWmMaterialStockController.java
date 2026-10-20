@@ -67,6 +67,16 @@ public class MesWmMaterialStockController {
     private MesMdVendorService vendorService;
     @Resource
     private MesProWorkOrderService workOrderService;
+    @Resource
+    private cn.iocoder.yudao.module.mes.service.wm.quality.MesWmQualityQuarantineService qualityQuarantineService;
+
+    @GetMapping("/quality-hold-page")
+    @Operation(summary = "历史不良库存待核对证据", description = "只读；包括无法可靠定位库存的历史异常，不代表已经完成实物核对")
+    @PreAuthorize("@ss.hasPermission('mes:wm-material-stock:query')")
+    public CommonResult<PageResult<cn.iocoder.yudao.module.mes.controller.admin.wm.materialstock.vo.MesWmQualityHoldRespVO>> qualityHoldPage(
+            @Valid cn.iocoder.yudao.module.mes.controller.admin.wm.materialstock.vo.MesWmQualityHoldPageReqVO request) {
+        return success(qualityQuarantineService.history(request));
+    }
 
     @GetMapping("/get")
     @Operation(summary = "获得库存记录")

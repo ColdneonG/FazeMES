@@ -42,6 +42,7 @@ public class MesWmSalesNoticeLineController {
     private MesMdItemService itemService;
     @Resource
     private MesMdUnitMeasureService unitMeasureService;
+    @Resource private cn.iocoder.yudao.module.mes.service.wm.salesnotice.MesWmSalesNoticeFulfillmentService fulfillmentService;
 
     @PostMapping("/create")
     @Operation(summary = "创建发货通知单行")
@@ -71,12 +72,13 @@ public class MesWmSalesNoticeLineController {
     @Operation(summary = "获得发货通知单行")
     @Parameter(name = "id", description = "编号", required = true, example = "1024")
     @PreAuthorize("@ss.hasPermission('mes:wm-sales-notice:query')")
-    public CommonResult<MesWmSalesNoticeLineRespVO> getSalesNoticeLine(@RequestParam("id") Long id) {
+    public CommonResult<MesWmSalesNoticeLineRespVO> getSalesNoticeLine(@RequestParam("id") Long id,
+            @RequestParam(value="editingSalesLineId",required=false) Long editingSalesLineId) {
         MesWmSalesNoticeLineDO line = salesNoticeLineService.getSalesNoticeLine(id);
         if (line == null) {
             return success(null);
         }
-        return success(buildRespVOList(Collections.singletonList(line)).get(0));
+        return success(buildRespVOList(Collections.singletonList(line),editingSalesLineId).get(0));
     }
 
     @GetMapping("/page")
@@ -85,12 +87,12 @@ public class MesWmSalesNoticeLineController {
     public CommonResult<PageResult<MesWmSalesNoticeLineRespVO>> getSalesNoticeLinePage(
             @Valid MesWmSalesNoticeLinePageReqVO pageReqVO) {
         PageResult<MesWmSalesNoticeLineDO> pageResult = salesNoticeLineService.getSalesNoticeLinePage(pageReqVO);
-        return success(new PageResult<>(buildRespVOList(pageResult.getList()), pageResult.getTotal()));
+        return success(new PageResult<>(buildRespVOList(pageResult.getList(),pageReqVO.getEditingSalesLineId()), pageResult.getTotal()));
     }
 
     // ==================== 拼接 VO ====================
 
-    private List<MesWmSalesNoticeLineRespVO> buildRespVOList(List<MesWmSalesNoticeLineDO> list) {
+    private List<MesWmSalesNoticeLineRespVO> buildRespVOList(List<MesWmSalesNoticeLineDO> list,Long editingSalesLineId) {
         if (CollUtil.isEmpty(list)) {
             return Collections.emptyList();
         }
@@ -100,7 +102,10 @@ public class MesWmSalesNoticeLineController {
         Map<Long, MesMdUnitMeasureDO> unitMeasureMap = unitMeasureService.getUnitMeasureMap(
                 convertSet(itemMap.values(), MesMdItemDO::getUnitMeasureId));
         // 2. 构建结果
+        var summaries=new java.util.HashMap<Long,cn.iocoder.yudao.module.mes.service.wm.salesnotice.MesWmSalesNoticeFulfillmentService.Summary>();
+        for(Long noticeId:convertSet(list,MesWmSalesNoticeLineDO::getNoticeId))summaries.putAll(fulfillmentService.summaries(noticeId,editingSalesLineId));
         return BeanUtils.toBean(list, MesWmSalesNoticeLineRespVO.class, vo -> {
+            if(summaries.containsKey(vo.getId()))BeanUtils.copyProperties(summaries.get(vo.getId()),vo);
             MapUtils.findAndThen(itemMap, vo.getItemId(), item -> {
                 vo.setItemCode(item.getCode()).setItemName(item.getName()).setSpecification(item.getSpecification());
                 MapUtils.findAndThen(unitMeasureMap, item.getUnitMeasureId(),

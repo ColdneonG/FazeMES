@@ -19,6 +19,7 @@ import cn.iocoder.yudao.module.mes.service.wm.arrivalnotice.MesWmArrivalNoticeSe
 import cn.iocoder.yudao.module.mes.service.wm.itemreceipt.MesWmItemReceiptServiceImpl;
 import cn.iocoder.yudao.module.mes.service.wm.productsales.*;
 import cn.iocoder.yudao.module.mes.service.wm.salesnotice.MesWmSalesNoticeService;
+import cn.iocoder.yudao.module.mes.service.wm.salesnotice.MesWmSalesNoticeFulfillmentService;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.extension.ExtendWith;
 import org.mockito.InjectMocks;
@@ -46,6 +47,7 @@ class QcHeaderReferenceTest {
     @Mock private MesWmArrivalNoticeService arrivalNoticeService;
     @Mock private MesWmSalesNoticeService salesNoticeService;
     @Mock private MesWmProductSalesLineService productSalesLineService;
+    @Mock private MesWmSalesNoticeFulfillmentService fulfillmentService;
 
     @Test
     void receiptAcceptsCompletedIqcOfSameVendor() {
@@ -125,6 +127,7 @@ class QcHeaderReferenceTest {
     void completedHeaderOqcDoesNotExemptMandatoryLineInspection() {
         when(salesMapper.selectForUpdate(1L)).thenReturn(new MesWmProductSalesDO().setId(1L).setOqcId(5L)
                 .setStatus(MesWmProductSalesStatusEnum.PREPARE.getStatus()));
+        when(fulfillmentService.lockSales(1L)).thenAnswer(invocation->salesMapper.selectForUpdate(1L));
         when(productSalesLineService.getProductSalesLineListBySalesId(1L)).thenReturn(List.of(
                 new MesWmProductSalesLineDO().setId(2L).setOqcCheckFlag(true).setQuantity(BigDecimal.ONE)));
         salesService.submitProductSales(1L);

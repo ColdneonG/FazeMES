@@ -34,6 +34,9 @@
           <div>仓库：{{ selectedItem.warehouseName || '-' }}</div>
           <div>库区：{{ selectedItem.locationName || '-' }}</div>
           <div>库位：{{ selectedItem.areaName || '-' }}</div>
+          <div v-if="stockQualityBlockReason(selectedItem)">{{
+            stockQualityBlockReason(selectedItem)
+          }}</div>
         </div>
       </template>
       <el-input
@@ -56,6 +59,7 @@
     :vendor-id="vendorId"
     :warehouse-id="warehouseId"
     :virtual-filter="virtualFilter"
+    :outbound-only="outboundOnly"
     @selected="handleSelected"
   />
 </template>
@@ -64,6 +68,7 @@
 import { WmMaterialStockApi, WmMaterialStockVO } from '@/api/mes/wm/materialstock'
 import { Search, CircleClose } from '@element-plus/icons-vue'
 import WmMaterialStockSelectDialog from './WmMaterialStockSelectDialog.vue'
+import { stockQualityBlockReason } from '../../qualityPolicy'
 
 // 组件有两个根节点（div + Dialog），Vue 不会自动继承 attrs；
 // 手动透传到外层 div，确保父组件传入的 class / style 等生效
@@ -80,12 +85,14 @@ const props = withDefaults(
     batchId?: number // 按批次 ID 过滤
     warehouseId?: number // 按仓库 ID 过滤
     virtualFilter?: 'exclude' | 'only' | 'all' // 虚拟仓过滤：'exclude' 排除（默认），'only' 只看，'all' 不过滤
+    outboundOnly?: boolean
     disabled?: boolean // 是否禁用
     clearable?: boolean // 是否允许清空
     placeholder?: string // 占位文字
   }>(),
   {
     virtualFilter: 'exclude',
+    outboundOnly: true,
     disabled: false,
     clearable: true,
     placeholder: '请选择库存'
@@ -109,7 +116,8 @@ const displayLabel = computed(() => {
   if (!item) {
     return ''
   }
-  return `${item.warehouseName || '-'} / ${item.batchCode || '-'} / 数量:${item.quantity}`
+  const restriction = stockQualityBlockReason(item) ? ' [禁止出库]' : ''
+  return `${item.warehouseName || '-'} / ${item.batchCode || '-'} / 数量:${item.quantity}${restriction}`
 })
 
 /** 是否显示清除图标 */

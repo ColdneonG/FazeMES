@@ -97,6 +97,14 @@ public class MesWmMaterialStockRespVO {
     @ExcelProperty("是否冻结")
     private Boolean frozen;
 
+    @Schema(description = "历史不良库存待核对，禁止出库和普通解冻")
+    @ExcelProperty("质量待核对")
+    private Boolean qualityHold;
+
+    @Schema(description = "历史质量隔离原因")
+    @ExcelProperty("质量隔离原因")
+    private String qualityHoldReason;
+
     @Schema(description = "创建时间", requiredMode = Schema.RequiredMode.REQUIRED)
     @ExcelProperty("创建时间")
     private LocalDateTime createTime;

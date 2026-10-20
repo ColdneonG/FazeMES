@@ -31,17 +31,19 @@ public class MesWmBarcodeServiceImplTest extends BaseMockitoUnitTest {
     @Mock
     private MesWmBarcodeMapper barcodeMapper;
     @Mock
-    private MesWmBarcodeConfigService barcodeConfigService;
+    private MesWmBarcodeRecords records;
+    @Mock private MesWmBarcodeBusinessResolver businessResolver;
+    @Mock private MesWmBarcodeMutex mutex;
 
     @Test
     public void testUpdateBarcode_sameBizObject() {
         // 准备参数：保持业务对象和条码内容不变
         MesWmBarcodeSaveReqVO reqVO = createReqVO().setId(1L);
-        MesWmBarcodeDO barcode = new MesWmBarcodeDO().setId(1L);
-        when(barcodeMapper.selectById(1L)).thenReturn(barcode);
+        MesWmBarcodeDO barcode = new MesWmBarcodeDO().setId(1L).setStatus(0);
+        when(records.barcode(true, "id=?", 1L)).thenReturn(barcode);
         mockConfig();
-        when(barcodeMapper.selectByBizTypeAndBizId(102, 10L)).thenReturn(barcode);
-        when(barcodeMapper.selectByContent("WH001")).thenReturn(barcode);
+        when(records.barcodes(true, "biz_type=? AND biz_id=?", 102, 10L)).thenReturn(java.util.List.of(barcode));
+        when(records.barcodes(true, "content=?", "WH001")).thenReturn(java.util.List.of(barcode));
 
         // 调用
         barcodeService.updateBarcode(reqVO);
@@ -54,9 +56,9 @@ public class MesWmBarcodeServiceImplTest extends BaseMockitoUnitTest {
     public void testUpdateBarcode_bizObjectDuplicate() {
         // 准备参数：业务对象已被另一条条码占用
         MesWmBarcodeSaveReqVO reqVO = createReqVO().setId(1L);
-        when(barcodeMapper.selectById(1L)).thenReturn(new MesWmBarcodeDO().setId(1L));
+        when(records.barcode(true, "id=?", 1L)).thenReturn(new MesWmBarcodeDO().setId(1L).setStatus(0));
         mockConfig();
-        when(barcodeMapper.selectByBizTypeAndBizId(102, 10L)).thenReturn(new MesWmBarcodeDO().setId(2L));
+        when(records.barcodes(true, "biz_type=? AND biz_id=?", 102, 10L)).thenReturn(java.util.List.of(new MesWmBarcodeDO().setId(2L)));
 
         // 调用并断言
         assertServiceException(() -> barcodeService.updateBarcode(reqVO), WM_BARCODE_ALREADY_EXISTS);
@@ -68,7 +70,7 @@ public class MesWmBarcodeServiceImplTest extends BaseMockitoUnitTest {
         // 准备参数：新增时业务对象已有条码
         MesWmBarcodeSaveReqVO reqVO = createReqVO();
         mockConfig();
-        when(barcodeMapper.selectByBizTypeAndBizId(102, 10L)).thenReturn(new MesWmBarcodeDO().setId(2L));
+        when(records.barcodes(true, "biz_type=? AND biz_id=?", 102, 10L)).thenReturn(java.util.List.of(new MesWmBarcodeDO().setId(2L)));
 
         // 调用并断言
         assertServiceException(() -> barcodeService.createBarcode(reqVO), WM_BARCODE_ALREADY_EXISTS);
@@ -79,11 +81,11 @@ public class MesWmBarcodeServiceImplTest extends BaseMockitoUnitTest {
     public void testUpdateBarcode_contentDuplicate() {
         // 准备参数：业务对象未改变，条码内容已被另一条记录占用
         MesWmBarcodeSaveReqVO reqVO = createReqVO().setId(1L);
-        MesWmBarcodeDO barcode = new MesWmBarcodeDO().setId(1L);
-        when(barcodeMapper.selectById(1L)).thenReturn(barcode);
+        MesWmBarcodeDO barcode = new MesWmBarcodeDO().setId(1L).setStatus(0);
+        when(records.barcode(true, "id=?", 1L)).thenReturn(barcode);
         mockConfig();
-        when(barcodeMapper.selectByBizTypeAndBizId(102, 10L)).thenReturn(barcode);
-        when(barcodeMapper.selectByContent("WH001")).thenReturn(new MesWmBarcodeDO().setId(2L));
+        when(records.barcodes(true, "biz_type=? AND biz_id=?", 102, 10L)).thenReturn(java.util.List.of(barcode));
+        when(records.barcodes(true, "content=?", "WH001")).thenReturn(java.util.List.of(new MesWmBarcodeDO().setId(2L)));
 
         // 调用并断言
         assertServiceException(() -> barcodeService.updateBarcode(reqVO), WM_BARCODE_CONTENT_DUPLICATE);
@@ -96,8 +98,8 @@ public class MesWmBarcodeServiceImplTest extends BaseMockitoUnitTest {
     }
 
     private void mockConfig() {
-        when(barcodeConfigService.validateBarcodeConfigByBizType(102))
-                .thenReturn(new MesWmBarcodeConfigDO().setId(5L));
+        when(records.config(102, true)).thenReturn(new MesWmBarcodeConfigDO().setId(5L).setBizType(102).setFormat(1).setContentFormat("{BUSINESSCODE}").setAutoGenerateFlag(true).setDefaultTemplate("LABEL_50X30").setStatus(0));
+        when(businessResolver.resolve(102,10L,false)).thenReturn(new MesWmBarcodeBusinessResolver.BusinessIdentity(102,10L,"WH001","原料仓"));
     }
 
 }

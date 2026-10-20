@@ -61,6 +61,8 @@ public class MesWmOutsourceReceiptServiceImpl implements MesWmOutsourceReceiptSe
     private MesMdItemService itemService;
     @Resource
     private MesProWorkOrderService workOrderService;
+    @Resource
+    private cn.iocoder.yudao.module.mes.service.wm.warehouse.MesWmWarehouseService warehouseService;
 
     @Override
     public Long createOutsourceReceipt(MesWmOutsourceReceiptSaveReqVO createReqVO) {
@@ -253,28 +255,46 @@ public class MesWmOutsourceReceiptServiceImpl implements MesWmOutsourceReceiptSe
             throw exception(WM_OUTSOURCE_RECEIPT_STATUS_ERROR);
         }
         // 1.3 校验行存在
-        MesWmOutsourceReceiptLineDO line = outsourceReceiptLineService.getOutsourceReceiptLine(lineId);
+        MesWmOutsourceReceiptLineDO line = outsourceReceiptLineService.getOutsourceReceiptLineForUpdate(lineId);
         if (line == null) {
             throw exception(WM_OUTSOURCE_RECEIPT_LINE_NOT_EXISTS);
         }
+        if (!java.util.Objects.equals(line.getReceiptId(), receiptId)
+                || !MesWmQualityStatusEnum.PENDING.getStatus().equals(line.getQualityStatus())) {
+            throw exception(WM_OUTSOURCE_RECEIPT_STATUS_ERROR);
+        }
+        qualifiedQuantity = qualifiedQuantity == null ? BigDecimal.ZERO : qualifiedQuantity;
+        unqualifiedQuantity = unqualifiedQuantity == null ? BigDecimal.ZERO : unqualifiedQuantity;
+        cn.iocoder.yudao.module.mes.service.wm.quality.MesWmQualityPolicy.validateInspectionSplit(
+                line.getQuantity(), qualifiedQuantity, unqualifiedQuantity,
+                qualifiedQuantity.signum() > 0 ? 1 : 2);
 
         // 2.1 合格品处理：更新原行（new 一个 DO，避免覆盖更新）
         if (qualifiedQuantity != null && qualifiedQuantity.compareTo(BigDecimal.ZERO) > 0) {
             outsourceReceiptLineService.updateOutsourceReceiptLineDO(new MesWmOutsourceReceiptLineDO()
                     .setId(lineId).setQualityStatus(MesWmQualityStatusEnum.PASS.getStatus())
                     .setIqcId(iqcId).setQuantity(qualifiedQuantity));
+        } else {
+            // All rejected: reuse the original row; leaving its old PENDING quantity would double the lot.
+            outsourceReceiptLineService.updateOutsourceReceiptLineDO(new MesWmOutsourceReceiptLineDO()
+                    .setId(lineId).setQualityStatus(MesWmQualityStatusEnum.FAIL.getStatus())
+                    .setIqcId(iqcId).setQuantity(unqualifiedQuantity));
         }
         // 2.2 不合格品处理：拷贝原行全部属性，新增一行
-        if (unqualifiedQuantity != null && unqualifiedQuantity.compareTo(BigDecimal.ZERO) > 0) {
+        if (unqualifiedQuantity.compareTo(BigDecimal.ZERO) > 0 && qualifiedQuantity.compareTo(BigDecimal.ZERO) > 0) {
             MesWmOutsourceReceiptLineDO unqualifiedLine = BeanUtils.toBean(line, MesWmOutsourceReceiptLineDO.class)
                     .setId(null).setQualityStatus(MesWmQualityStatusEnum.FAIL.getStatus())
                     .setIqcId(iqcId).setQuantity(unqualifiedQuantity);
             outsourceReceiptLineService.createOutsourceReceiptLineDO(unqualifiedLine);
         }
 
-        // 3. 直接更新主表状态为"待上架"
-        outsourceReceiptMapper.updateById(new MesWmOutsourceReceiptDO()
-                .setId(receiptId).setStatus(MesWmOutsourceReceiptStatusEnum.APPROVING.getStatus()));
+        // Current reads under the parent lock also cover lots containing several independent IQCs.
+        boolean hasPending = outsourceReceiptLineService.getOutsourceReceiptLineListByReceiptIdForUpdate(receiptId)
+                .stream().anyMatch(row -> MesWmQualityStatusEnum.PENDING.getStatus().equals(row.getQualityStatus()));
+        if (!hasPending) {
+            outsourceReceiptMapper.updateById(new MesWmOutsourceReceiptDO()
+                    .setId(receiptId).setStatus(MesWmOutsourceReceiptStatusEnum.APPROVING.getStatus()));
+        }
     }
 
     private MesWmOutsourceReceiptDO validateOutsourceReceiptExists(Long id) {
@@ -347,6 +367,7 @@ public class MesWmOutsourceReceiptServiceImpl implements MesWmOutsourceReceiptSe
             var line=byId.get(detail.getLineId());
             if(line==null || !java.util.Objects.equals(detail.getReceiptId(),id)
                 || !java.util.Objects.equals(line.getItemId(),detail.getItemId())
+                || !java.util.Objects.equals(line.getBatchId(),detail.getBatchId())
                 || detail.getQuantity()==null || detail.getQuantity().signum()<=0)
                 throw exception(cn.iocoder.yudao.module.mes.enums.ErrorCodeConstants.WM_OUTSOURCE_RECEIPT_DETAIL_QUANTITY_MISMATCH);
             totals.merge(line.getId(),detail.getQuantity(),java.math.BigDecimal::add);
@@ -354,5 +375,9 @@ public class MesWmOutsourceReceiptServiceImpl implements MesWmOutsourceReceiptSe
         for(var line:lines) if(line.getQuantity()==null || line.getQuantity().signum()<=0
             || line.getQuantity().compareTo(totals.getOrDefault(line.getId(),java.math.BigDecimal.ZERO))!=0)
             throw exception(cn.iocoder.yudao.module.mes.enums.ErrorCodeConstants.WM_OUTSOURCE_RECEIPT_DETAIL_QUANTITY_MISMATCH);
+        for (var detail : details) {
+            cn.iocoder.yudao.module.mes.service.wm.quality.MesWmQualityPolicy.validateInbound(
+                    byId.get(detail.getLineId()).getQualityStatus(), warehouseService.validateWarehouseExists(detail.getWarehouseId()));
+        }
     }
 }

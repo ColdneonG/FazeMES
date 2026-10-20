@@ -13,6 +13,7 @@ import cn.iocoder.yudao.module.mes.service.wm.barcode.MesWmBarcodeService;
 import jakarta.annotation.Resource;
 import org.springframework.context.annotation.Lazy;
 import org.springframework.stereotype.Service;
+import org.springframework.transaction.annotation.Transactional;
 import org.springframework.validation.annotation.Validated;
 
 import java.util.Collection;
@@ -41,6 +42,7 @@ public class MesMdWorkshopServiceImpl implements MesMdWorkshopService {
     private MesWmBarcodeService barcodeService;
 
     @Override
+    @Transactional(rollbackFor = Exception.class)
     public Long createWorkshop(MesMdWorkshopSaveReqVO createReqVO) {
         // 校验编码唯一
         validateWorkshopCodeUnique(null, createReqVO.getCode());

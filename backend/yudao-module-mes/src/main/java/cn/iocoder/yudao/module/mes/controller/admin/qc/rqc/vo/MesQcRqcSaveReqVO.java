@@ -5,6 +5,7 @@ import com.fasterxml.jackson.annotation.JsonIgnore;
 import io.swagger.v3.oas.annotations.media.Schema;
 import jakarta.validation.constraints.AssertTrue;
 import jakarta.validation.constraints.DecimalMin;
+import jakarta.validation.constraints.Digits;
 import jakarta.validation.constraints.NotEmpty;
 import jakarta.validation.constraints.NotNull;
 import lombok.Data;
@@ -61,16 +62,19 @@ public class MesQcRqcSaveReqVO {
     @Schema(description = "检测数量", requiredMode = Schema.RequiredMode.REQUIRED, example = "100")
     @NotNull(message = "检测数量不能为空")
     @DecimalMin(value = "0", message = "检测数量不能小于 0")
+    @Digits(integer=14,fraction=6)
     private BigDecimal checkQuantity;
 
     @Schema(description = "合格品数量", requiredMode = Schema.RequiredMode.REQUIRED, example = "90")
     @NotNull(message = "合格品数量不能为空")
     @DecimalMin(value = "0", message = "合格品数量不能小于 0")
+    @Digits(integer=14,fraction=6)
     private BigDecimal qualifiedQuantity;
 
     @Schema(description = "不合格数量", requiredMode = Schema.RequiredMode.REQUIRED, example = "10")
     @NotNull(message = "不合格数量不能为空")
     @DecimalMin(value = "0", message = "不合格数量不能小于 0")
+    @Digits(integer=14,fraction=6)
     private BigDecimal unqualifiedQuantity;
 
     // ========== 检验 ==========

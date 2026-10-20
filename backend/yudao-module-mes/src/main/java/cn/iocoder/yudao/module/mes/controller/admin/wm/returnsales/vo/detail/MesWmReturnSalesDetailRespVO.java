@@ -40,6 +40,7 @@ public class MesWmReturnSalesDetailRespVO {
     private String itemUnit;
 
     @Schema(description = "数量", requiredMode = Schema.RequiredMode.REQUIRED, example = "100.00")
+    @com.fasterxml.jackson.databind.annotation.JsonSerialize(using=com.fasterxml.jackson.databind.ser.std.ToStringSerializer.class)
     private BigDecimal quantity;
 
     @Schema(description = "批次ID", example = "1")

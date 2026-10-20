@@ -40,6 +40,8 @@ import static org.mockito.Mockito.*;
 @ExtendWith(MockitoExtension.class)
 class MesProFeedbackProgressTest {
 
+    @Mock private MesProFeedbackFlowService flowService;
+
     @InjectMocks
     private MesProFeedbackServiceImpl service;
     @Mock private MesProFeedbackMapper mapper;

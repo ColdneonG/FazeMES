@@ -107,10 +107,9 @@
       <el-row :gutter="20" v-if="!checkFlag">
         <el-col :span="8">
           <el-form-item label="报工数量" prop="feedbackQuantity">
-            <el-input-number
+            <el-input
               v-model="formData.feedbackQuantity"
-              :min="0"
-              :precision="2"
+              inputmode="decimal"
               disabled
               class="!w-1/1"
             />
@@ -118,23 +117,21 @@
         </el-col>
         <el-col :span="8">
           <el-form-item label="合格品数量" prop="qualifiedQuantity">
-            <el-input-number
+            <el-input
               v-model="formData.qualifiedQuantity"
-              :min="0"
-              :precision="2"
+              inputmode="decimal"
               class="!w-1/1"
-              @change="handleQuantityChanged"
+              @input="handleQuantityChanged"
             />
           </el-form-item>
         </el-col>
         <el-col :span="8">
           <el-form-item label="不良品数量" prop="unqualifiedQuantity">
-            <el-input-number
+            <el-input
               v-model="formData.unqualifiedQuantity"
-              :min="0"
-              :precision="2"
+              inputmode="decimal"
               class="!w-1/1"
-              @change="handleQuantityChanged"
+              @input="handleQuantityChanged"
             />
           </el-form-item>
         </el-col>
@@ -143,47 +140,39 @@
       <el-row :gutter="20" v-else>
         <el-col :span="8">
           <el-form-item label="报工数量" prop="feedbackQuantity">
-            <el-input-number
-              v-model="formData.feedbackQuantity"
-              :min="0"
-              :precision="2"
-              class="!w-1/1"
-            />
+            <el-input v-model="formData.feedbackQuantity" inputmode="decimal" class="!w-1/1" />
           </el-form-item>
         </el-col>
       </el-row>
       <!-- 废品分类（非质检工序 且 不良品>0 时展开） -->
       <el-row :gutter="20" v-if="!checkFlag && formData.unqualifiedQuantity > 0">
         <el-col :span="8">
-          <el-form-item label="工废数量">
-            <el-input-number
+          <el-form-item label="工废数量" prop="laborScrapQuantity">
+            <el-input
               v-model="formData.laborScrapQuantity"
-              :min="0"
-              :precision="2"
+              inputmode="decimal"
               class="!w-1/1"
-              @change="handleScrapChanged"
+              @input="handleScrapChanged"
             />
           </el-form-item>
         </el-col>
         <el-col :span="8">
-          <el-form-item label="料废数量">
-            <el-input-number
+          <el-form-item label="料废数量" prop="materialScrapQuantity">
+            <el-input
               v-model="formData.materialScrapQuantity"
-              :min="0"
-              :precision="2"
+              inputmode="decimal"
               class="!w-1/1"
-              @change="handleScrapChanged"
+              @input="handleScrapChanged"
             />
           </el-form-item>
         </el-col>
         <el-col :span="8">
-          <el-form-item label="其他废品">
-            <el-input-number
+          <el-form-item label="其他废品" prop="otherScrapQuantity">
+            <el-input
               v-model="formData.otherScrapQuantity"
-              :min="0"
-              :precision="2"
+              inputmode="decimal"
               class="!w-1/1"
-              @change="handleScrapChanged"
+              @input="handleScrapChanged"
             />
           </el-form-item>
         </el-col>
@@ -235,6 +224,14 @@
         </el-col>
       </el-row>
     </el-form>
+    <FeedbackSources
+      ref="sourcesRef"
+      v-model="formData.sources"
+      :task-id="formData.taskId"
+      :feedback-id="formData.id"
+      :quantity="formData.feedbackQuantity || 0"
+      :readonly="isDetail"
+    />
     <!-- BOM 物资消耗 / 产品产出 Tab：仅非草稿、非审批中时显示 -->
     <el-tabs
       v-if="
@@ -296,6 +293,8 @@ import MdWorkstationSelect from '@/views/mes/md/workstation/components/MdWorksta
 import UserSelectV2 from '@/views/system/user/components/UserSelectV2.vue'
 import ItemConsumeList from './ItemConsumeList.vue'
 import ProductProduceList from './ProductProduceList.vue'
+import FeedbackSources from './FeedbackSources.vue'
+import { sumQuantities, quantityRule } from './sourceQuantities'
 import { getCurrentUserId } from '@/utils/auth'
 import {
   MesAutoCodeRuleCode,
@@ -337,18 +336,19 @@ const formData = ref<Record<string, any>>({
   taskId: undefined,
   itemId: undefined,
   expireDate: undefined,
-  feedbackQuantity: 0,
-  qualifiedQuantity: 0,
-  unqualifiedQuantity: 0,
+  feedbackQuantity: '0',
+  qualifiedQuantity: '0',
+  unqualifiedQuantity: '0',
   uncheckQuantity: 0,
-  laborScrapQuantity: 0,
-  materialScrapQuantity: 0,
-  otherScrapQuantity: 0,
+  laborScrapQuantity: '0',
+  materialScrapQuantity: '0',
+  otherScrapQuantity: '0',
   feedbackUserId: undefined,
   feedbackTime: undefined,
   approveUserId: undefined,
   status: undefined,
-  remark: undefined
+  remark: undefined,
+  sources: []
 })
 const formRules = reactive({
   code: [{ required: true, message: '报工单号不能为空', trigger: 'blur' }],
@@ -356,12 +356,18 @@ const formRules = reactive({
   workOrderId: [{ required: true, message: '生产工单不能为空', trigger: 'change' }],
   taskId: [{ required: true, message: '生产任务不能为空', trigger: 'change' }],
   workstationId: [{ required: true, message: '工作站不能为空', trigger: 'change' }],
-  feedbackQuantity: [{ required: true, message: '报工数量不能为空', trigger: 'blur' }],
+  feedbackQuantity: [quantityRule(true)],
+  qualifiedQuantity: [quantityRule()],
+  unqualifiedQuantity: [quantityRule()],
+  laborScrapQuantity: [quantityRule()],
+  materialScrapQuantity: [quantityRule()],
+  otherScrapQuantity: [quantityRule()],
   feedbackUserId: [{ required: true, message: '报工人不能为空', trigger: 'change' }],
   feedbackTime: [{ required: true, message: '报工时间不能为空', trigger: 'change' }],
   approveUserId: [{ required: true, message: '审核人不能为空', trigger: 'change' }]
 })
 const formRef = ref() // 表单 Ref
+const sourcesRef = ref<InstanceType<typeof FeedbackSources>>()
 const originalFormData = ref<string>('') // 原始表单数据快照，用于脏检查
 const checkFlag = ref(true) // 是否需要检验（默认 true，未选任务时只展示报工数量）
 // 产品信息展示（只读）
@@ -429,15 +435,20 @@ const handleTaskChange = async (task: any) => {
 /** 合格品/不良品变更：自动计算报工数量 = 合格 + 不良 */
 const handleQuantityChanged = () => {
   formData.value.feedbackQuantity =
-    (formData.value.qualifiedQuantity || 0) + (formData.value.unqualifiedQuantity || 0)
+    sumQuantities(
+      formData.value.qualifiedQuantity ?? '0',
+      formData.value.unqualifiedQuantity ?? '0'
+    ) ?? ''
 }
 
 /** 废品明细变更：自动计算不良品数量 = 工废 + 料废 + 其他 */
 const handleScrapChanged = () => {
   formData.value.unqualifiedQuantity =
-    (formData.value.laborScrapQuantity || 0) +
-    (formData.value.materialScrapQuantity || 0) +
-    (formData.value.otherScrapQuantity || 0)
+    sumQuantities(
+      formData.value.laborScrapQuantity ?? '0',
+      formData.value.materialScrapQuantity ?? '0',
+      formData.value.otherScrapQuantity ?? '0'
+    ) ?? ''
   handleQuantityChanged()
 }
 
@@ -453,7 +464,8 @@ const alignQuantity = (data: ProFeedbackVO) => {
     data.otherScrapQuantity = 0
   } else {
     // 非质检工序：报工数量 = 合格 + 不良，待检归零
-    data.feedbackQuantity = (data.qualifiedQuantity || 0) + (data.unqualifiedQuantity || 0)
+    data.feedbackQuantity =
+      sumQuantities(data.qualifiedQuantity ?? '0', data.unqualifiedQuantity ?? '0') ?? ''
     data.uncheckQuantity = 0
   }
 }
@@ -468,7 +480,7 @@ const open = async (type: string, id?: number) => {
     formLoading.value = true
     try {
       const data = await ProFeedbackApi.getFeedback(id)
-      formData.value = data as any
+      formData.value = { ...data, sources: data.sources || [] }
       await loadCheckFlag(data.routeId, data.processId)
       // 填充产品信息展示
       productInfo.value = {
@@ -494,9 +506,10 @@ const open = async (type: string, id?: number) => {
 /** 提交表单（保存 create/update） */
 const submitForm = async () => {
   await formRef.value.validate()
+  if (!sourcesRef.value?.validate(false)) return
   formLoading.value = true
   try {
-    const data = formData.value as unknown as ProFeedbackVO
+    const data = { ...formData.value } as unknown as ProFeedbackVO
     alignQuantity(data)
     if (formType.value === 'create') {
       const res = await ProFeedbackApi.createFeedback(data)
@@ -520,10 +533,11 @@ const submitForm = async () => {
 /** 提交操作：表单修改过则先保存，再提交 */
 const handleSubmit = async () => {
   await formRef.value.validate()
+  if (!sourcesRef.value?.validate()) return
   try {
     await message.confirm('确认提交该报工单？【提交后将不能修改】')
     formLoading.value = true
-    const data = formData.value as unknown as ProFeedbackVO
+    const data = { ...formData.value } as unknown as ProFeedbackVO
     alignQuantity(data)
     // 1. 表单有修改时，先保存
     if (JSON.stringify(formData.value) !== originalFormData.value) {
@@ -588,18 +602,19 @@ const resetForm = () => {
     taskId: undefined,
     itemId: undefined,
     expireDate: undefined,
-    feedbackQuantity: 0,
-    qualifiedQuantity: 0,
-    unqualifiedQuantity: 0,
+    feedbackQuantity: '0',
+    qualifiedQuantity: '0',
+    unqualifiedQuantity: '0',
     uncheckQuantity: 0,
-    laborScrapQuantity: 0,
-    materialScrapQuantity: 0,
-    otherScrapQuantity: 0,
+    laborScrapQuantity: '0',
+    materialScrapQuantity: '0',
+    otherScrapQuantity: '0',
     feedbackUserId: undefined,
     feedbackTime: undefined,
     approveUserId: undefined,
     status: undefined,
-    remark: undefined
+    remark: undefined,
+    sources: []
   }
   checkFlag.value = true
   productInfo.value = { itemCode: '', itemName: '', unitMeasureName: '', itemSpecification: '' }

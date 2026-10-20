@@ -57,6 +57,14 @@
               <Icon icon="ep:refresh" class="mr-5px" /> 重置
             </el-button>
             <el-button
+              type="warning"
+              plain
+              @click="openQualityHoldEvidence()"
+              v-hasPermi="['mes:wm-material-stock:query']"
+            >
+              历史质量核查
+            </el-button>
+            <el-button
               type="success"
               plain
               @click="handleExport"
@@ -99,7 +107,42 @@
               <span v-else>—</span>
             </template>
           </el-table-column>
-          <el-table-column label="仓库" align="center" prop="warehouseName" min-width="100" />
+          <el-table-column label="仓库" align="center" prop="warehouseName" min-width="150">
+            <template #default="{ row }">
+              {{ row.warehouseName }}
+              <el-tag
+                v-if="isQualityQuarantineWarehouse(row.warehouseCode)"
+                type="danger"
+                size="small"
+              >
+                质量隔离
+              </el-tag>
+            </template>
+          </el-table-column>
+          <el-table-column label="质量管控" align="center" min-width="180">
+            <template #default="{ row }">
+              <el-tooltip
+                v-if="row.qualityHold"
+                :content="stockQualityBlockReason(row)"
+                placement="top"
+              >
+                <el-tag type="danger">历史待核对 · 禁止出库</el-tag>
+              </el-tooltip>
+              <span v-else-if="isQualityQuarantineWarehouse(row.warehouseCode)"
+                >隔离仓禁止出库</span
+              >
+              <span v-else>—</span>
+              <el-button
+                v-if="row.qualityHold"
+                link
+                type="primary"
+                @click="openQualityHoldEvidence(row.id)"
+                v-hasPermi="['mes:wm-material-stock:query']"
+              >
+                查看证据
+              </el-button>
+            </template>
+          </el-table-column>
           <el-table-column label="库区" align="center" prop="locationName" min-width="100" />
           <el-table-column label="库位" align="center" prop="areaName" min-width="100">
             <template #default="scope">
@@ -127,6 +170,7 @@
                 v-model="scope.row.frozen"
                 :active-value="true"
                 :inactive-value="false"
+                :disabled="scope.row.qualityHold === true"
                 v-hasPermi="['mes:wm-material-stock:update']"
                 @change="handleFrozenChange(scope.row)"
               />
@@ -149,6 +193,7 @@
 
   <!-- 批次详情弹窗 -->
   <BatchForm ref="batchFormRef" />
+  <StockQualityHoldDialog ref="qualityHoldDialogRef" />
 </template>
 
 <script setup lang="ts">
@@ -161,6 +206,8 @@ import BatchForm from '@/views/mes/wm/batch/BatchForm.vue'
 import MdItemSelect from '@/views/mes/md/item/components/MdItemSelect.vue'
 import WmWarehouseSelect from '@/views/mes/wm/warehouse/components/WmWarehouseSelect.vue'
 import WmWarehouseLocationSelect from '@/views/mes/wm/warehouse/components/WmWarehouseLocationSelect.vue'
+import { isQualityQuarantineWarehouse, stockQualityBlockReason } from '../qualityPolicy'
+import StockQualityHoldDialog from './components/StockQualityHoldDialog.vue'
 
 defineOptions({ name: 'MesWmMaterialStock' })
 
@@ -181,6 +228,10 @@ const queryParams = reactive({
 })
 const queryFormRef = ref() // 搜索的表单
 const exportLoading = ref(false) // 导出的加载中
+const qualityHoldDialogRef = ref()
+const openQualityHoldEvidence = (materialStockId?: number) => {
+  qualityHoldDialogRef.value.open(materialStockId)
+}
 
 /** 仓库切换时清空库区 */
 const handleWarehouseChange = () => {
@@ -220,6 +271,11 @@ const handleTypeNodeClick = (row: any) => {
 
 /** 处理冻结状态切换 */
 const handleFrozenChange = async (row: WmMaterialStockVO) => {
+  if (row.qualityHold) {
+    row.frozen = !row.frozen
+    message.warning(stockQualityBlockReason(row))
+    return
+  }
   try {
     const text = row.frozen ? '冻结' : '解冻'
     await message.confirm('确认要"' + text + '"该库存记录吗?')

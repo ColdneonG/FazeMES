@@ -67,6 +67,8 @@ public class MesProFeedbackServiceImpl implements MesProFeedbackService {
     private MesWmProductProduceLineService produceLineService;
     @Resource
     private MesProSopService sopService;
+    @Resource
+    private MesProFeedbackFlowService flowService;
 
     @Override
     @Transactional(rollbackFor = Exception.class)
@@ -79,8 +81,9 @@ public class MesProFeedbackServiceImpl implements MesProFeedbackService {
         // 2. 插入（自动填充 itemId）
         MesProFeedbackDO feedback = BeanUtils.toBean(createReqVO, MesProFeedbackDO.class)
                 .setStatus(MesProFeedbackStatusEnum.PREPARE.getStatus())
-                .setItemId(task.getItemId());
+                .setItemId(task.getItemId()).setFlowRequired(true).setFlowComplete(false);
         feedbackMapper.insert(feedback);
+        flowService.saveDraft(feedback, createReqVO.getSources());
         return feedback.getId();
     }
 
@@ -101,6 +104,7 @@ public class MesProFeedbackServiceImpl implements MesProFeedbackService {
         MesProFeedbackDO updateObj = BeanUtils.toBean(updateReqVO, MesProFeedbackDO.class)
                 .setItemId(task.getItemId());
         feedbackMapper.updateById(updateObj);
+        flowService.saveDraft(BeanUtils.toBean(updateReqVO, MesProFeedbackDO.class).setItemId(task.getItemId()), updateReqVO.getSources());
     }
 
     @Override
@@ -110,6 +114,7 @@ public class MesProFeedbackServiceImpl implements MesProFeedbackService {
         validateFeedbackStatusPrepare(lockFeedbackWorkOrder(id));
 
         // 2. 删除
+        flowService.deleteDraft(id);
         feedbackMapper.deleteById(id);
     }
 
@@ -139,6 +144,7 @@ public class MesProFeedbackServiceImpl implements MesProFeedbackService {
         taskService.validateTaskNotFinishedForUpdate(feedback.getTaskId(), feedback.getWorkOrderId());
         sopService.validateTaskExecution(feedback.getTaskId());
         validateSavedFeedbackQuantities(feedback);
+        flowService.validateForSubmission(feedback);
 
         // 2. 更新状态为审批中（报工人和报工时间由表单保存时确定，提交不覆盖）
         feedbackMapper.updateById(new MesProFeedbackDO().setId(id)
@@ -181,6 +187,7 @@ public class MesProFeedbackServiceImpl implements MesProFeedbackService {
         // 2.1 查询工序的关键工序标识 + 检验标识（需在 uncheckQuantity 校验之前，因为质检工序允许 uncheckQuantity > 0）
         MesProRouteProcessDO routeProcess = validateSavedFeedbackQuantities(feedback);
         taskService.validateFeedbackSequence(feedback);
+        flowService.freeze(feedback);
         boolean keyFlag = Boolean.TRUE.equals(routeProcess.getKeyFlag());
         boolean checkFlag = Boolean.TRUE.equals(routeProcess.getCheckFlag());
 

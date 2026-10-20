@@ -26,6 +26,7 @@ class MesWmProductIssueAreaLockTest {
     @Mock private MesProKittingService kittingService;
     @Mock private MesWmTransactionService wmTransactionService;
     private MesWmProductIssueDO issue;
+    private List<MesWmProductIssueDetailDO> details;
 
     @BeforeEach
     void fixture() {
@@ -33,14 +34,14 @@ class MesWmProductIssueAreaLockTest {
         when(warehouseService.getWarehouseByCode(MesWmWarehouseDO.WIP_VIRTUAL_WAREHOUSE)).thenReturn(new MesWmWarehouseDO().setId(3L));
         when(locationService.getWarehouseLocationByCode(MesWmWarehouseLocationDO.WIP_VIRTUAL_LOCATION)).thenReturn(new MesWmWarehouseLocationDO().setId(4L));
         when(areaService.getWarehouseAreaByCode(MesWmWarehouseAreaDO.WIP_VIRTUAL_AREA)).thenReturn(new MesWmWarehouseAreaDO().setId(5L));
-        when(issueDetailService.getProductIssueDetailListByIssueId(1L)).thenReturn(List.of(
+        details=List.of(
                 new MesWmProductIssueDetailDO().setAreaId(90L).setQuantity(BigDecimal.ONE),
-                new MesWmProductIssueDetailDO().setAreaId(20L).setQuantity(BigDecimal.ONE)));
+                new MesWmProductIssueDetailDO().setAreaId(20L).setQuantity(BigDecimal.ONE));
     }
 
     @Test
     void issuePrelocksAllSourceAndWipAreasBeforeFirstOutbound() {
-        ReflectionTestUtils.invokeMethod(service, "createTransactionList", issue);
+        ReflectionTestUtils.invokeMethod(service, "createTransactionList", issue,details);
         var operations = inOrder(kittingService, wmTransactionService);
         operations.verify(kittingService).lockForIssue(2L,List.of(5L,90L,20L));
         operations.verify(wmTransactionService, times(4)).createTransaction(any());
@@ -49,7 +50,7 @@ class MesWmProductIssueAreaLockTest {
     @Test
     void missingOwnedReservationAreaAbortsBeforeAnyOutboundOrWipInbound() {
         doThrow(new IllegalStateException("reservation area missing")).when(kittingService).lockForIssue(eq(2L),anyList());
-        assertThrows(IllegalStateException.class, () -> ReflectionTestUtils.invokeMethod(service, "createTransactionList", issue));
+        assertThrows(IllegalStateException.class, () -> ReflectionTestUtils.invokeMethod(service, "createTransactionList", issue,details));
         verifyNoInteractions(wmTransactionService);
     }
 }

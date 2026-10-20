@@ -8,7 +8,7 @@ import java.time.LocalDateTime;
 
 @Schema(description = "管理后台 - MES 销售出库单行 Response VO")
 @Data
-public class MesWmProductSalesLineRespVO {
+public class MesWmProductSalesLineRespVO extends cn.iocoder.yudao.module.mes.controller.admin.wm.salesnotice.vo.MesWmSalesFulfillmentRespVO {
 
     @Schema(description = "编号", requiredMode = Schema.RequiredMode.REQUIRED, example = "1024")
     private Long id;
@@ -35,6 +35,7 @@ public class MesWmProductSalesLineRespVO {
     private String unitMeasureName;
 
     @Schema(description = "出库数量", example = "100")
+    @com.fasterxml.jackson.annotation.JsonFormat(shape=com.fasterxml.jackson.annotation.JsonFormat.Shape.STRING)
     private BigDecimal quantity;
 
     @Schema(description = "批次ID", example = "1")

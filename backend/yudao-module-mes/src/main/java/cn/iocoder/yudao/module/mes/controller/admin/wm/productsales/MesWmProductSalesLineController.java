@@ -44,6 +44,8 @@ public class MesWmProductSalesLineController {
     private MesMdItemService itemService;
     @Resource
     private MesMdUnitMeasureService unitMeasureService;
+    @Resource private cn.iocoder.yudao.module.mes.service.wm.salesnotice.MesWmSalesNoticeFulfillmentService fulfillmentService;
+    @Resource private cn.iocoder.yudao.module.mes.service.wm.productsales.MesWmProductSalesService productSalesService;
 
 
     @PostMapping("/create")
@@ -104,6 +106,12 @@ public class MesWmProductSalesLineController {
                 convertSet(itemMap.values(), MesMdItemDO::getUnitMeasureId));
         // 2. 构建结果
         return BeanUtils.toBean(list, MesWmProductSalesLineRespVO.class, vo -> {
+            var sales=productSalesService.getProductSales(vo.getSalesId());
+            if(sales!=null&&sales.getNoticeId()!=null){
+                var sum=fulfillmentService.summaries(sales.getNoticeId(),java.util.Objects.equals(sales.getStatus(),0)?vo.getId():null).get(vo.getNoticeLineId());
+                if(sum!=null)BeanUtils.copyProperties(sum,vo);
+                else{vo.setFulfillmentReliable(false);vo.setFulfillmentWarning("出库行与通知关联异常");vo.setAvailableQuantity(java.math.BigDecimal.ZERO);vo.setEditableAvailableQuantity(java.math.BigDecimal.ZERO);}
+            }
             MapUtils.findAndThen(itemMap, vo.getItemId(), item -> {
                 vo.setItemCode(item.getCode()).setItemName(item.getName()).setSpecification(item.getSpecification());
                 MapUtils.findAndThen(unitMeasureMap, item.getUnitMeasureId(),

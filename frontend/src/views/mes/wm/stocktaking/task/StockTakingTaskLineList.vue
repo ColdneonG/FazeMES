@@ -45,6 +45,7 @@
   <WmMaterialStockSelectDialog
     ref="stockSelectDialogRef"
     :multiple="true"
+    :outbound-only="false"
     @selected="onStockSelected"
   />
 </template>

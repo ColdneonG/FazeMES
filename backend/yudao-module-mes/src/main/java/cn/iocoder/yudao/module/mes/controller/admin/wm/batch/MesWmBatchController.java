@@ -53,6 +53,8 @@ public class MesWmBatchController {
     @Resource
     private MesWmBatchService batchService;
     @Resource
+    private cn.iocoder.yudao.module.mes.service.pro.feedback.MesProFeedbackFlowService flowService;
+    @Resource
     private MesMdItemService itemService;
     @Resource
     private MesMdUnitMeasureService unitMeasureService;
@@ -86,10 +88,17 @@ public class MesWmBatchController {
         return success(new PageResult<>(buildBatchRespVOList(pageResult.getList()), pageResult.getTotal()));
     }
 
+    @GetMapping("/trace-coverage")
+    @Operation(summary = "核验整条向后批次链的报工来源证据覆盖")
+    @PreAuthorize("@ss.hasPermission('mes:wm-batch:query')")
+    public CommonResult<cn.iocoder.yudao.module.mes.controller.admin.pro.feedback.vo.MesProFeedbackFlowVO.Coverage> coverage(@RequestParam("code") String code) {
+        return success(flowService.coverage(code));
+    }
+
     @GetMapping("/forward-list")
-    @Operation(summary = "批次向前追溯", description = "仅返回同次已完成报工的实际耗料/产出关系，或已完成 SN 过站分配与其过站报工实际产出的批次关系。"
+    @Operation(summary = "批次向前追溯", description = "返回同次报工、已冻结工序来源闭包及已完成SN分配证明的实际耗料/产出批次关系。"
             + "库存批次取实际产出明细，登记 SN 时的工单批号不作为库存批次。"
-            + "未登记 SN 的跨工序材料不会仅按工单推断；空结果不代表没有使用，返回列表不声明完整谱系。")
+            + "跨工序关系依据已冻结报工来源或SN分配，不仅按工单推断；空结果不代表没有使用，返回列表不声明完整谱系。")
     @Parameter(name = "code", description = "批次编码", required = true, example = "BATCH20250314001")
     @PreAuthorize("@ss.hasPermission('mes:wm-batch:query')")
     public CommonResult<List<MesWmBatchRespVO>> getForwardList(@RequestParam("code") @Valid String code) {
@@ -98,9 +107,9 @@ public class MesWmBatchController {
     }
 
     @GetMapping("/backward-list")
-    @Operation(summary = "批次向后追溯", description = "仅返回同次已完成报工的实际耗料/产出关系，或已完成 SN 过站分配与其过站报工实际产出的批次关系。"
+    @Operation(summary = "批次向后追溯", description = "返回同次报工、已冻结工序来源闭包及已完成SN分配证明的实际耗料/产出批次关系。"
             + "库存批次取实际产出明细，登记 SN 时的工单批号不作为库存批次。"
-            + "未登记 SN 的跨工序材料不会仅按工单推断；空结果不代表没有使用，返回列表不声明完整谱系。")
+            + "跨工序关系依据已冻结报工来源或SN分配，不仅按工单推断；空结果不代表没有使用，返回列表不声明完整谱系。")
     @Parameter(name = "code", description = "批次编码", required = true, example = "BATCH20250314001")
     @PreAuthorize("@ss.hasPermission('mes:wm-batch:query')")
     public CommonResult<List<MesWmBatchRespVO>> getBackwardList(@RequestParam("code") @Valid String code) {

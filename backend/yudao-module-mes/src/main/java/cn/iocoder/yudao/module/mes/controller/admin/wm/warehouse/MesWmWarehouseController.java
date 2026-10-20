@@ -29,6 +29,15 @@ public class MesWmWarehouseController {
 
     @Resource
     private MesWmWarehouseService warehouseService;
+    @Resource
+    private cn.iocoder.yudao.module.mes.service.wm.quality.MesWmQualityQuarantineService qualityQuarantineService;
+
+    @PostMapping("/initialize-quality-quarantine")
+    @Operation(summary = "幂等初始化不良品隔离仓、库区和库位", description = "仅建立本租户配置，不创建库存或检验结果")
+    @PreAuthorize("@ss.hasPermission('mes:wm-warehouse:create')")
+    public CommonResult<java.util.Map<String, Long>> initializeQualityQuarantine() {
+        return success(qualityQuarantineService.initialize());
+    }
 
     @PostMapping("/create")
     @Operation(summary = "创建仓库")

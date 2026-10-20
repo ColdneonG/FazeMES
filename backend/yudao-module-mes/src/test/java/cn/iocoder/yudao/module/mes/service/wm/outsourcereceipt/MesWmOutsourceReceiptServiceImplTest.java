@@ -33,6 +33,7 @@ import static org.mockito.Mockito.*;
  */
 @Import(MesWmOutsourceReceiptServiceImpl.class)
 public class MesWmOutsourceReceiptServiceImplTest extends BaseDbUnitTest {
+    @MockitoBean private cn.iocoder.yudao.module.mes.service.wm.warehouse.MesWmWarehouseService warehouseService;
 
     @Resource
     private MesWmOutsourceReceiptServiceImpl outsourceReceiptService;
@@ -72,8 +73,10 @@ public class MesWmOutsourceReceiptServiceImplTest extends BaseDbUnitTest {
             o.setId(lineId);
             o.setReceiptId(receiptId);
             o.setQuantity(BigDecimal.valueOf(100));
+            o.setQualityStatus(MesWmQualityStatusEnum.PENDING.getStatus());
+            o.setQuantity(BigDecimal.valueOf(100));
         });
-        when(outsourceReceiptLineService.getOutsourceReceiptLine(eq(lineId))).thenReturn(line);
+        when(outsourceReceiptLineService.getOutsourceReceiptLineForUpdate(eq(lineId))).thenReturn(line);
 
         // 调用
         outsourceReceiptService.updateOutsourceReceiptWhenIqcFinish(
@@ -114,8 +117,10 @@ public class MesWmOutsourceReceiptServiceImplTest extends BaseDbUnitTest {
         MesWmOutsourceReceiptLineDO line = randomPojo(MesWmOutsourceReceiptLineDO.class, o -> {
             o.setId(lineId);
             o.setReceiptId(receiptId);
+            o.setQuantity(BigDecimal.valueOf(100));
+            o.setQualityStatus(MesWmQualityStatusEnum.PENDING.getStatus());
         });
-        when(outsourceReceiptLineService.getOutsourceReceiptLine(eq(lineId))).thenReturn(line);
+        when(outsourceReceiptLineService.getOutsourceReceiptLineForUpdate(eq(lineId))).thenReturn(line);
 
         // 调用
         outsourceReceiptService.updateOutsourceReceiptWhenIqcFinish(
@@ -183,7 +188,7 @@ public class MesWmOutsourceReceiptServiceImplTest extends BaseDbUnitTest {
         BigDecimal unqualifiedQuantity = BigDecimal.ZERO;
 
         // mock 行查询返回 null
-        when(outsourceReceiptLineService.getOutsourceReceiptLine(eq(lineId))).thenReturn(null);
+        when(outsourceReceiptLineService.getOutsourceReceiptLineForUpdate(eq(lineId))).thenReturn(null);
 
         // 调用，并断言异常
         assertServiceException(

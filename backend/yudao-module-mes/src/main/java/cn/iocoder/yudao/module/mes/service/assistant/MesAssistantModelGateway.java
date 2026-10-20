@@ -2,13 +2,20 @@ package cn.iocoder.yudao.module.mes.service.assistant;
 
 import cn.iocoder.yudao.framework.tenant.core.context.TenantContextHolder;
 import com.fasterxml.jackson.databind.ObjectMapper;
+import com.fasterxml.jackson.databind.JsonNode;
+import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.jdbc.core.JdbcTemplate;
+import org.springframework.jdbc.datasource.DataSourceTransactionManager;
 import org.springframework.stereotype.Service;
+import org.springframework.transaction.support.TransactionSynchronizationManager;
 import javax.net.ssl.*;
 import java.io.*;
 import java.net.*;
 import java.nio.charset.StandardCharsets;
 import java.util.*;
+import java.util.concurrent.*;
+import java.util.concurrent.atomic.AtomicReference;
+import static cn.iocoder.yudao.module.mes.service.assistant.MesModelUsageService.Purpose;
 
 /** Only administrators configure destinations. Requests pin validated DNS results and never follow redirects. */
 @Service
@@ -17,6 +24,10 @@ public class MesAssistantModelGateway {
     private final JdbcTemplate jdbc;
     private final ObjectMapper json;
     private final MesAssistantSecretStore secrets;
+    private final MesModelUsageService usage;
+    private final String jevBaseUrl;
+    private final int totalDeadlineMs;
+    private static final ScheduledExecutorService DEADLINES=Executors.newSingleThreadScheduledExecutor(task->{Thread thread=new Thread(task,"mes-model-deadline");thread.setDaemon(true);return thread;});
     public record Settings(String provider, String baseUrl, String model, String apiKey, boolean clearApiKey,
                            double temperature, int maxTokens, boolean enabled, Integer contextTokens) {
         public Settings(String provider, String baseUrl, String model, String apiKey, boolean clearApiKey,
@@ -30,15 +41,19 @@ public class MesAssistantModelGateway {
     private record Target(URI uri, InetAddress address, int port) {}
 
     public MesAssistantModelGateway(JdbcTemplate jdbc, ObjectMapper json, MesAssistantSecretStore secrets) {
-        this.jdbc = jdbc; this.json = json; this.secrets = secrets;
+        this(jdbc,json,secrets,new MesModelUsageService(jdbc,json,new DataSourceTransactionManager(Objects.requireNonNull(jdbc.getDataSource()))));
     }
+    @Autowired public MesAssistantModelGateway(JdbcTemplate jdbc,ObjectMapper json,MesAssistantSecretStore secrets,MesModelUsageService usage){this(jdbc,json,secrets,usage,"https://api.typesafe.ai/v1",75_000);}
+    MesAssistantModelGateway(JdbcTemplate jdbc,ObjectMapper json,MesAssistantSecretStore secrets,MesModelUsageService usage,String jevBaseUrl,int totalDeadlineMs){this.jdbc=jdbc;this.json=json;this.secrets=secrets;this.usage=Objects.requireNonNull(usage);this.jevBaseUrl=Objects.requireNonNull(jevBaseUrl);if(totalDeadlineMs<1||totalDeadlineMs>75_000)throw new IllegalArgumentException("Invalid transport deadline");this.totalDeadlineMs=totalDeadlineMs;}
 
     public Map<String, Object> status() {
         Config config = configuration();
         boolean configured = configured(config);
+        boolean budgetReady=usage.budgetReady();
         return Map.of("configured", configured, "provider", config == null ? "none" : config.provider(),
-                "model", config == null ? "" : config.model(), "retrievalMode", "lexical_bm25",
-                "message", configured ? "模型已配置；可进行连接测试" : "模型未启用或未配置完整；知识检索仍可独立使用");
+                "model", config == null ? "" : config.model(), "retrievalMode", "lexical_bm25","budgetReady",budgetReady,
+                "blockReason",budgetReady?"":"模型预算尚未配置或未启用，知识检索仍可使用",
+                "message", configured ? "模型凭据已配置；连接测试和答复均计入共享配额" : "模型未启用或未配置完整；知识检索仍可独立使用");
     }
 
     public Map<String, Object> settings() {
@@ -82,7 +97,7 @@ public class MesAssistantModelGateway {
     public Map<String, Object> testConnection() {
         Config config = configuration();
         if (!configured(config)) throw MesAssistantErrors.model("请先保存并启用完整模型配置");
-        complete(List.of(Map.of("role", "user", "content", "请仅回复OK，用于连接测试。")), 16);
+        complete(Purpose.MODEL_CONNECTION_TEST,List.of(Map.of("role", "user", "content", "请仅回复OK，用于连接测试。")), 16);
         return Map.of("connected", true, "provider", config.provider(), "model", config.model(), "message", "连接成功，模型已返回真实响应");
     }
 
@@ -91,22 +106,24 @@ public class MesAssistantModelGateway {
         jdbc.update("DELETE FROM mes_assistant_model_config WHERE tenant_id=?", tenant);
     }
 
-    public String complete(List<Map<String, String>> messages) { return complete(messages, null); }
-
-    private String complete(List<Map<String, String>> messages, Integer outputLimit) {
+    public String complete(List<Map<String, String>> messages) { return complete(Purpose.KNOWLEDGE_CHAT,messages,null); }
+    public String complete(Purpose purpose,List<Map<String,String>> messages){if(purpose==null||!Set.of(Purpose.KNOWLEDGE_CHAT,Purpose.BUSINESS_INSIGHT).contains(purpose))throw MesAssistantErrors.invalid("模型用途无效");return complete(purpose,messages,null);}
+    private String complete(Purpose purpose,List<Map<String, String>> messages, Integer outputLimit) {
+        noTransaction();
         long tenant = TenantContextHolder.getRequiredTenantId();
         Config config = configuration();
         if (!configured(config)) throw MesAssistantErrors.model("模型未配置或未启用");
         Target target = validateTarget(config.baseUrl());
         Map<String, Object> payload = new LinkedHashMap<>();
         int maxTokens = outputLimit == null ? config.maxTokens() : outputLimit;
-        payload.put("model", config.model()); payload.put("messages", boundedMessages(messages, config.contextTokens() - maxTokens - 256)); payload.put("stream", false);
+        List<Map<String,String>> bounded=boundedMessages(messages,config.contextTokens()-maxTokens-256);
+        payload.put("model", config.model()); payload.put("messages", bounded); payload.put("stream", false);
         if (config.provider().equals("ollama")) payload.put("options", Map.of("temperature", config.temperature(), "num_predict", maxTokens, "num_ctx", config.contextTokens()));
         else { payload.put("temperature", config.temperature()); payload.put("max_tokens", maxTokens); }
         String apiKey = secrets.decrypt(config.ciphertext(), tenant);
         try {
             String path = target.uri().getRawPath() + (config.provider().equals("ollama") ? "/api/chat" : "/chat/completions");
-            byte[] response = post(target, path, json.writeValueAsBytes(payload), apiKey);
+            byte[] response = invoke(purpose,"CHAT",config.provider(),config.model(),tokenUpperBound(bounded),maxTokens,target,path,json.writeValueAsBytes(payload),apiKey);
             var data = json.readTree(response);
             String content = config.provider().equals("ollama") ? data.path("message").path("content").asText("")
                     : data.path("choices").path(0).path("message").path("content").asText("");
@@ -115,6 +132,25 @@ public class MesAssistantModelGateway {
         } catch (cn.iocoder.yudao.framework.common.exception.ServiceException exception) { throw exception; }
         catch (Exception exception) { throw MesAssistantErrors.model("模型连接失败或响应格式不兼容，请检查管理员配置和服务状态"); }
     }
+
+    /** Fixed server configuration; callers cannot submit a URL, key or price to the transport. */
+    public byte[] evaluateJev(Purpose purpose,byte[] body){
+        noTransaction();if(purpose==null||!Set.of(Purpose.JEV_TRIAGE,Purpose.JEV_CONNECTION_TEST).contains(purpose)||body==null||body.length>128*1024)throw MesAssistantErrors.invalid("Jev调用参数无效");long tenant=TenantContextHolder.getRequiredTenantId();
+        var configs=jdbc.queryForList("SELECT model_name,secret_ciphertext,enabled FROM mes_insight_jev_config WHERE tenant_id=?",tenant);if(configs.isEmpty()||!Boolean.TRUE.equals(configs.get(0).get("enabled")))throw MesAssistantErrors.model("Jev尚未配置或启用");var config=configs.get(0);String model=Objects.toString(config.get("model_name"),"");
+        try{var parsed=json.readTree(body);if(!parsed.isObject()||!model.equals(parsed.path("model").asText()))throw MesAssistantErrors.invalid("Jev模型配置已变更，请重试");String key=secrets.decrypt(Objects.toString(config.get("secret_ciphertext"),null),tenant);if(key.isBlank())throw MesAssistantErrors.model("Jev密钥未配置");Target target=validateTarget(jevBaseUrl);return invoke(purpose,"JEV","typesafe",model,0,0,target,target.uri().getRawPath()+"/systemone",body,key);}
+        catch(cn.iocoder.yudao.framework.common.exception.ServiceException ex){throw ex;}catch(Exception ex){throw MesAssistantErrors.model("Jev连接失败或响应无效，请检查配置；可继续手动建立异常");}
+    }
+    private static void noTransaction(){if(TransactionSynchronizationManager.isActualTransactionActive())throw MesAssistantErrors.model("模型调用前必须完成业务事务，请刷新后重试或联系管理员");}
+    private record Usage(Long input,Long output,Long total) { }
+    private Usage reported(JsonNode data,String provider){try{JsonNode in="ollama".equals(provider)?data.get("prompt_eval_count"):data.path("usage").get("prompt_tokens"),out="ollama".equals(provider)?data.get("eval_count"):data.path("usage").get("completion_tokens");if(in==null||out==null||!in.isIntegralNumber()||!out.isIntegralNumber()||!in.canConvertToLong()||!out.canConvertToLong()||in.longValue()<0||out.longValue()<0)return new Usage(null,null,null);long total=Math.addExact(in.longValue(),out.longValue());if(!"ollama".equals(provider)){JsonNode t=data.path("usage").get("total_tokens");if(t==null||!t.isIntegralNumber()||!t.canConvertToLong()||t.longValue()!=total)return new Usage(null,null,null);}return new Usage(in.longValue(),out.longValue(),total);}catch(Exception ex){return new Usage(null,null,null);}}
+    private byte[] invoke(Purpose purpose,String channel,String provider,String model,int inputUpper,int outputLimit,Target target,String path,byte[] body,String key){
+        var reservation=usage.reserve(purpose,channel,provider,model,inputUpper,outputLimit);long start=System.nanoTime();
+        try{usage.dispatched(reservation.id());Response response=post(target,path,body,key,totalDeadlineMs);JsonNode parsed=null;try{parsed=json.readTree(response.body);}catch(Exception ignored){ }Usage actual=parsed==null?new Usage(null,null,null):reported(parsed,provider);String served=parsed==null||!parsed.path("model").isTextual()?null:parsed.path("model").textValue();boolean validText=parsed!=null&&("JEV".equals(channel)?validJev(body,parsed):validContent(parsed,provider));String outcome=response.status!=200?"HTTP_ERROR":validText?"SUCCESS":"INVALID_RESPONSE";usage.settle(reservation.id(),new MesModelUsageService.Settlement(outcome,actual.input,actual.output,actual.total,served,response.status,elapsed(start),true,false));if(response.status!=200)throw MesAssistantErrors.model("模型服务返回HTTP "+response.status+"，请检查连接配置");if(!validText)throw MesAssistantErrors.model("模型未返回有效文本或响应格式不兼容");return response.body;}
+        catch(TransportFailure failure){usage.settle(reservation.id(),new MesModelUsageService.Settlement("NETWORK_ERROR",null,null,null,null,failure.status,elapsed(start),failure.status!=null,!failure.maybeSent));throw MesAssistantErrors.model("模型连接失败或响应格式不兼容，请检查管理员配置和服务状态");}
+    }
+    private boolean validJev(byte[] request,JsonNode response){try{cn.iocoder.yudao.module.mes.service.insight.MesJevProtocol.validate(json.readTree(request),response);return true;}catch(Exception ex){return false;}}
+    private static boolean validContent(JsonNode data,String provider){JsonNode content="ollama".equals(provider)?data.path("message").path("content"):data.path("choices").path(0).path("message").path("content");return content.isTextual()&&!content.textValue().isBlank()&&content.textValue().length()<=100_000;}
+    private static long elapsed(long start){return Math.max(0,TimeUnit.NANOSECONDS.toMillis(System.nanoTime()-start));}
 
     private Config configuration() {
         long tenant = TenantContextHolder.getRequiredTenantId();
@@ -177,40 +213,42 @@ public class MesAssistantModelGateway {
         } catch (Exception exception) { throw MesAssistantErrors.invalid("模型地址无效：仅允许HTTPS公共服务或127.0.0.1本地服务，禁止私网、metadata和URL凭据/查询参数"); }
     }
 
-    /** Shared bounded JSON transport: validate and pin DNS, verify TLS, reject redirects. */
-    public static byte[] postJson(String baseUrl, String suffix, byte[] body, String apiKey) throws Exception {
-        Target target = validateTarget(baseUrl);
-        return post(target, target.uri().getRawPath() + suffix, body, apiKey);
+    private record Response(int status,byte[] body) { }
+    private static final class TransportFailure extends RuntimeException {
+        final boolean maybeSent;final Integer status;
+        TransportFailure(boolean maybeSent,Integer status){super("Bounded model transport failed");this.maybeSent=maybeSent;this.status=status;}
     }
-
-    private static byte[] post(Target target, String path, byte[] body, String apiKey) throws Exception {
-        Socket socket = new Socket();
+    /** Private transport has one metered caller. A total deadline also bounds slow/chunked providers. */
+    private static Response post(Target target, String path, byte[] body, String apiKey,int totalDeadlineMs) {
+        Socket socket = new Socket();boolean maybeSent=false;Integer knownStatus=null;
+        AtomicReference<Socket> current=new AtomicReference<>(socket);
+        ScheduledFuture<?> deadline=DEADLINES.schedule(()->{try{current.get().close();}catch(IOException ignored){ }},totalDeadlineMs,TimeUnit.MILLISECONDS);
         try {
             // Connect to the address that passed validation; DNS is never resolved again by the HTTP transport.
-            socket.connect(new InetSocketAddress(target.address(), target.port()), 10_000);
-            socket.setSoTimeout(60_000);
+            socket.connect(new InetSocketAddress(target.address(), target.port()), Math.min(10_000,totalDeadlineMs));
+            socket.setSoTimeout(Math.min(60_000,totalDeadlineMs));
             if (target.uri().getScheme().equals("https")) {
                 SSLSocket tls = (SSLSocket) ((SSLSocketFactory) SSLSocketFactory.getDefault())
                         .createSocket(socket, target.uri().getHost(), target.port(), true);
                 var parameters = tls.getSSLParameters(); parameters.setEndpointIdentificationAlgorithm("HTTPS");
                 if (!target.uri().getHost().matches("[0-9.]+")) parameters.setServerNames(List.of(new SNIHostName(target.uri().getHost())));
-                tls.setSSLParameters(parameters); tls.setSoTimeout(60_000); tls.startHandshake(); socket = tls;
+                tls.setSSLParameters(parameters); tls.setSoTimeout(Math.min(60_000,totalDeadlineMs));current.set(tls);tls.startHandshake(); socket = tls;
             }
             String authorization = apiKey.isEmpty() ? "" : "Authorization: Bearer " + apiKey + "\r\n";
             String headers = "POST " + (path.isEmpty() ? "/" : path) + " HTTP/1.1\r\nHost: " + target.uri().getHost() + ":" + target.port()
                     + "\r\nContent-Type: application/json\r\nAccept: application/json\r\nConnection: close\r\n" + authorization
                     + "Content-Length: " + body.length + "\r\n\r\n";
-            OutputStream output = socket.getOutputStream(); output.write(headers.getBytes(StandardCharsets.US_ASCII)); output.write(body); output.flush();
+            OutputStream output = socket.getOutputStream();maybeSent=true; output.write(headers.getBytes(StandardCharsets.US_ASCII)); output.write(body); output.flush();
             InputStream input = new BufferedInputStream(socket.getInputStream());
             String status = line(input); if (!status.matches("HTTP/1\\.[01] [0-9]{3}.*")) throw new IOException();
             int code = Integer.parseInt(status.substring(9, 12));
+            knownStatus=code;
             Map<String, String> responseHeaders = new HashMap<>(); int headerSize = status.length();
             for (String value = line(input); !value.isEmpty(); value = line(input)) {
                 headerSize += value.length(); if (headerSize > 32768) throw new IOException();
                 int colon = value.indexOf(':'); if (colon <= 0) throw new IOException();
                 responseHeaders.put(value.substring(0, colon).toLowerCase(Locale.ROOT), value.substring(colon + 1).strip());
             }
-            if (code != 200) throw MesAssistantErrors.model("模型服务返回HTTP " + code + "，请检查连接配置");
             if (responseHeaders.containsKey("content-encoding") && !responseHeaders.get("content-encoding").equalsIgnoreCase("identity")) throw new IOException();
             ByteArrayOutputStream response = new ByteArrayOutputStream();
             if ("chunked".equalsIgnoreCase(responseHeaders.get("transfer-encoding"))) {
@@ -229,8 +267,9 @@ public class MesAssistantModelGateway {
                     if (response.size() + count > MAX_RESPONSE_BYTES) throw new IOException(); response.write(buffer, 0, count);
                 }
             }
-            return response.toByteArray();
-        } finally { socket.close(); }
+            return new Response(code,response.toByteArray());
+        }catch(Exception exception){throw new TransportFailure(maybeSent,knownStatus);}
+        finally {deadline.cancel(false);try{current.get().close();}catch(IOException ignored){ }try{socket.close();}catch(IOException ignored){ }}
     }
 
     private static String line(InputStream input) throws IOException {

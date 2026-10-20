@@ -20,6 +20,11 @@ import java.util.List;
  */
 @Mapper
 public interface MesWmMaterialStockMapper extends BaseMapperX<MesWmMaterialStockDO> {
+    default MesWmMaterialStockDO selectByIdForUpdate(Long id) {
+        return selectOne(new LambdaQueryWrapperX<MesWmMaterialStockDO>()
+                .eq(MesWmMaterialStockDO::getId, id).last("FOR UPDATE"));
+    }
+
 
     // 锁定稳定存在的库位行，串行化同库位的首次建账，避免并发产生重复库存维度。
     @Select("SELECT id FROM mes_wm_warehouse_area WHERE id = #{areaId} AND deleted = 0 FOR UPDATE")
@@ -28,7 +33,7 @@ public interface MesWmMaterialStockMapper extends BaseMapperX<MesWmMaterialStock
     default PageResult<MesWmMaterialStockDO> selectPage(MesWmMaterialStockPageReqVO reqVO,
                                                          Collection<Long> itemTypeIds,
                                                          Collection<Long> itemIds,
-                                                         Long virtualWarehouseId) {
+                                                         Long virtualWarehouseId, Long quarantineWarehouseId) {
         LambdaQueryWrapperX<MesWmMaterialStockDO> wrapper = new LambdaQueryWrapperX<MesWmMaterialStockDO>()
                 .inIfPresent(MesWmMaterialStockDO::getItemTypeId, itemTypeIds)
                 .inIfPresent(MesWmMaterialStockDO::getItemId, itemIds)
@@ -40,6 +45,19 @@ public interface MesWmMaterialStockMapper extends BaseMapperX<MesWmMaterialStock
                 .eqIfPresent(MesWmMaterialStockDO::getVendorId, reqVO.getVendorId())
                 .eqIfPresent(MesWmMaterialStockDO::getWorkOrderId, reqVO.getWorkOrderId())
                 .eqIfPresent(MesWmMaterialStockDO::getFrozen, reqVO.getFrozen());
+        if (Boolean.FALSE.equals(reqVO.getQualityHold())) {
+            wrapper.and(q -> q.eq(MesWmMaterialStockDO::getQualityHold, false)
+                    .or().isNull(MesWmMaterialStockDO::getQualityHold));
+        } else if (Boolean.TRUE.equals(reqVO.getQualityHold())) {
+            wrapper.eq(MesWmMaterialStockDO::getQualityHold, true);
+        }
+        if (quarantineWarehouseId != null) {
+            if ("only".equals(reqVO.getQuarantineFilter())) {
+                wrapper.eq(MesWmMaterialStockDO::getWarehouseId, quarantineWarehouseId);
+            } else {
+                wrapper.ne(MesWmMaterialStockDO::getWarehouseId, quarantineWarehouseId);
+            }
+        }
         wrapper.ne(MesWmMaterialStockDO::getQuantity, BigDecimal.ZERO)
                 .orderByAsc(MesWmMaterialStockDO::getReceiptTime);
         // 虚拟仓过滤（Service 层已将 virtualFilter 解析为 virtualWarehouseId）

@@ -33,6 +33,8 @@ public class MesCostController {
     public CommonResult<Boolean> voidEffort(@Valid @RequestBody VoidEffort req){service.voidEffort(req);return success(true);}
     @PostMapping("/workorder/settle") @PreAuthorize("@ss.hasPermission('mes:cost:settle')")
     public CommonResult<Boolean> settle(@RequestParam Long workorderId){service.settle(workorderId);return success(true);}
+    @PostMapping("/workorder/loss-allocation") @PreAuthorize("@ss.hasPermission('mes:cost:settle')")
+    public CommonResult<Boolean> allocateLoss(@Valid @RequestBody LossAllocation req){service.allocateLoss(req);return success(true);}
     @GetMapping("/receipt-line-price") @PreAuthorize("@ss.hasPermission('mes:cost:query')")
     public CommonResult<LinePrice> receiptPrice(@RequestParam Long lineId){return success(service.linePrice("RECEIPT",lineId));}
     @PutMapping("/receipt-line-price") @PreAuthorize("@ss.hasPermission('mes:cost:update')")
@@ -43,4 +45,6 @@ public class MesCostController {
     public CommonResult<Boolean> salesPrice(@Valid @RequestBody LinePrice req){service.saveLinePrice("SALES",req);return success(true);}
     @GetMapping("/sales") @PreAuthorize("@ss.hasPermission('mes:cost:query')")
     public CommonResult<Sale> sales(@RequestParam Long salesId){return success(service.sales(salesId));}
+    @GetMapping("/return-sales") @PreAuthorize("@ss.hasPermission('mes:cost:query')")
+    public CommonResult<ReturnSale> returnSales(@RequestParam Long id){return success(service.returnSales(id));}
 }

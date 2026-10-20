@@ -82,6 +82,10 @@ public class MesWmTransactionDO extends BaseDO {
      * 关联 {@link #getId()}，用于调拨等成对流水关联
      */
     private Long relatedTransactionId;
+    /** Exact original negative118 for positive119; null for all other transaction families. */
+    private Long returnSourceTransactionId;
+    /** Exact own return putaway row, unique per posted119. */
+    private Long returnDetailId;
 
     // ==================== 物料维度 ====================
 

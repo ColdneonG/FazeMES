@@ -2,7 +2,6 @@ package cn.iocoder.yudao.module.mes.service.wm.productissue;
 
 import cn.hutool.core.util.ObjUtil;
 import cn.iocoder.yudao.framework.common.util.object.BeanUtils;
-import cn.iocoder.yudao.framework.common.util.object.ObjectUtils;
 import cn.iocoder.yudao.module.mes.controller.admin.wm.productissue.vo.detail.MesWmProductIssueDetailSaveReqVO;
 import cn.iocoder.yudao.module.mes.dal.dataobject.wm.productissue.MesWmProductIssueDetailDO;
 import cn.iocoder.yudao.module.mes.dal.dataobject.wm.productissue.MesWmProductIssueDO;
@@ -18,6 +17,10 @@ import org.springframework.transaction.annotation.Transactional;
 import org.springframework.validation.annotation.Validated;
 
 import java.util.List;
+import java.util.Map;
+import java.util.Objects;
+import java.util.function.Function;
+import java.util.stream.Collectors;
 
 import static cn.iocoder.yudao.framework.common.exception.util.ServiceExceptionUtil.exception;
 import static cn.iocoder.yudao.module.mes.enums.ErrorCodeConstants.*;
@@ -57,8 +60,10 @@ public class MesWmProductIssueDetailServiceImpl implements MesWmProductIssueDeta
 
     @Override
     public void updateProductIssueDetail(MesWmProductIssueDetailSaveReqVO updateReqVO) {
-        // 校验存在
-        validateProductIssueDetailExists(updateReqVO.getId());
+        MesWmProductIssueDetailDO current = lockOriginalDetail(updateReqVO.getId(), false);
+        if (!Objects.equals(current.getIssueId(),updateReqVO.getIssueId()) || !Objects.equals(current.getLineId(),updateReqVO.getLineId())) {
+            throw exception(WM_PRODUCT_ISSUE_DETAIL_LINE_NOT_MATCH);
+        }
         // 校验数据
         validateProductIssueDetailSaveData(updateReqVO);
 
@@ -69,21 +74,7 @@ public class MesWmProductIssueDetailServiceImpl implements MesWmProductIssueDeta
 
     @Override
     public void deleteProductIssueDetail(Long id) {
-        // 校验存在
-        MesWmProductIssueDetailDO detail = issueDetailMapper.selectById(id);
-        if (detail == null) {
-            throw exception(WM_PRODUCT_ISSUE_DETAIL_NOT_EXISTS);
-        }
-        // 校验主单状态为草稿或待拣货（允许在拣货模式删除明细）
-        MesWmProductIssueLineDO line = issueLineService.validateProductIssueLineExists(detail.getLineId());
-        MesWmProductIssueDO issue = issueService.validateProductIssueExists(line.getIssueId());
-        if (!ObjectUtils.equalsAny(issue.getStatus(),
-                MesWmProductIssueStatusEnum.PREPARE.getStatus(),
-                MesWmProductIssueStatusEnum.APPROVING.getStatus())) {
-            throw exception(WM_PRODUCT_ISSUE_STATUS_INVALID);
-        }
-
-        // 删除
+        lockOriginalDetail(id, true);
         issueDetailMapper.deleteById(id);
     }
 
@@ -104,36 +95,70 @@ public class MesWmProductIssueDetailServiceImpl implements MesWmProductIssueDeta
 
     @Override
     public void deleteProductIssueDetailByIssueId(Long issueId) {
+        issueService.validateProductIssueExistsAndPrepare(issueId);
+        List<MesWmProductIssueLineDO> lines=issueLineService.getProductIssueLineListByIssueIdForUpdate(issueId);
+        Map<Long,MesWmProductIssueLineDO> byId=lines.stream().collect(Collectors.toMap(MesWmProductIssueLineDO::getId,Function.identity()));
+        for(var detail:issueDetailMapper.selectListByIssueIdForUpdate(issueId)) {
+            MesWmProductIssueLineDO line=byId.get(detail.getLineId());
+            if(line==null || !Objects.equals(detail.getIssueId(),line.getIssueId()))throw exception(WM_PRODUCT_ISSUE_DETAIL_LINE_NOT_MATCH);
+        }
+        // A corrupt historical detail must not be silently erased through another parent's cascade.
+        for(var line:lines)for(var detail:issueDetailMapper.selectListByLineIdForUpdate(line.getId())) {
+            if(!Objects.equals(detail.getIssueId(),issueId))throw exception(WM_PRODUCT_ISSUE_DETAIL_LINE_NOT_MATCH);
+        }
         issueDetailMapper.deleteByIssueId(issueId);
     }
 
     @Override
     public void deleteProductIssueDetailByLineId(Long lineId) {
+        MesWmProductIssueLineDO located=issueLineService.validateProductIssueLineExists(lineId);
+        issueService.validateProductIssueExistsAndPrepare(located.getIssueId());
+        MesWmProductIssueLineDO current=issueLineService.validateProductIssueLineExistsForUpdate(lineId);
+        if(!Objects.equals(current.getIssueId(),located.getIssueId()))throw exception(WM_PRODUCT_ISSUE_DETAIL_LINE_NOT_MATCH);
+        for(var detail:issueDetailMapper.selectListByLineIdForUpdate(lineId)) {
+            if(!Objects.equals(detail.getIssueId(),current.getIssueId()))throw exception(WM_PRODUCT_ISSUE_DETAIL_LINE_NOT_MATCH);
+        }
         issueDetailMapper.deleteByLineId(lineId);
     }
-
-    private void validateProductIssueDetailExists(Long id) {
-        if (issueDetailMapper.selectById(id) == null) {
-            throw exception(WM_PRODUCT_ISSUE_DETAIL_NOT_EXISTS);
-        }
+    @Override public List<MesWmProductIssueDetailDO> getProductIssueDetailListByIssueIdForUpdate(Long issueId) {
+        return issueDetailMapper.selectListByIssueIdForUpdate(issueId);
+    }
+    @Override public List<MesWmProductIssueDetailDO> getProductIssueDetailListByLineIdForUpdate(Long lineId) {
+        return issueDetailMapper.selectListByLineIdForUpdate(lineId);
+    }
+    /** Preliminary reads locate identity only; decisions use locked rows after the original parent lock. */
+    private MesWmProductIssueDetailDO lockOriginalDetail(Long id,boolean deleting) {
+        MesWmProductIssueDetailDO located=issueDetailMapper.selectById(id);
+        if(located==null)throw exception(WM_PRODUCT_ISSUE_DETAIL_NOT_EXISTS);
+        MesWmProductIssueLineDO locatedLine=issueLineService.validateProductIssueLineExists(located.getLineId());
+        if(!Objects.equals(located.getIssueId(),locatedLine.getIssueId()))throw exception(WM_PRODUCT_ISSUE_DETAIL_LINE_NOT_MATCH);
+        MesWmProductIssueDO issue=issueService.validateProductIssueExists(located.getIssueId());
+        if(!Objects.equals(issue.getStatus(),MesWmProductIssueStatusEnum.APPROVING.getStatus())
+                && !(deleting && Objects.equals(issue.getStatus(),MesWmProductIssueStatusEnum.PREPARE.getStatus())))throw exception(WM_PRODUCT_ISSUE_STATUS_INVALID);
+        MesWmProductIssueLineDO line=issueLineService.validateProductIssueLineExistsForUpdate(located.getLineId());
+        MesWmProductIssueDetailDO current=issueDetailMapper.selectByIdForUpdate(id);
+        if(current==null)throw exception(WM_PRODUCT_ISSUE_DETAIL_NOT_EXISTS);
+        if(!Objects.equals(line.getIssueId(),located.getIssueId()) || !Objects.equals(current.getIssueId(),located.getIssueId()) || !Objects.equals(current.getLineId(),located.getLineId()))throw exception(WM_PRODUCT_ISSUE_DETAIL_LINE_NOT_MATCH);
+        return current;
     }
 
     /**
      * 校验保存时的关联数据
      */
     private void validateProductIssueDetailSaveData(MesWmProductIssueDetailSaveReqVO reqVO) {
-        // 校验父数据存在
-        MesWmProductIssueLineDO line = issueLineService.validateProductIssueLineExists(reqVO.getLineId());
+        // Parent precedes child locks, including create; a prior snapshot cannot supply item or ownership.
+        MesWmProductIssueDO issue = issueService.validateProductIssueExists(reqVO.getIssueId());
+        MesWmProductIssueLineDO line = issueLineService.validateProductIssueLineExistsForUpdate(reqVO.getLineId());
         if (ObjUtil.notEqual(line.getIssueId(), reqVO.getIssueId())) {
             throw exception(WM_PRODUCT_ISSUE_DETAIL_LINE_NOT_MATCH);
         }
         // 校验主单状态为待拣货（只有 APPROVING 状态才允许新增/修改明细）
-        MesWmProductIssueDO issue = issueService.validateProductIssueExists(line.getIssueId());
         if (ObjUtil.notEqual(MesWmProductIssueStatusEnum.APPROVING.getStatus(), issue.getStatus())) {
             throw exception(WM_PRODUCT_ISSUE_STATUS_INVALID);
         }
         // 校验物料匹配（明细 itemId 必须与行 itemId 一致）
         validateDetailItemMatch(reqVO.getItemId(), line.getItemId());
+        if(line.getBatchId()!=null && !Objects.equals(line.getBatchId(),reqVO.getBatchId()))throw exception(WM_MATERIAL_STOCK_SELECTION_MISMATCH);
         // 校验仓库、库区、库位的关联关系
         warehouseAreaService.validateWarehouseAreaExists(
                 reqVO.getWarehouseId(), reqVO.getLocationId(), reqVO.getAreaId());

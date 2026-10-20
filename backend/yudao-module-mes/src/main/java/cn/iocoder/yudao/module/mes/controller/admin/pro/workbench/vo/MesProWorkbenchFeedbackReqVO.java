@@ -18,4 +18,7 @@ public class MesProWorkbenchFeedbackReqVO {
     @DecimalMin(value = "0", message = "不良品数量不能为负数")
     private BigDecimal unqualifiedQuantity;
     private String remark;
+    @jakarta.validation.Valid
+    @jakarta.validation.constraints.Size(max=1000)
+    private java.util.List<cn.iocoder.yudao.module.mes.controller.admin.pro.feedback.vo.MesProFeedbackFlowVO.Source> sources;
 }

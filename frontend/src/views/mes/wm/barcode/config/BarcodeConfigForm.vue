@@ -45,18 +45,18 @@
       <el-form-item label="自动生成" prop="autoGenerateFlag">
         <el-switch v-model="formData.autoGenerateFlag" />
       </el-form-item>
-      <!-- TODO @芋艿：后续对接 UReport 报表选择器，实现打印模板选择功能 -->
       <el-form-item label="默认打印模板" prop="defaultTemplate">
-        <el-input
-          v-model="formData.defaultTemplate"
-          placeholder="请选择打印模板"
-          readonly
-          class="!w-1/1"
+        <el-select v-model="formData.defaultTemplate" placeholder="请选择打印模板" class="!w-1/1">
+          <el-option
+            v-for="preset in LABEL_TEMPLATES"
+            :key="preset.key"
+            :label="preset.name"
+            :value="preset.key"
+          />
+        </el-select>
+        <el-text v-if="invalidTemplate" type="danger"
+          >旧模板未接入，请重新选择有效模板后保存。</el-text
         >
-          <template #append>
-            <el-button @click="handleSelectTemplate">设置</el-button>
-          </template>
-        </el-input>
       </el-form-item>
       <el-form-item label="状态" prop="status">
         <el-radio-group v-model="formData.status">
@@ -81,8 +81,8 @@
 </template>
 
 <script setup lang="ts">
-import { ElMessage } from 'element-plus'
 import { getIntDictOptions, DICT_TYPE } from '@/utils/dict'
+import { LABEL_TEMPLATES } from '../labelPrint'
 import {
   WmBarcodeConfigApi as BarcodeConfigApi,
   WmBarcodeConfigVO as BarcodeConfigVO
@@ -104,7 +104,7 @@ const formData = ref({
   contentFormat: '',
   contentExample: '',
   autoGenerateFlag: true,
-  defaultTemplate: '',
+  defaultTemplate: 'LABEL_50X30',
   status: 0,
   remark: ''
 })
@@ -115,9 +115,14 @@ const formRules = reactive({
   autoGenerateFlag: [{ required: true, message: '是否自动生成不能为空', trigger: 'blur' }]
 })
 const formRef = ref() // 表单 Ref
+const invalidTemplate = computed(
+  () => !LABEL_TEMPLATES.some((preset) => preset.key === formData.value.defaultTemplate)
+)
+let openVersion = 0
 
 /** 打开弹窗 */
 const open = async (type: string, id?: number) => {
+  const version = ++openVersion
   dialogVisible.value = true
   dialogTitle.value = type === 'create' ? '新增条码配置' : '修改条码配置'
   formType.value = type
@@ -125,9 +130,11 @@ const open = async (type: string, id?: number) => {
   if (id) {
     formLoading.value = true
     try {
-      formData.value = await BarcodeConfigApi.getBarcodeConfig(id)
+      const saved = await BarcodeConfigApi.getBarcodeConfig(id)
+      if (version !== openVersion) return
+      formData.value = { ...saved, defaultTemplate: saved.defaultTemplate || 'LABEL_50X30' }
     } finally {
-      formLoading.value = false
+      if (version === openVersion) formLoading.value = false
     }
   }
 }
@@ -136,6 +143,10 @@ defineExpose({ open }) // 提供 open 方法，用于打开弹窗
 /** 提交表单 */
 const emit = defineEmits(['success']) // 定义 success 事件，用于操作成功后的回调
 const submitForm = async () => {
+  if (formLoading.value || invalidTemplate.value) {
+    if (invalidTemplate.value) message.warning('请选择有效的默认打印模板')
+    return
+  }
   // 校验表单
   await formRef.value.validate()
   // 提交请求
@@ -156,12 +167,6 @@ const submitForm = async () => {
   }
 }
 
-/** 选择打印模板 */
-// TODO @芋艿：后续对接 UReport 报表选择器（reportSelect），实现打印模板选择功能
-const handleSelectTemplate = () => {
-  ElMessage.warning('打印模板选择功能暂未实现，敬请期待')
-}
-
 /** 重置表单 */
 const resetForm = () => {
   formData.value = {
@@ -171,10 +176,13 @@ const resetForm = () => {
     contentFormat: '',
     contentExample: '',
     autoGenerateFlag: true,
-    defaultTemplate: '',
+    defaultTemplate: 'LABEL_50X30',
     status: 0,
     remark: ''
   }
   formRef.value?.resetFields()
 }
+watch(dialogVisible, (value) => {
+  if (!value) openVersion++
+})
 </script>

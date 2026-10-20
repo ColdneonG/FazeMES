@@ -40,12 +40,13 @@ public final class MesScheduleEngine {
     }
 
     private static LocalDateTime max(LocalDateTime a, LocalDateTime b) { return a.isAfter(b) ? a : b; }
-    private static double overtime(LocalDateTime start, LocalDateTime end) {
+    private static double overtime(LocalDateTime start, LocalDateTime end, int hours) {
         long minutes = 0;
         for (LocalDate day = start.toLocalDate(); !day.isAfter(end.toLocalDate()); day = day.plusDays(1)) {
             if (day.getDayOfWeek() == DayOfWeek.SATURDAY || day.getDayOfWeek() == DayOfWeek.SUNDAY) continue;
             LocalDateTime from = max(start, day.atTime(16, 0));
-            LocalDateTime until = end.isBefore(day.atTime(20, 0)) ? end : day.atTime(20, 0);
+            LocalDateTime shiftEnd = day.atTime(8 + hours, 0);
+            LocalDateTime until = end.isBefore(shiftEnd) ? end : shiftEnd;
             if (until.isAfter(from)) minutes += Duration.between(from, until).toMinutes();
         }
         return minutes / 60.0;
@@ -69,7 +70,7 @@ public final class MesScheduleEngine {
             ready = max(ready, finishes.getOrDefault(job.orderId(), now));
             ready = max(ready, resources.getOrDefault(job.stationId(), now));
             LocalDateTime start = nextWorkingTime(ready, hours), end = advance(start, job.minutes(), hours);
-            slots.add(new Slot(job, start, end, overtime(start, end)));
+            slots.add(new Slot(job, start, end, overtime(start, end, hours)));
             finishes.put(job.orderId(), end);
             resources.put(job.stationId(), end);
             Deque<Job> queue = queues.get(job.orderId());

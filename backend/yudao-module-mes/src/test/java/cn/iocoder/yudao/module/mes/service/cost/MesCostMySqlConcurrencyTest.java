@@ -21,7 +21,7 @@ class MesCostMySqlConcurrencyTest {
     private MesCostServiceTest fixture;
     private DataSource dataSource;
     private String schema;
-    private static final Set<String> TABLES=Set.of("mes_cost_profile","mes_cost_workorder","mes_cost_effort","mes_cost_line_price","mes_cost_stock_layer","mes_cost_allocation","mes_md_item","mes_md_item_type","mes_md_product_bom","mes_pro_work_order","mes_pro_work_order_bom","mes_pro_task","mes_pro_feedback","mes_wm_transaction","mes_wm_product_produce_line","mes_wm_material_stock","mes_wm_warehouse","mes_wm_item_receipt","mes_wm_item_receipt_line","mes_wm_product_sales","mes_wm_product_sales_line");
+    private static final Set<String> TABLES=Set.of("mes_cost_profile","mes_cost_workorder","mes_cost_effort","mes_cost_line_price","mes_cost_stock_layer","mes_cost_allocation","mes_cost_return_source_balance","mes_cost_return_allocation","mes_cost_layer_basis","mes_pro_work_order_loss","mes_md_item","mes_md_item_type","mes_md_product_bom","mes_pro_work_order","mes_pro_work_order_bom","mes_pro_task","mes_pro_feedback","mes_wm_transaction","mes_wm_product_produce_line","mes_wm_material_stock","mes_wm_warehouse","mes_wm_item_receipt","mes_wm_item_receipt_line","mes_wm_product_sales","mes_wm_product_sales_line");
     private JdbcTemplate checked() {
         JdbcTemplate jdbc=new JdbcTemplate(dataSource);
         assertTrue(schema.matches("broky_cost_it_[A-Za-z0-9_]+"),"Only an isolated test schema is allowed");

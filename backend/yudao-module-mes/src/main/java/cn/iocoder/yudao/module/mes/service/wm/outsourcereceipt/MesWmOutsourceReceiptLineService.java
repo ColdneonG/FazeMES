@@ -42,6 +42,11 @@ public interface MesWmOutsourceReceiptLineService {
      */
     MesWmOutsourceReceiptLineDO getOutsourceReceiptLine(Long id);
 
+    /** Current row under the already locked parent, used for one-time IQC disposition. */
+    MesWmOutsourceReceiptLineDO getOutsourceReceiptLineForUpdate(Long id);
+
+    List<MesWmOutsourceReceiptLineDO> getOutsourceReceiptLineListByReceiptIdForUpdate(Long receiptId);
+
     /**
      * 获得外协入库单行分页
      *

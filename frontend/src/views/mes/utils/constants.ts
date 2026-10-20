@@ -391,7 +391,8 @@ export const MesWmProductSalesStatusEnum = {
 /** MES 发货通知单状态枚举 */
 export const MesWmSalesNoticeStatusEnum = {
   PREPARE: MesOrderStatusConstants.DRAFT,
-  APPROVED: MesOrderStatusConstants.APPROVED
+  APPROVED: MesOrderStatusConstants.APPROVED,
+  FINISHED: MesOrderStatusConstants.FINISHED
 }
 
 /** MES 仓库常量 */
@@ -503,7 +504,7 @@ export const BARCODE_FORMAT_MAP: Record<BarcodeFormatEnum, string> = {
   [BarcodeFormatEnum.QR_CODE]: 'QR_CODE',
   [BarcodeFormatEnum.EAN13]: 'EAN13',
   [BarcodeFormatEnum.CODE39]: 'CODE39',
-  [BarcodeFormatEnum.UPC_A]: 'UPC_A'
+  [BarcodeFormatEnum.UPC_A]: 'UPC'
 }
 
 /** MES 条码业务类型枚举（对应后端 BarcodeBizTypeEnum） */

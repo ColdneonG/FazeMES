@@ -88,6 +88,8 @@
             <WmSalesNoticeLineSelect
               v-model="formData.noticeLineId"
               :notice-id="props.noticeId"
+              :editing-sales-line-id="formData.id"
+              :disabled="formLoading"
               @change="handleNoticeLineChange"
             />
           </el-form-item>
@@ -109,16 +111,33 @@
         </el-col>
         <el-col :span="8">
           <el-form-item label="出库数量" prop="quantity">
-            <el-input-number
+            <el-input
               v-model="formData.quantity"
-              :precision="2"
-              :min="0"
-              controls-position="right"
+              inputmode="decimal"
+              placeholder="支持 6 位小数，可分批出库"
               class="!w-1/1"
             />
           </el-form-item>
         </el-col>
       </el-row>
+      <el-alert
+        v-if="hasNoticeId && fulfillment"
+        :closable="false"
+        :type="fulfillment.fulfillmentReliable ? 'info' : 'error'"
+        class="mb-4"
+      >
+        <template #title>
+          <span v-if="fulfillment.fulfillmentReliable"
+            >通知计划 {{ fulfillment.noticeQuantity }}；已发货
+            {{ fulfillment.shippedQuantity }}；未过账占用
+            {{ fulfillment.reservedQuantity }}；本行当前可填
+            {{ fulfillment.editableAvailableQuantity }}</span
+          >
+          <span v-else>{{
+            fulfillment.fulfillmentWarning || '历史履约数据待核对，暂不能发货'
+          }}</span>
+        </template>
+      </el-alert>
       <el-row>
         <el-col :span="8">
           <el-form-item label="是否校验" prop="oqcCheckFlag">
@@ -163,6 +182,9 @@ import WmSalesNoticeLineSelect from '@/views/mes/wm/salesnotice/components/WmSal
 import ProductSalesDetailList from './ProductSalesDetailList.vue'
 import ProductSalesDetailForm from './ProductSalesDetailForm.vue'
 import { getBoolDictOptions, DICT_TYPE } from '@/utils/dict'
+import type { SalesFulfillment, WmSalesNoticeLineVO } from '@/api/mes/wm/salesnotice/line'
+import { quantityRule } from '@/utils/mesQuantity'
+import { salesQuantityError } from '@/views/mes/wm/salesnotice/fulfillment'
 
 defineOptions({ name: 'ProductSalesLineList' })
 
@@ -217,19 +239,39 @@ const dialogVisible = ref(false) // 弹窗的是否展示
 const dialogTitle = ref('') // 弹窗的标题
 const formLoading = ref(false) // 表单的加载中
 const lineFormType = ref('') // 行表单的类型
+const fulfillment = ref<SalesFulfillment>()
 const formData = ref({
-  id: undefined,
+  id: undefined as number | undefined,
   salesId: undefined as number | undefined,
   noticeLineId: undefined as number | undefined,
-  itemId: undefined,
-  quantity: undefined,
+  itemId: undefined as number | undefined,
+  quantity: '',
   batchCode: undefined as string | undefined,
   oqcCheckFlag: false,
   remark: undefined
 })
 const formRules = reactive({
   itemId: [{ required: true, message: '物料不能为空', trigger: 'change' }],
-  quantity: [{ required: true, message: '出库数量不能为空', trigger: 'blur' }]
+  noticeLineId: [
+    {
+      validator: (_rule: unknown, value: unknown, callback: (error?: Error) => void) =>
+        callback(hasNoticeId.value && !value ? new Error('请选择发货通知单行') : undefined),
+      trigger: 'change'
+    }
+  ],
+  quantity: [
+    quantityRule(true),
+    {
+      validator: (_rule: unknown, value: unknown, callback: (error?: Error) => void) => {
+        const error =
+          hasNoticeId.value && !fulfillment.value
+            ? '请刷新通知单行的可用额度'
+            : salesQuantityError(value, fulfillment.value)
+        callback(error ? new Error(error) : undefined)
+      },
+      trigger: 'blur'
+    }
+  ]
 })
 const formRef = ref() // 表单 Ref
 
@@ -242,7 +284,9 @@ const openForm = async (type: string, id?: number) => {
   if (id) {
     formLoading.value = true
     try {
-      formData.value = await WmProductSalesLineApi.getProductSalesLine(id)
+      const data = await WmProductSalesLineApi.getProductSalesLine(id)
+      formData.value = { ...data, quantity: String(data.quantity) }
+      fulfillment.value = data.noticeLineId ? data : undefined
     } finally {
       formLoading.value = false
     }
@@ -250,10 +294,11 @@ const openForm = async (type: string, id?: number) => {
 }
 
 /** 发货通知单行变化时，自动填充物料信息 */
-const handleNoticeLineChange = (line: any) => {
+const handleNoticeLineChange = (line: WmSalesNoticeLineVO | undefined) => {
+  fulfillment.value = line
   if (line) {
     formData.value.itemId = line.itemId
-    formData.value.quantity = line.quantity
+    formData.value.quantity = line.editableAvailableQuantity ?? ''
     formData.value.batchCode = line.batchCode
     formData.value.oqcCheckFlag = line.oqcCheckFlag ?? false
   }
@@ -262,9 +307,27 @@ const handleNoticeLineChange = (line: any) => {
 /** 提交表单 */
 const submitForm = async () => {
   await formRef.value.validate()
+  const error =
+    hasNoticeId.value && !fulfillment.value
+      ? '请选择发货通知单行'
+      : salesQuantityError(formData.value.quantity, fulfillment.value)
+  if (error) {
+    message.warning(error)
+    return
+  }
   formLoading.value = true
   try {
-    const data = { ...formData.value, salesId: props.salesId } as unknown as WmProductSalesLineVO
+    const { id, noticeLineId, itemId, quantity, batchCode, oqcCheckFlag, remark } = formData.value
+    const data = {
+      id,
+      noticeLineId,
+      itemId,
+      quantity,
+      batchCode,
+      oqcCheckFlag,
+      remark,
+      salesId: props.salesId
+    } as unknown as WmProductSalesLineVO
     if (lineFormType.value === 'create') {
       await WmProductSalesLineApi.createProductSalesLine(data)
       message.success(t('common.createSuccess'))
@@ -281,12 +344,13 @@ const submitForm = async () => {
 
 /** 重置表单 */
 const resetForm = () => {
+  fulfillment.value = undefined
   formData.value = {
     id: undefined,
     salesId: undefined,
     noticeLineId: undefined,
     itemId: undefined,
-    quantity: undefined,
+    quantity: '',
     batchCode: undefined,
     oqcCheckFlag: false,
     remark: undefined
@@ -315,7 +379,8 @@ const handlePick = (lineId: number) => {
 
 /** 打开拣货明细表单 */
 const openDetailForm = (type: string, lineId: number, itemId?: number, detailId?: number) => {
-  detailFormRef.value.open(type, lineId, itemId, detailId)
+  const line = list.value.find((row) => row.id === lineId)
+  detailFormRef.value.open(type, lineId, itemId, detailId, line?.batchId)
 }
 
 /** 明细表单提交成功后，刷新已展开行的 DetailList */

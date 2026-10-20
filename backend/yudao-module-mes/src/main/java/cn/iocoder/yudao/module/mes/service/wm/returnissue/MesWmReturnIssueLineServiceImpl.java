@@ -14,6 +14,9 @@ import cn.iocoder.yudao.module.mes.enums.wm.MesWmReturnIssueStatusEnum;
 import cn.iocoder.yudao.module.mes.enums.wm.MesWmReturnIssueTypeEnum;
 import cn.iocoder.yudao.module.mes.service.md.item.MesMdItemService;
 import cn.iocoder.yudao.module.mes.service.wm.materialstock.MesWmMaterialStockService;
+import cn.iocoder.yudao.module.mes.dal.mysql.qc.rqc.MesQcRqcMapper;
+import cn.iocoder.yudao.module.mes.dal.dataobject.qc.rqc.MesQcRqcDO;
+import cn.iocoder.yudao.framework.mybatis.core.query.LambdaQueryWrapperX;
 import jakarta.annotation.Resource;
 import org.springframework.context.annotation.Lazy;
 import org.springframework.stereotype.Service;
@@ -37,6 +40,7 @@ public class MesWmReturnIssueLineServiceImpl implements MesWmReturnIssueLineServ
 
     @Resource
     private MesWmReturnIssueLineMapper issueLineMapper;
+    @Resource private MesQcRqcMapper rqcMapper;
 
     @Resource
     @Lazy
@@ -158,9 +162,35 @@ public class MesWmReturnIssueLineServiceImpl implements MesWmReturnIssueLineServ
     }
 
     @Override
+    @org.springframework.transaction.annotation.Transactional(rollbackFor = Exception.class)
     public void updateReturnIssueLineWhenRqcFinish(Long sourceLineId, Long sourceDocId, Integer checkResult,
                                                     BigDecimal qualifiedQuantity, BigDecimal unqualifiedQuantity) {
         MesWmReturnIssueLineDO sourceLine = validateReturnIssueLineExists(sourceLineId);
+        var parent = issueService.validateReturnIssueExists(sourceLine.getIssueId());
+        if(parent==null||sourceDocId!=null&&!Objects.equals(sourceDocId,parent.getId()))throw exception(cn.iocoder.yudao.module.mes.enums.ErrorCodeConstants.WM_MATERIAL_STOCK_SELECTION_MISMATCH);
+        // Parent -> actual QC -> current source line. Callback arguments alone never release stock.
+        MesQcRqcDO qc=sourceLine.getRqcId()==null?null:rqcMapper.selectOne(new LambdaQueryWrapperX<MesQcRqcDO>()
+                .eq(MesQcRqcDO::getId,sourceLine.getRqcId()).eq(MesQcRqcDO::getSourceDocType,116)
+                .eq(MesQcRqcDO::getSourceDocId,parent.getId()).eq(MesQcRqcDO::getSourceLineId,sourceLineId).last("FOR UPDATE"));
+        sourceLine = issueLineMapper.selectByIdForUpdate(sourceLineId);
+        if (sourceLine == null || parent == null || !Objects.equals(parent.getStatus(),
+                cn.iocoder.yudao.module.mes.enums.wm.MesWmReturnIssueStatusEnum.CONFIRMED.getStatus())
+                || (sourceDocId != null && !Objects.equals(parent.getId(), sourceDocId))
+                || !Objects.equals(sourceLine.getIssueId(), parent.getId())
+                || !Boolean.TRUE.equals(sourceLine.getRqcCheckFlag())
+                || !Objects.equals(sourceLine.getQualityStatus(), MesWmQualityStatusEnum.PENDING.getStatus())) {
+            throw exception(cn.iocoder.yudao.module.mes.enums.ErrorCodeConstants.WM_MATERIAL_STOCK_SELECTION_MISMATCH);
+        }
+        sourceDocId = parent.getId(); // Always advance the actual locked source document, including legacy null callbacks.
+        qualifiedQuantity = qualifiedQuantity == null ? BigDecimal.ZERO : qualifiedQuantity;
+        unqualifiedQuantity = unqualifiedQuantity == null ? BigDecimal.ZERO : unqualifiedQuantity;
+        cn.iocoder.yudao.module.mes.service.wm.quality.MesWmQualityPolicy.validateInspectionSplit(
+                sourceLine.getQuantity(), qualifiedQuantity, unqualifiedQuantity, checkResult);
+        if(qc==null||!Objects.equals(qc.getId(),sourceLine.getRqcId())||!Objects.equals(qc.getStatus(),4)
+                ||!Objects.equals(qc.getSourceDocType(),116)||!Objects.equals(qc.getSourceDocId(),parent.getId())||!Objects.equals(qc.getSourceLineId(),sourceLineId)
+                ||!Objects.equals(qc.getItemId(),sourceLine.getItemId())||!Objects.equals(normalizeBatch(qc.getBatchCode()),normalizeBatch(sourceLine.getBatchCode()))
+                ||!sameQuantity(qc.getCheckQuantity(),sourceLine.getQuantity())||!Objects.equals(qc.getCheckResult(),checkResult)
+                ||!sameQuantity(qc.getQualifiedQuantity(),qualifiedQuantity)||!sameQuantity(qc.getUnqualifiedQuantity(),unqualifiedQuantity))throw exception(cn.iocoder.yudao.module.mes.enums.ErrorCodeConstants.WM_MATERIAL_STOCK_SELECTION_MISMATCH);
         boolean hasUnqualified = unqualifiedQuantity != null && unqualifiedQuantity.compareTo(BigDecimal.ZERO) > 0;
         boolean hasQualified = qualifiedQuantity != null && qualifiedQuantity.compareTo(BigDecimal.ZERO) > 0;
 
@@ -182,6 +212,7 @@ public class MesWmReturnIssueLineServiceImpl implements MesWmReturnIssueLineServ
                     .setItemId(sourceLine.getItemId())
                     .setQuantity(unqualifiedQuantity)
                     .setBatchId(sourceLine.getBatchId())
+                    .setBatchCode(sourceLine.getBatchCode())
                     .setRqcId(sourceLine.getRqcId())
                     .setRqcCheckFlag(sourceLine.getRqcCheckFlag())
                     .setQualityStatus(MesWmQualityStatusEnum.FAIL.getStatus())
@@ -196,7 +227,7 @@ public class MesWmReturnIssueLineServiceImpl implements MesWmReturnIssueLineServ
 
         // 2. 检查退料单下是否还有待检验的行，若全检完则将退料单状态设为"待上架"
         if (sourceDocId != null) {
-            List<MesWmReturnIssueLineDO> allLines = issueLineMapper.selectListByIssueId(sourceDocId);
+            List<MesWmReturnIssueLineDO> allLines = issueLineMapper.selectListByIssueIdForUpdate(sourceDocId);
             boolean allInspected = !CollUtil.contains(allLines,
                     line -> Objects.equals(line.getQualityStatus(), MesWmQualityStatusEnum.PENDING.getStatus()));
             if (allInspected) {
@@ -204,5 +235,8 @@ public class MesWmReturnIssueLineServiceImpl implements MesWmReturnIssueLineServ
             }
         }
     }
+
+    private String normalizeBatch(String value){return value==null||value.isBlank()?null:value;}
+    private boolean sameQuantity(BigDecimal a,BigDecimal b){return a!=null&&b!=null&&a.compareTo(b)==0;}
 
 }

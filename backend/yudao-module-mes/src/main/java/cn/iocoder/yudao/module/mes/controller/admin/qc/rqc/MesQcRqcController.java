@@ -10,6 +10,7 @@ import cn.iocoder.yudao.framework.excel.core.util.ExcelUtils;
 import cn.iocoder.yudao.module.mes.controller.admin.qc.rqc.vo.MesQcRqcPageReqVO;
 import cn.iocoder.yudao.module.mes.controller.admin.qc.rqc.vo.MesQcRqcRespVO;
 import cn.iocoder.yudao.module.mes.controller.admin.qc.rqc.vo.MesQcRqcSaveReqVO;
+import cn.iocoder.yudao.module.mes.controller.admin.qc.rqc.vo.MesQcRqcSourceContextRespVO;
 import cn.iocoder.yudao.module.mes.dal.dataobject.md.item.MesMdItemDO;
 import cn.iocoder.yudao.module.mes.dal.dataobject.md.unitmeasure.MesMdUnitMeasureDO;
 import cn.iocoder.yudao.module.mes.dal.dataobject.qc.rqc.MesQcRqcDO;
@@ -60,6 +61,10 @@ public class MesQcRqcController {
     public CommonResult<Long> createRqc(@Valid @RequestBody MesQcRqcSaveReqVO createReqVO) {
         return success(rqcService.createRqc(createReqVO));
     }
+    @GetMapping("/source-context")
+    @Operation(summary="获取待检退货行的真实来源")
+    @PreAuthorize("@ss.hasPermission('mes:qc-rqc:create')")
+    public CommonResult<MesQcRqcSourceContextRespVO> sourceContext(@RequestParam Integer sourceDocType,@RequestParam Long sourceDocId,@RequestParam Long sourceLineId){return success(rqcService.getSourceContext(sourceDocType,sourceDocId,sourceLineId));}
 
     @PutMapping("/update")
     @Operation(summary = "更新退货检验单")

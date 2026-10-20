@@ -75,6 +75,7 @@ public class MesMdVendorServiceImpl implements MesMdVendorService {
     private MesWmOutsourceReceiptService outsourceReceiptService;
 
     @Override
+    @Transactional(rollbackFor = Exception.class)
     public Long createVendor(MesMdVendorSaveReqVO createReqVO) {
         // 校验数据
         validateVendorSaveData(createReqVO);

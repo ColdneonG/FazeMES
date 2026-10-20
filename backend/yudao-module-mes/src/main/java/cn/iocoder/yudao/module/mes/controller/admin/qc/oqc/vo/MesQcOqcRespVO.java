@@ -84,18 +84,22 @@ public class MesQcOqcRespVO {
 
     @Schema(description = "本次出货数量", requiredMode = Schema.RequiredMode.REQUIRED, example = "100")
     @ExcelProperty("出货数量")
+    @com.fasterxml.jackson.annotation.JsonFormat(shape = com.fasterxml.jackson.annotation.JsonFormat.Shape.STRING)
     private BigDecimal outQuantity;
 
     @Schema(description = "本次检测数量", example = "10")
     @ExcelProperty("检测数量")
+    @com.fasterxml.jackson.annotation.JsonFormat(shape = com.fasterxml.jackson.annotation.JsonFormat.Shape.STRING)
     private BigDecimal checkQuantity;
 
     @Schema(description = "合格品数量", example = "9")
     @ExcelProperty("合格品数量")
+    @com.fasterxml.jackson.annotation.JsonFormat(shape = com.fasterxml.jackson.annotation.JsonFormat.Shape.STRING)
     private BigDecimal qualifiedQuantity;
 
     @Schema(description = "不合格品数量", example = "1")
     @ExcelProperty("不合格品数量")
+    @com.fasterxml.jackson.annotation.JsonFormat(shape = com.fasterxml.jackson.annotation.JsonFormat.Shape.STRING)
     private BigDecimal unqualifiedQuantity;
 
     // ========== 缺陷统计 ==========

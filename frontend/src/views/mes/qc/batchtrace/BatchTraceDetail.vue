@@ -47,8 +47,22 @@
       :closable="false"
       show-icon
       title="追溯依据"
-      description="仅展示同次已完成报工的实际耗料与产出，或已完成 SN 过站分配所确认的批次关系。跨工序未登记 SN 用料分配时不推断关联；无查询结果不代表该物料未被使用。"
+      description="关系来自同次已完成报工的实际耗料与产出、已冻结的前序报工来源链，或已完成 SN 分配。相同批次可能汇总多次报工，本页展示批次范围的关联；历史未登记来源不自动推断，无结果不代表未被使用。"
     />
+    <div v-loading="coverageLoading" class="mt-10px">
+      <el-alert
+        v-if="coverage"
+        :type="coverage.complete ? 'success' : 'warning'"
+        :title="coverageTitle"
+        :description="coverage.notes.join('；')"
+        :closable="false"
+        show-icon
+      />
+      <el-alert v-if="coverageError" :title="coverageError" type="error" :closable="false" />
+      <el-button v-if="coverageError" link type="primary" @click="loadCoverage"
+        >重试证据核查</el-button
+      >
+    </div>
     <el-tabs type="border-card" class="mt-10px">
       <el-tab-pane label="向前追溯">
         <BatchTraceDetailList
@@ -71,7 +85,7 @@
 </template>
 
 <script lang="ts" setup>
-import { BatchVO } from '@/api/mes/wm/batch'
+import { BatchApi, type BatchVO, type BatchTraceCoverage } from '@/api/mes/wm/batch'
 import BatchTraceDetailList from './BatchTraceDetailList.vue'
 
 defineOptions({ name: 'BatchTraceDetail' })
@@ -79,12 +93,52 @@ defineOptions({ name: 'BatchTraceDetail' })
 const dialogVisible = ref(false) // 弹窗的是否展示
 const detailData = ref<BatchVO>({} as BatchVO) // 详情数据
 const queryVersion = ref(0)
+const coverage = ref<BatchTraceCoverage>()
+const coverageLoading = ref(false)
+const coverageError = ref('')
+let coverageSequence = 0
+const coverageTitle = computed(() =>
+  coverage.value?.truncated
+    ? '追溯达到查询深度上限，结果不完整'
+    : coverage.value?.complete
+      ? '已登记来源链证据完整（批次范围）'
+      : '来源证据不完整，请结合历史缺证提示核查'
+)
+
+const loadCoverage = async () => {
+  const sequence = ++coverageSequence
+  const code = detailData.value.code
+  coverage.value = undefined
+  coverageError.value = ''
+  coverageLoading.value = false
+  if (!code) return
+  coverageLoading.value = true
+  try {
+    const result = await BatchApi.getTraceCoverage(code)
+    if (sequence === coverageSequence && dialogVisible.value) coverage.value = result
+  } catch {
+    if (sequence === coverageSequence && dialogVisible.value)
+      coverageError.value = '来源完整性核查失败，不能据此判定追溯完整。'
+  } finally {
+    if (sequence === coverageSequence) coverageLoading.value = false
+  }
+}
 
 /** 打开弹窗 */
 const open = async (data: BatchVO) => {
   detailData.value = data
   queryVersion.value++
   dialogVisible.value = true
+  await loadCoverage()
 }
+watch(dialogVisible, (visible) => {
+  if (!visible) {
+    coverageSequence++
+    coverageLoading.value = false
+  }
+})
+onBeforeUnmount(() => {
+  coverageSequence++
+})
 defineExpose({ open }) // 提供 open 方法，用于打开弹窗
 </script>

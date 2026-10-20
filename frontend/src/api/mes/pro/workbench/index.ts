@@ -1,4 +1,5 @@
 import request from '@/config/axios'
+import type { FeedbackSource } from '@/api/mes/pro/feedback'
 
 export interface WorkstationOption {
   id: number
@@ -46,10 +47,11 @@ export interface WorkbenchContext {
 export interface WorkbenchFeedback {
   taskId: number
   approveUserId: number
-  feedbackQuantity?: number
-  qualifiedQuantity?: number
-  unqualifiedQuantity?: number
+  feedbackQuantity?: number | string
+  qualifiedQuantity?: number | string
+  unqualifiedQuantity?: number | string
   remark?: string
+  sources?: FeedbackSource[]
 }
 
 export const WorkbenchApi = {

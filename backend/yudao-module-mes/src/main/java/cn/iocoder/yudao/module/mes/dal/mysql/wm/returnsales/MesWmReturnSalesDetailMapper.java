@@ -16,6 +16,20 @@ import java.util.List;
  */
 @Mapper
 public interface MesWmReturnSalesDetailMapper extends BaseMapperX<MesWmReturnSalesDetailDO> {
+    default List<MesWmReturnSalesDetailDO> selectListByReturnIdForUpdate(Long returnId) {
+        return selectList(new LambdaQueryWrapperX<MesWmReturnSalesDetailDO>()
+                .eq(MesWmReturnSalesDetailDO::getReturnId, returnId).orderByAsc(MesWmReturnSalesDetailDO::getId).last("FOR UPDATE"));
+    }
+
+    default List<MesWmReturnSalesDetailDO> selectListByLineIdForUpdate(Long lineId) {
+        return selectList(new LambdaQueryWrapperX<MesWmReturnSalesDetailDO>()
+                .eq(MesWmReturnSalesDetailDO::getLineId, lineId).orderByAsc(MesWmReturnSalesDetailDO::getId).last("FOR UPDATE"));
+    }
+
+    default MesWmReturnSalesDetailDO selectByIdForUpdate(Long id) {
+        return selectOne(new LambdaQueryWrapperX<MesWmReturnSalesDetailDO>()
+                .eq(MesWmReturnSalesDetailDO::getId, id).last("FOR UPDATE"));
+    }
 
     default PageResult<MesWmReturnSalesDetailDO> selectPage(MesWmReturnSalesDetailPageReqVO reqVO) {
         return selectPage(reqVO, new LambdaQueryWrapperX<MesWmReturnSalesDetailDO>()

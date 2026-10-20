@@ -43,6 +43,14 @@ public class MesWmProductSalesLineServiceImplTest extends BaseDbUnitTest {
     @MockitoBean
     private MesWmBatchService batchService;
 
+    @MockitoBean
+    private cn.iocoder.yudao.module.mes.service.wm.salesnotice.MesWmSalesNoticeFulfillmentService fulfillmentService;
+
+    @org.junit.jupiter.api.BeforeEach
+    void lockParent() {
+        when(fulfillmentService.lockSales(anyLong())).thenAnswer(call -> new cn.iocoder.yudao.module.mes.dal.dataobject.wm.productsales.MesWmProductSalesDO().setId(call.getArgument(0)).setStatus(1));
+    }
+
     @Test
     public void testUpdateProductSalesLineWhenOqcFinish_pass() {
         // 准备参数
@@ -52,7 +60,7 @@ public class MesWmProductSalesLineServiceImplTest extends BaseDbUnitTest {
         // mock 数据
         MesWmProductSalesLineDO lineDO = randomPojo(MesWmProductSalesLineDO.class, o -> {
             o.setOqcCheckFlag(true);         // 需要 OQC 检验
-            o.setQualityStatus(null);    // 初始为空
+            o.setQualityStatus(MesWmQualityStatusEnum.PENDING.getStatus());    // 初始为空
         });
         productSalesLineMapper.insert(lineDO);
 
@@ -74,7 +82,7 @@ public class MesWmProductSalesLineServiceImplTest extends BaseDbUnitTest {
         // mock 数据
         MesWmProductSalesLineDO lineDO = randomPojo(MesWmProductSalesLineDO.class, o -> {
             o.setOqcCheckFlag(true);
-            o.setQualityStatus(null);
+            o.setQualityStatus(MesWmQualityStatusEnum.PENDING.getStatus());
         });
         productSalesLineMapper.insert(lineDO);
 
@@ -101,7 +109,7 @@ public class MesWmProductSalesLineServiceImplTest extends BaseDbUnitTest {
         MesWmProductSalesLineDO line2 = randomPojo(MesWmProductSalesLineDO.class, o -> {
             o.setSalesId(salesId);
             o.setOqcCheckFlag(true);
-            o.setQualityStatus(null); // 待检
+            o.setQualityStatus(MesWmQualityStatusEnum.PENDING.getStatus()); // 待检
         });
         productSalesLineMapper.insert(line2);
 
@@ -127,7 +135,7 @@ public class MesWmProductSalesLineServiceImplTest extends BaseDbUnitTest {
         MesWmProductSalesLineDO line2 = randomPojo(MesWmProductSalesLineDO.class, o -> {
             o.setSalesId(salesId);
             o.setOqcCheckFlag(true);
-            o.setQualityStatus(null);
+            o.setQualityStatus(MesWmQualityStatusEnum.PENDING.getStatus());
         });
         productSalesLineMapper.insert(line2);
 
@@ -146,14 +154,14 @@ public class MesWmProductSalesLineServiceImplTest extends BaseDbUnitTest {
         MesWmProductSalesLineDO line1 = randomPojo(MesWmProductSalesLineDO.class, o -> {
             o.setSalesId(salesId);
             o.setOqcCheckFlag(false); // 不需要 OQC 检验
-            o.setQualityStatus(null);
+            o.setQualityStatus(MesWmQualityStatusEnum.PENDING.getStatus());
         });
         productSalesLineMapper.insert(line1);
 
         MesWmProductSalesLineDO line2 = randomPojo(MesWmProductSalesLineDO.class, o -> {
             o.setSalesId(salesId);
             o.setOqcCheckFlag(true);
-            o.setQualityStatus(null);
+            o.setQualityStatus(MesWmQualityStatusEnum.PENDING.getStatus());
         });
         productSalesLineMapper.insert(line2);
 

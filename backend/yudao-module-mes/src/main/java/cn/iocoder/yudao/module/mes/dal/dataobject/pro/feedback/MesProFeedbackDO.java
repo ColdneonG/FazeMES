@@ -160,4 +160,8 @@ public class MesProFeedbackDO extends BaseDO {
      */
     private String remark;
 
+    /** Server-owned requirement and frozen process-source completeness. */
+    private Boolean flowRequired;
+    private Boolean flowComplete;
+
 }

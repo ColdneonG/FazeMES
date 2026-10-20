@@ -13,6 +13,8 @@ import cn.iocoder.yudao.module.mes.service.qc.iqc.MesQcIqcServiceImpl;
 import cn.iocoder.yudao.module.mes.service.qc.ipqc.MesQcIpqcServiceImpl;
 import cn.iocoder.yudao.module.mes.service.qc.oqc.MesQcOqcServiceImpl;
 import cn.iocoder.yudao.module.mes.service.qc.rqc.MesQcRqcServiceImpl;
+import cn.iocoder.yudao.framework.common.exception.ServiceException;
+import com.baomidou.mybatisplus.core.conditions.Wrapper;
 import org.junit.jupiter.api.extension.ExtendWith;
 import org.junit.jupiter.params.ParameterizedTest;
 import org.junit.jupiter.params.provider.ValueSource;
@@ -55,7 +57,8 @@ class MesQcManualSourceRegressionTest {
     @ValueSource(strings = {"IQC", "IPQC", "OQC", "RQC"})
     void zeroTypeWithSourceIdsRemainsInvalid(String stage) {
         prepare(stage, 42L);
-        assertThrows(IllegalArgumentException.class, () -> finish(stage));
+        if(stage.equals("OQC")||stage.equals("RQC"))assertThrows(ServiceException.class,()->finish(stage));
+        else assertThrows(IllegalArgumentException.class, () -> finish(stage));
     }
 
     private void prepare(String stage, Long sourceId) {
@@ -64,10 +67,8 @@ class MesQcManualSourceRegressionTest {
                     .setId(1L).setStatus(0).setCheckResult(1).setSourceDocType(0).setSourceDocId(sourceId));
             case "IPQC" -> when(ipqcMapper.selectById(1L)).thenReturn(new MesQcIpqcDO()
                     .setId(1L).setStatus(0).setCheckResult(1).setSourceDocType(0).setSourceDocId(sourceId));
-            case "OQC" -> when(oqcMapper.selectById(1L)).thenReturn(new MesQcOqcDO()
-                    .setId(1L).setStatus(0).setCheckResult(1).setSourceDocType(0).setSourceDocId(sourceId));
-            case "RQC" -> when(rqcMapper.selectById(1L)).thenReturn(new MesQcRqcDO()
-                    .setId(1L).setStatus(0).setCheckResult(1).setSourceDocType(0).setSourceDocId(sourceId));
+            case "OQC" -> {var qc=new MesQcOqcDO().setId(1L).setStatus(0).setCheckResult(1).setSourceDocType(0).setSourceDocId(sourceId);when(oqcMapper.selectById(1L)).thenReturn(qc);if(sourceId==null)when(oqcMapper.selectOne(org.mockito.ArgumentMatchers.any(Wrapper.class))).thenReturn(qc);}
+            case "RQC" -> {var qc=new MesQcRqcDO().setId(1L).setStatus(0).setCheckResult(1).setSourceDocType(0).setSourceDocId(sourceId);when(rqcMapper.selectById(1L)).thenReturn(qc);if(sourceId==null)when(rqcMapper.selectOne(org.mockito.ArgumentMatchers.any(Wrapper.class))).thenReturn(qc);}
             default -> fail(stage);
         }
     }

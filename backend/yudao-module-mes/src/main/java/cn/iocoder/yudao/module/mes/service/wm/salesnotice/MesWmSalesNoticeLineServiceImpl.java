@@ -40,8 +40,10 @@ public class MesWmSalesNoticeLineServiceImpl implements MesWmSalesNoticeLineServ
     private MesWmBatchService batchService;
     @Resource
     private MesMdItemService itemService;
+    @Resource private MesWmSalesNoticeFulfillmentService fulfillmentService;
 
     @Override
+    @org.springframework.transaction.annotation.Transactional(rollbackFor=Exception.class)
     public Long createSalesNoticeLine(MesWmSalesNoticeLineSaveReqVO createReqVO) {
         // 校验数据
         validateLineSaveData(createReqVO);
@@ -54,9 +56,14 @@ public class MesWmSalesNoticeLineServiceImpl implements MesWmSalesNoticeLineServ
     }
 
     @Override
+    @org.springframework.transaction.annotation.Transactional(rollbackFor=Exception.class)
     public void updateSalesNoticeLine(MesWmSalesNoticeLineSaveReqVO updateReqVO) {
         // 校验存在
         MesWmSalesNoticeLineDO line = validateSalesNoticeLineExists(updateReqVO.getId());
+        validateNoticeStatusDraft(line.getNoticeId());
+        line=salesNoticeLineMapper.selectByIdForUpdate(updateReqVO.getId());
+        if(line==null)throw exception(WM_SALES_NOTICE_LINE_NOT_EXISTS);
+        if(updateReqVO.getNoticeId()!=null&&!java.util.Objects.equals(updateReqVO.getNoticeId(),line.getNoticeId()))throw exception(WM_SALES_NOTICE_LINE_NOT_MATCH);
         // 校验数据
         updateReqVO.setNoticeId(line.getNoticeId());
         validateLineSaveData(updateReqVO);
@@ -64,15 +71,20 @@ public class MesWmSalesNoticeLineServiceImpl implements MesWmSalesNoticeLineServ
         // 更新
         MesWmSalesNoticeLineDO updateObj = BeanUtils.toBean(updateReqVO, MesWmSalesNoticeLineDO.class);
         fillBatchId(updateObj);
-        salesNoticeLineMapper.updateById(updateObj);
+        salesNoticeLineMapper.update(null,new com.baomidou.mybatisplus.core.conditions.update.LambdaUpdateWrapper<MesWmSalesNoticeLineDO>()
+                .eq(MesWmSalesNoticeLineDO::getId,updateObj.getId()).set(MesWmSalesNoticeLineDO::getItemId,updateObj.getItemId())
+                .set(MesWmSalesNoticeLineDO::getQuantity,updateObj.getQuantity()).set(MesWmSalesNoticeLineDO::getBatchId,updateObj.getBatchId())
+                .set(MesWmSalesNoticeLineDO::getBatchCode,updateObj.getBatchCode()).set(MesWmSalesNoticeLineDO::getOqcCheckFlag,updateObj.getOqcCheckFlag()).set(MesWmSalesNoticeLineDO::getRemark,updateObj.getRemark()));
     }
 
     @Override
+    @org.springframework.transaction.annotation.Transactional(rollbackFor=Exception.class)
     public void deleteSalesNoticeLine(Long id) {
         // 校验存在
         MesWmSalesNoticeLineDO line = validateSalesNoticeLineExists(id);
         // 校验父单据存在且为草稿状态
         validateNoticeStatusDraft(line.getNoticeId());
+        salesNoticeLineMapper.selectByIdForUpdate(id);
 
         // 删除
         salesNoticeLineMapper.deleteById(id);
@@ -90,11 +102,13 @@ public class MesWmSalesNoticeLineServiceImpl implements MesWmSalesNoticeLineServ
 
     @Override
     public List<MesWmSalesNoticeLineDO> getSalesNoticeLineListByNoticeId(Long noticeId) {
-        return salesNoticeLineMapper.selectListByNoticeId(noticeId);
+        return salesNoticeLineMapper.selectListByNoticeIdForUpdate(noticeId);
     }
 
     @Override
+    @org.springframework.transaction.annotation.Transactional(rollbackFor=Exception.class)
     public void deleteSalesNoticeLineByNoticeId(Long noticeId) {
+        validateNoticeStatusDraft(noticeId);
         salesNoticeLineMapper.deleteByNoticeId(noticeId);
     }
 
@@ -120,6 +134,7 @@ public class MesWmSalesNoticeLineServiceImpl implements MesWmSalesNoticeLineServ
     private void validateLineSaveData(MesWmSalesNoticeLineSaveReqVO reqVO) {
         // 校验父单据存在且为草稿状态
         validateNoticeStatusDraft(reqVO.getNoticeId());
+        fulfillmentService.requireQuantity(reqVO.getQuantity());
         // 校验物料存在
         if (reqVO.getItemId() != null) {
             itemService.validateItemExistsAndEnable(reqVO.getItemId());
@@ -130,7 +145,9 @@ public class MesWmSalesNoticeLineServiceImpl implements MesWmSalesNoticeLineServ
      * 校验父发货通知单存在且为草稿状态
      */
     private void validateNoticeStatusDraft(Long noticeId) {
-        MesWmSalesNoticeDO notice = salesNoticeService.getSalesNotice(noticeId);
+        fulfillmentService.requireDraftNoticeWithoutSales(noticeId);
+        var row=fulfillmentService.lockNotice(noticeId);
+        MesWmSalesNoticeDO notice = cn.iocoder.yudao.framework.common.util.object.BeanUtils.toBean(row,MesWmSalesNoticeDO.class);
         if (notice == null) {
             throw exception(WM_SALES_NOTICE_NOT_EXISTS);
         }
@@ -143,13 +160,15 @@ public class MesWmSalesNoticeLineServiceImpl implements MesWmSalesNoticeLineServ
      * 根据 batchCode 回填 batchId
      */
     private void fillBatchId(MesWmSalesNoticeLineDO line) {
+        line.setBatchId(null);
         if (StrUtil.isEmpty(line.getBatchCode())) {
             return;
         }
         MesWmBatchDO batch = batchService.getBatchByCode(line.getBatchCode());
-        if (batch != null) {
+        if (batch != null && java.util.Objects.equals(batch.getItemId(),line.getItemId())) {
             line.setBatchId(batch.getId());
-        }
+            line.setBatchCode(batch.getCode());
+        } else throw exception(WM_PRODUCT_SALES_LINE_NOTICE_LINE_BATCH_MISMATCH);
     }
 
 }

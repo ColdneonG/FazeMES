@@ -27,12 +27,10 @@
         </el-col>
         <el-col :span="8">
           <el-form-item label="数量" prop="quantity">
-            <el-input-number
+            <el-input
               v-model="formData.quantity"
-              :precision="2"
-              :min="0"
-              :max="quantityMax"
-              controls-position="right"
+              inputmode="decimal"
+              placeholder="支持 6 位小数"
               class="!w-1/1"
             />
           </el-form-item>
@@ -92,6 +90,7 @@ import WmWarehouseLocationSelect from '@/views/mes/wm/warehouse/components/WmWar
 import WmWarehouseAreaSelect from '@/views/mes/wm/warehouse/components/WmWarehouseAreaSelect.vue'
 import WmBatchSelect from '@/views/mes/wm/batch/components/WmBatchSelect.vue'
 import WmMaterialStockSelect from '@/views/mes/wm/materialstock/components/WmMaterialStockSelect.vue'
+import { quantityRule } from '@/utils/mesQuantity'
 
 defineOptions({ name: 'ProductSalesDetailForm' })
 
@@ -109,13 +108,14 @@ const dialogTitle = ref('') // 弹窗的标题
 const formLoading = ref(false) // 表单的加载中
 const formType = ref('') // 表单的类型：create / update
 const currentLineId = ref<number>() // 当前操作的行 ID
+const lineBatchId = ref<number>()
 const formRef = ref() // 表单 Ref
 const formData = ref({
   id: undefined as number | undefined,
   lineId: undefined as number | undefined,
   salesId: undefined as number | undefined,
   itemId: undefined as number | undefined,
-  quantity: undefined as number | undefined,
+  quantity: '',
   materialStockId: undefined as number | undefined,
   warehouseId: undefined as number | undefined,
   locationId: undefined as number | undefined,
@@ -123,30 +123,38 @@ const formData = ref({
   batchId: undefined as number | undefined,
   batchCode: undefined as string | undefined
 })
-const quantityMax = ref<number | undefined>(undefined) // 数量上限（在库数量）
 const formRules = reactive({
   itemId: [{ required: true, message: '物料不能为空', trigger: 'change' }],
   materialStockId: [{ required: true, message: '请选择库存记录', trigger: 'change' }],
-  quantity: [{ required: true, message: '数量不能为空', trigger: 'blur' }]
+  quantity: [quantityRule(true)]
 })
 
 /** 打开弹窗 */
-const open = async (type: string, lineId: number, itemId?: number, detailId?: number) => {
+const open = async (
+  type: string,
+  lineId: number,
+  itemId?: number,
+  detailId?: number,
+  requiredBatchId?: number
+) => {
   dialogVisible.value = true
   dialogTitle.value = type === 'create' ? '添加拣货明细' : '编辑拣货明细'
   formType.value = type
   currentLineId.value = lineId
   resetForm()
+  lineBatchId.value = requiredBatchId
   // 修改时，设置数据
   if (detailId) {
     formLoading.value = true
     try {
-      formData.value = await WmProductSalesDetailApi.getProductSalesDetail(detailId)
+      const data = await WmProductSalesDetailApi.getProductSalesDetail(detailId)
+      formData.value = { ...data, quantity: String(data.quantity) }
     } finally {
       formLoading.value = false
     }
   } else if (itemId) {
     formData.value.itemId = itemId
+    formData.value.batchId = requiredBatchId
   }
 }
 defineExpose({ open })
@@ -162,10 +170,9 @@ const handleStockChange = (stock: WmMaterialStockVO | undefined) => {
     formData.value.warehouseId = undefined
     formData.value.locationId = undefined
     formData.value.areaId = undefined
-    formData.value.batchId = undefined
+    formData.value.batchId = lineBatchId.value
     formData.value.batchCode = undefined
-    formData.value.quantity = undefined
-    quantityMax.value = undefined
+    formData.value.quantity = ''
     return
   }
   formData.value.warehouseId = stock.warehouseId
@@ -173,8 +180,8 @@ const handleStockChange = (stock: WmMaterialStockVO | undefined) => {
   formData.value.areaId = stock.areaId
   formData.value.batchId = stock.batchId
   formData.value.batchCode = stock.batchCode
-  formData.value.quantity = stock.quantity
-  quantityMax.value = stock.quantity
+  // The remaining line quota may be smaller than this stock record; let the picker enter it.
+  formData.value.quantity = ''
 }
 
 /** 提交表单 */
@@ -211,7 +218,7 @@ const resetForm = () => {
     lineId: undefined,
     salesId: undefined,
     itemId: undefined,
-    quantity: undefined,
+    quantity: '',
     materialStockId: undefined,
     warehouseId: undefined,
     locationId: undefined,
@@ -219,7 +226,6 @@ const resetForm = () => {
     batchId: undefined,
     batchCode: undefined
   }
-  quantityMax.value = undefined
   formRef.value?.resetFields()
 }
 </script>

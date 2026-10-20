@@ -35,6 +35,7 @@ public class MesWmProductSalesDetailRespVO {
     private String unitMeasureName;
 
     @Schema(description = "拣货数量", example = "50")
+    @com.fasterxml.jackson.annotation.JsonFormat(shape=com.fasterxml.jackson.annotation.JsonFormat.Shape.STRING)
     private BigDecimal quantity;
 
     @Schema(description = "库存记录ID", example = "1")

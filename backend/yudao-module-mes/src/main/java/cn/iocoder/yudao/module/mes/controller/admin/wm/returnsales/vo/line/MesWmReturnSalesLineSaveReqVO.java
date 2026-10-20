@@ -22,9 +22,10 @@ public class MesWmReturnSalesLineSaveReqVO {
     @Schema(description = "退货单ID", requiredMode = Schema.RequiredMode.REQUIRED, example = "1")
     @NotNull(message = "退货单ID不能为空")
     private Long returnId;
+    @Schema(description = "原销售出库负流水ID，必须由原发货来源选取")
+    private Long originTransactionId;
 
     @Schema(description = "物料ID", requiredMode = Schema.RequiredMode.REQUIRED, example = "1")
-    @NotNull(message = "物料ID不能为空")
     private Long itemId;
 
     @Schema(description = "退货数量", requiredMode = Schema.RequiredMode.REQUIRED, example = "100.00")

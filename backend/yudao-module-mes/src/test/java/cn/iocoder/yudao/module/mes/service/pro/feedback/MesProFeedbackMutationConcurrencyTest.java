@@ -41,6 +41,8 @@ import static org.mockito.Mockito.*;
 @Import(MesProFeedbackServiceImpl.class)
 class MesProFeedbackMutationConcurrencyTest extends BaseDbUnitTest {
 
+    @MockitoBean private MesProFeedbackFlowService flowService;
+
     @Resource private MesProFeedbackServiceImpl service;
     @Resource private MesProFeedbackMapper mapper;
     @MockitoBean private MesProWorkOrderService workOrderService;

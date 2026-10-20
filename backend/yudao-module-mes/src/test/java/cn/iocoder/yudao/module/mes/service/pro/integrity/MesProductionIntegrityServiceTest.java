@@ -28,6 +28,7 @@ class MesProductionIntegrityServiceTest {
                 "CREATE TABLE mes_md_item_type(id BIGINT,item_or_product VARCHAR(16),tenant_id BIGINT,deleted BOOLEAN DEFAULT FALSE)",
                 "CREATE TABLE mes_pro_work_order(id BIGINT,parent_id BIGINT,product_id BIGINT,quantity DECIMAL(20,6),quantity_produced DECIMAL(20,6),quantity_changed DECIMAL(20,6),status INT,type INT,tenant_id BIGINT,deleted BOOLEAN DEFAULT FALSE)",
                 "CREATE TABLE mes_pro_work_order_bom(work_order_id BIGINT,item_id BIGINT,quantity DECIMAL(20,6),tenant_id BIGINT,deleted BOOLEAN DEFAULT FALSE)",
+                "CREATE TABLE mes_pro_work_order_loss(tenant_id BIGINT,work_order_id BIGINT,qualified_quantity DECIMAL(20,6),PRIMARY KEY(tenant_id,work_order_id))",
                 "CREATE TABLE mes_pro_task(id BIGINT,work_order_id BIGINT,quantity DECIMAL(20,6),changed_quantity DECIMAL(20,6),tenant_id BIGINT,deleted BOOLEAN DEFAULT FALSE)",
                 "CREATE TABLE mes_pro_feedback(id BIGINT,task_id BIGINT,work_order_id BIGINT,route_id BIGINT,process_id BIGINT,feedback_quantity DECIMAL(20,6),qualified_quantity DECIMAL(20,6),status INT,tenant_id BIGINT,deleted BOOLEAN DEFAULT FALSE)",
                 "CREATE TABLE mes_wm_material_stock(work_order_id BIGINT,quantity DECIMAL(20,6),tenant_id BIGINT,deleted BOOLEAN DEFAULT FALSE)"
@@ -148,5 +149,16 @@ class MesProductionIntegrityServiceTest {
         assertDoesNotThrow(service::lockBomGraph); assertDoesNotThrow(service::lockBomGraph);
         TenantContextHolder.setTenantId(2L); assertDoesNotThrow(service::lockBomGraph);
         assertEquals(2, jdbc.queryForObject("SELECT COUNT(*) FROM mes_pro_integrity_lock", Integer.class));
+    }
+    @Test void lossClosedChildReservesOnlyGoodOutputSoParentCanCreateReplacement() {
+        jdbc.update("INSERT INTO mes_pro_work_order VALUES(1,0,100,100,0,0,1,1,1,FALSE),(2,1,200,100,90,0,2,1,1,FALSE)");
+        jdbc.update("INSERT INTO mes_pro_work_order_bom VALUES(1,200,100,1,FALSE)");
+        jdbc.update("INSERT INTO mes_md_item_type VALUES(1,'PRODUCT',1,FALSE)");jdbc.update("INSERT INTO mes_md_item VALUES(200,1,1,FALSE)");
+        jdbc.update("INSERT INTO mes_pro_work_order_loss VALUES(1,2,85)");
+        var request=new MesProWorkOrderSaveReqVO();request.setParentId(1L);request.setProductId(200L);request.setQuantity(new BigDecimal("15"));
+        assertDoesNotThrow(()->service.validateChildWorkOrder(request,null));request.setQuantity(new BigDecimal("15.000001"));assertThrows(ServiceException.class,()->service.validateChildWorkOrder(request,null));
+        // A forged other-tenant audit cannot free capacity, nor can an unfinished child.
+        jdbc.update("UPDATE mes_pro_work_order_loss SET tenant_id=2");request.setQuantity(BigDecimal.ONE);assertThrows(ServiceException.class,()->service.validateChildWorkOrder(request,null));
+        jdbc.update("UPDATE mes_pro_work_order_loss SET tenant_id=1");jdbc.update("UPDATE mes_pro_work_order SET status=1 WHERE id=2");assertThrows(ServiceException.class,()->service.validateChildWorkOrder(request,null));
     }
 }

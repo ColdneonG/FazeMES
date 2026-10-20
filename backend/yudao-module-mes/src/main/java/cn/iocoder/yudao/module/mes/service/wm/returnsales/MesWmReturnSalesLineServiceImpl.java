@@ -48,12 +48,19 @@ public class MesWmReturnSalesLineServiceImpl implements MesWmReturnSalesLineServ
     @Resource
     private MesWmBatchService batchService;
     @Resource
+    private MesWmReturnSalesDeliveryService deliveryService;
+    @Resource private MesWmReturnSalesSourceService sourceService;
+    @Resource private org.springframework.jdbc.core.JdbcTemplate jdbcTemplate;
+    @Resource
     @Lazy
     private MesWmReturnSalesDetailService returnSalesDetailService;
 
     @Override
     @Transactional(rollbackFor=Exception.class)
     public Long createReturnSalesLine(MesWmReturnSalesLineSaveReqVO createReqVO) {
+        var parent=returnSalesService.validateReturnSalesExistsAndPrepare(createReqVO.getReturnId());
+        sourceService.lockOriginIds(java.util.Collections.singleton(createReqVO.getOriginTransactionId()));
+        canonicalSource(createReqVO,parent);
         validateLineSaveData(createReqVO);
 
         // 插入
@@ -61,6 +68,7 @@ public class MesWmReturnSalesLineServiceImpl implements MesWmReturnSalesLineServ
         // 质量状态自动赋值
         line.setQualityStatus(calculateQualityStatus(line.getRqcCheckFlag()));
         returnSalesLineMapper.insert(line);
+        sourceService.reserve(parent,line);
         return line.getId();
     }
 
@@ -72,9 +80,18 @@ public class MesWmReturnSalesLineServiceImpl implements MesWmReturnSalesLineServ
         if(persistedParent==null) throw exception(cn.iocoder.yudao.module.mes.enums.ErrorCodeConstants.WM_MATERIAL_STOCK_SELECTION_MISMATCH);
         updateReqVO.setReturnId(persistedParent.getReturnId());
         // 校验存在
-        MesWmReturnSalesLineDO oldLine = validateReturnSalesLineExists(updateReqVO.getId());
+        returnSalesService.validateReturnSalesExistsAndPrepare(persistedParent.getReturnId());
+        sourceService.lockOriginIds(java.util.Arrays.asList(persistedParent.getOriginTransactionId(),updateReqVO.getOriginTransactionId()));
+        MesWmReturnSalesLineDO oldLine = returnSalesLineMapper.selectByIdForUpdate(updateReqVO.getId());
+        if (oldLine == null || !Objects.equals(oldLine.getReturnId(), persistedParent.getReturnId())
+                || !Objects.equals(oldLine.getOriginTransactionId(),persistedParent.getOriginTransactionId())) {
+            throw exception(WM_RETURN_SALES_LINE_NOT_EXISTS);
+        }
         // 固定父单 ID，防止通过接口篡改
         updateReqVO.setReturnId(oldLine.getReturnId());
+        var parent=returnSalesService.validateReturnSalesExistsAndPrepare(oldLine.getReturnId());
+        sourceService.requireNoPosting(parent.getId());
+        canonicalSource(updateReqVO,parent);
         validateLineSaveData(updateReqVO);
 
         // 更新
@@ -82,6 +99,8 @@ public class MesWmReturnSalesLineServiceImpl implements MesWmReturnSalesLineServ
         // 质量状态自动赋值
         updateObj.setQualityStatus(calculateQualityStatus(updateObj.getRqcCheckFlag()));
         returnSalesLineMapper.updateById(updateObj);
+        if(!Objects.equals(oldLine.getOriginTransactionId(),updateObj.getOriginTransactionId()))sourceService.releaseLine(oldLine.getId());
+        sourceService.reserve(parent,updateObj);
     }
 
     /**
@@ -92,6 +111,31 @@ public class MesWmReturnSalesLineServiceImpl implements MesWmReturnSalesLineServ
         returnSalesService.validateReturnSalesExistsAndPrepare(reqVO.getReturnId());
         // 校验物料存在 + 批次管理
         validateItemBatchManagement(reqVO.getReturnId(), reqVO.getItemId(), reqVO.getBatchId());
+        if (reqVO.getBatchId() == null) {
+            if (cn.hutool.core.util.StrUtil.isNotBlank(reqVO.getBatchCode())) {
+                throw exception(cn.iocoder.yudao.module.mes.enums.ErrorCodeConstants.WM_MATERIAL_STOCK_SELECTION_MISMATCH);
+            }
+            reqVO.setBatchCode(null);
+        } else {
+            var batch = batchService.validateBatchExists(reqVO.getBatchId(), reqVO.getItemId());
+            if (cn.hutool.core.util.StrUtil.isNotBlank(reqVO.getBatchCode()) && !Objects.equals(reqVO.getBatchCode(), batch.getCode())) {
+                throw exception(cn.iocoder.yudao.module.mes.enums.ErrorCodeConstants.WM_MATERIAL_STOCK_SELECTION_MISMATCH);
+            }
+            reqVO.setBatchCode(batch.getCode());
+        }
+        if (reqVO.getQuantity() == null || reqVO.getQuantity().signum() <= 0 || reqVO.getQuantity().scale() > 6
+                || reqVO.getQuantity().precision() - reqVO.getQuantity().scale() > 14) {
+            throw exception(cn.iocoder.yudao.module.mes.enums.ErrorCodeConstants.WM_RETURN_SALES_DETAIL_QUANTITY_MISMATCH);
+        }
+    }
+
+    private void canonicalSource(MesWmReturnSalesLineSaveReqVO req,MesWmReturnSalesDO parent){
+        var origin=sourceService.origin(parent.getClientId(),req.getOriginTransactionId());
+        Long item=((Number)origin.get("item_id")).longValue(),batch=origin.get("batch_id")==null?null:((Number)origin.get("batch_id")).longValue();
+        String code=origin.get("batch_code")==null?null:origin.get("batch_code").toString();
+        if(req.getItemId()!=null&&!Objects.equals(req.getItemId(),item)||req.getBatchId()!=null&&!Objects.equals(req.getBatchId(),batch)
+                ||cn.hutool.core.util.StrUtil.isNotBlank(req.getBatchCode())&&!Objects.equals(req.getBatchCode(),code))throw exception(cn.iocoder.yudao.module.mes.enums.ErrorCodeConstants.WM_MATERIAL_STOCK_SELECTION_MISMATCH);
+        req.setItemId(item);req.setBatchId(batch);req.setBatchCode(code);
     }
 
     @Override
@@ -101,6 +145,12 @@ public class MesWmReturnSalesLineServiceImpl implements MesWmReturnSalesLineServ
         MesWmReturnSalesLineDO line = validateReturnSalesLineExists(id);
         // 校验主单为草稿状态才允许删除行
         returnSalesService.validateReturnSalesExistsAndPrepare(line.getReturnId());
+        sourceService.lockOriginIds(java.util.Collections.singleton(line.getOriginTransactionId()));
+        var current = returnSalesLineMapper.selectByIdForUpdate(id);
+        if (current == null || !Objects.equals(current.getReturnId(), line.getReturnId())||!Objects.equals(current.getOriginTransactionId(),line.getOriginTransactionId())) {
+            throw exception(WM_RETURN_SALES_LINE_NOT_EXISTS);
+        }
+        sourceService.releaseLine(id);
         // 级联删除该行的明细
         returnSalesDetailService.deleteReturnSalesDetailByLineId(id);
         // 删除行
@@ -123,7 +173,10 @@ public class MesWmReturnSalesLineServiceImpl implements MesWmReturnSalesLineServ
     }
 
     @Override
+    @Transactional(rollbackFor=Exception.class)
     public void deleteReturnSalesLineByReturnId(Long returnId) {
+        returnSalesService.validateReturnSalesExistsAndPrepare(returnId);
+        for(var line:sourceService.lockDocumentSources(returnId))sourceService.releaseLine(line.getId());
         returnSalesLineMapper.deleteByReturnId(returnId);
     }
 
@@ -168,18 +221,37 @@ public class MesWmReturnSalesLineServiceImpl implements MesWmReturnSalesLineServ
         if (Boolean.TRUE.equals(item.getBatchFlag()) && batchId == null) {
             throw exception(MD_ITEM_BATCH_REQUIRED);
         }
-        // 校验批次存在且属于当前物料和客户
-        if (batchId != null) {
-            // 从父单获取客户ID，校验批次归属
-            MesWmReturnSalesDO returnSales = returnSalesService.validateReturnSalesExistsAndPrepare(returnId);
-            batchService.validateBatchExists(batchId, itemId, returnSales.getClientId(), null);
-        }
+        MesWmReturnSalesDO returnSales = returnSalesService.validateReturnSalesExistsAndPrepare(returnId);
+        deliveryService.validateDelivery(returnSales.getClientId(), itemId, batchId);
     }
 
     @Override
+    @Transactional(rollbackFor = Exception.class)
     public void updateReturnSalesLineWhenRqcFinish(Long sourceLineId, Long sourceDocId, Integer checkResult,
                                                     BigDecimal qualifiedQuantity, BigDecimal unqualifiedQuantity) {
         MesWmReturnSalesLineDO sourceLine = validateReturnSalesLineExists(sourceLineId);
+        var parent = returnSalesService.validateReturnSalesExists(sourceLine.getReturnId());
+        Long locatedOrigin=sourceLine.getOriginTransactionId();
+        sourceService.lockOriginIds(java.util.Collections.singleton(locatedOrigin));
+        Long locatedRqc=sourceLine.getRqcId();
+        var actualQcs=jdbcTemplate.queryForList("SELECT * FROM mes_qc_rqc WHERE tenant_id=? AND source_doc_type=119 AND source_doc_id=? AND source_line_id=? AND deleted=0 ORDER BY id FOR UPDATE",cn.iocoder.yudao.framework.tenant.core.context.TenantContextHolder.getRequiredTenantId(),parent.getId(),sourceLineId);
+        java.util.Map<String,Object> actualQc=actualQcs.stream().filter(q->locatedRqc!=null&&Objects.equals(((Number)q.get("id")).longValue(),locatedRqc)).findFirst().orElse(null);
+        sourceLine = returnSalesLineMapper.selectByIdForUpdate(sourceLineId);
+        if (sourceLine == null || parent == null || !Objects.equals(parent.getStatus(), MesWmReturnSalesStatusEnum.CONFIRMED.getStatus())
+                || (sourceDocId != null && !Objects.equals(parent.getId(), sourceDocId))
+                || !Objects.equals(sourceLine.getReturnId(), parent.getId())
+                || !Objects.equals(sourceLine.getOriginTransactionId(),locatedOrigin)
+                || !Objects.equals(sourceLine.getRqcId(),locatedRqc)
+                || !Objects.equals(sourceLine.getQualityStatus(), MesWmQualityStatusEnum.PENDING.getStatus())) {
+            throw exception(cn.iocoder.yudao.module.mes.enums.ErrorCodeConstants.WM_MATERIAL_STOCK_SELECTION_MISMATCH);
+        }
+        sourceService.validateLine(parent,sourceLine);
+        sourceDocId = parent.getId(); // Always advance the actual locked source document, including legacy null callbacks.
+        qualifiedQuantity = qualifiedQuantity == null ? BigDecimal.ZERO : qualifiedQuantity;
+        unqualifiedQuantity = unqualifiedQuantity == null ? BigDecimal.ZERO : unqualifiedQuantity;
+        cn.iocoder.yudao.module.mes.service.wm.quality.MesWmQualityPolicy.validateInspectionSplit(
+                sourceLine.getQuantity(), qualifiedQuantity, unqualifiedQuantity, checkResult);
+        validateActualRqc(sourceLine,parent,checkResult,qualifiedQuantity,unqualifiedQuantity,actualQc);
         boolean hasUnqualified = unqualifiedQuantity != null && unqualifiedQuantity.compareTo(BigDecimal.ZERO) > 0;
         boolean hasQualified = qualifiedQuantity != null && qualifiedQuantity.compareTo(BigDecimal.ZERO) > 0;
 
@@ -197,9 +269,11 @@ public class MesWmReturnSalesLineServiceImpl implements MesWmReturnSalesLineServ
             // 1.C.1 新增一行不合格品
             MesWmReturnSalesLineDO unqualifiedLine = new MesWmReturnSalesLineDO()
                     .setReturnId(sourceLine.getReturnId())
+                    .setOriginTransactionId(sourceLine.getOriginTransactionId())
                     .setItemId(sourceLine.getItemId())
                     .setQuantity(unqualifiedQuantity)
                     .setBatchId(sourceLine.getBatchId())
+                    .setBatchCode(sourceLine.getBatchCode())
                     .setRqcId(sourceLine.getRqcId())
                     .setRqcCheckFlag(sourceLine.getRqcCheckFlag())
                     .setQualityStatus(MesWmQualityStatusEnum.FAIL.getStatus())
@@ -210,17 +284,32 @@ public class MesWmReturnSalesLineServiceImpl implements MesWmReturnSalesLineServ
                     .setId(sourceLineId)
                     .setQuantity(qualifiedQuantity)
                     .setQualityStatus(MesWmQualityStatusEnum.PASS.getStatus()));
+            sourceLine.setQuantity(qualifiedQuantity);
+            sourceService.splitReservation(parent,sourceLine,unqualifiedLine);
         }
 
         // 2. 检查退货单下是否还有待检验的行，若全检完则将退货单状态设为"待上架"
         if (sourceDocId != null) {
-            List<MesWmReturnSalesLineDO> allLines = returnSalesLineMapper.selectListByReturnId(sourceDocId);
+            List<MesWmReturnSalesLineDO> allLines = returnSalesLineMapper.selectListByReturnIdForUpdate(sourceDocId);
             boolean allInspected = !CollUtil.contains(allLines,
                     line -> Objects.equals(line.getQualityStatus(), MesWmQualityStatusEnum.PENDING.getStatus()));
             if (allInspected) {
                 returnSalesService.updateReturnSalesStatus(sourceDocId, MesWmReturnSalesStatusEnum.APPROVING.getStatus());
             }
         }
+    }
+
+    private void validateActualRqc(MesWmReturnSalesLineDO line,MesWmReturnSalesDO parent,Integer result,BigDecimal good,BigDecimal bad,java.util.Map<String,Object> qc){
+        if(line.getRqcId()==null)throw exception(cn.iocoder.yudao.module.mes.enums.ErrorCodeConstants.WM_MATERIAL_STOCK_SELECTION_MISMATCH);
+        if(qc==null)throw exception(cn.iocoder.yudao.module.mes.enums.ErrorCodeConstants.WM_MATERIAL_STOCK_SELECTION_MISMATCH);
+        if(!Objects.equals(((Number)qc.get("status")).intValue(),4)||!Objects.equals(((Number)qc.get("source_doc_type")).intValue(),119)
+                ||!Objects.equals(((Number)qc.get("source_doc_id")).longValue(),parent.getId())||!Objects.equals(((Number)qc.get("source_line_id")).longValue(),line.getId())
+                ||!Objects.equals(((Number)qc.get("item_id")).longValue(),line.getItemId())||!Objects.equals(qc.get("batch_code"),line.getBatchCode())
+                ||new BigDecimal(qc.get("check_quantity").toString()).compareTo(line.getQuantity())!=0
+                ||!Objects.equals(((Number)qc.get("check_result")).intValue(),result)
+                ||new BigDecimal(qc.get("qualified_quantity").toString()).compareTo(good==null?BigDecimal.ZERO:good)!=0
+                ||new BigDecimal(qc.get("unqualified_quantity").toString()).compareTo(bad==null?BigDecimal.ZERO:bad)!=0)
+            throw exception(cn.iocoder.yudao.module.mes.enums.ErrorCodeConstants.WM_MATERIAL_STOCK_SELECTION_MISMATCH);
     }
 
 }

@@ -1,6 +1,13 @@
 <!-- MES 外协收货明细表单弹窗 -->
 <template>
   <Dialog :title="dialogTitle" v-model="dialogVisible" width="600px">
+    <el-alert
+      :title="returnQualityGuidance(qualityStatus)"
+      type="warning"
+      :closable="false"
+      show-icon
+      class="!mb-16px"
+    />
     <el-form
       ref="formRef"
       :model="formData"
@@ -15,12 +22,17 @@
         <el-input v-model="formData.batchCode" placeholder="请输入批次号" />
       </el-form-item>
       <el-form-item label="入库仓库" prop="warehouseId">
-        <WmWarehouseSelect v-model="formData.warehouseId" />
+        <WmWarehouseSelect
+          v-model="formData.warehouseId"
+          :quarantine-filter="qualityStatus === 2 ? 'only' : 'all'"
+          @change="handleWarehouseChange"
+        />
       </el-form-item>
       <el-form-item label="库区" prop="locationId" v-if="formData.warehouseId">
         <WmWarehouseLocationSelect
           v-model="formData.locationId"
           :warehouse-id="formData.warehouseId"
+          @change="formData.areaId = undefined"
         />
       </el-form-item>
       <el-form-item label="库位" prop="areaId" v-if="formData.locationId">
@@ -40,7 +52,12 @@
       </el-form-item>
     </el-form>
     <template #footer>
-      <el-button @click="submitForm" type="primary" :disabled="formLoading">确 定</el-button>
+      <el-button
+        @click="submitForm"
+        type="primary"
+        :disabled="formLoading || qualityStatus == null || qualityStatus === 0"
+        >确 定</el-button
+      >
       <el-button @click="dialogVisible = false">取 消</el-button>
     </template>
   </Dialog>
@@ -51,6 +68,8 @@ import {
   WmOutsourceReceiptDetailApi,
   WmOutsourceReceiptDetailVO
 } from '@/api/mes/wm/outsourcereceipt/detail'
+import { WmOutsourceReceiptLineApi } from '@/api/mes/wm/outsourcereceipt/line'
+import { returnQualityGuidance } from '../qualityPolicy'
 import MdItemSelect from '@/views/mes/md/item/components/MdItemSelect.vue'
 import WmWarehouseSelect from '@/views/mes/wm/warehouse/components/WmWarehouseSelect.vue'
 import WmWarehouseLocationSelect from '@/views/mes/wm/warehouse/components/WmWarehouseLocationSelect.vue'
@@ -72,6 +91,7 @@ const dialogTitle = ref('')
 const formLoading = ref(false)
 const formType = ref('')
 const currentLineId = ref<number>()
+const qualityStatus = ref<number>()
 const formRef = ref()
 const formData = ref({
   id: undefined as number | undefined,
@@ -95,27 +115,39 @@ const formRules = reactive({
 })
 
 /** 打开弹窗 */
-const open = async (type: string, lineId: number, itemId?: number, detailId?: number) => {
+const handleWarehouseChange = () => {
+  formData.value.locationId = undefined
+  formData.value.areaId = undefined
+}
+
+const open = async (type: string, lineId: number, _itemId?: number, detailId?: number) => {
   dialogVisible.value = true
   dialogTitle.value = type === 'create' ? '添加收货明细' : '编辑收货明细'
   formType.value = type
   currentLineId.value = lineId
   resetForm()
-  if (detailId) {
-    formLoading.value = true
-    try {
+  formLoading.value = true
+  try {
+    const line = await WmOutsourceReceiptLineApi.getOutsourceReceiptLine(lineId)
+    qualityStatus.value = line.qualityStatus
+    if (detailId) {
       formData.value = await WmOutsourceReceiptDetailApi.getOutsourceReceiptDetail(detailId)
-    } finally {
-      formLoading.value = false
+    } else {
+      formData.value.itemId = line.itemId
+      formData.value.batchCode = line.batchCode
     }
-  } else if (itemId) {
-    formData.value.itemId = itemId
+  } finally {
+    formLoading.value = false
   }
 }
 defineExpose({ open })
 
 /** 提交表单 */
 const submitForm = async () => {
+  if (qualityStatus.value == null || qualityStatus.value === 0) {
+    message.warning(returnQualityGuidance(qualityStatus.value))
+    return
+  }
   await formRef.value.validate()
   formLoading.value = true
   try {
@@ -140,6 +172,7 @@ const submitForm = async () => {
 
 /** 重置表单 */
 const resetForm = () => {
+  qualityStatus.value = undefined
   formData.value = {
     id: undefined,
     lineId: undefined,

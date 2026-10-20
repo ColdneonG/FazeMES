@@ -117,6 +117,16 @@ public class MesWmOutsourceReceiptLineServiceImpl implements MesWmOutsourceRecei
     }
 
     @Override
+    public MesWmOutsourceReceiptLineDO getOutsourceReceiptLineForUpdate(Long id) {
+        return lineMapper.selectByIdForUpdate(id);
+    }
+
+    @Override
+    public List<MesWmOutsourceReceiptLineDO> getOutsourceReceiptLineListByReceiptIdForUpdate(Long receiptId) {
+        return lineMapper.selectListByReceiptIdForUpdate(receiptId);
+    }
+
+    @Override
     public PageResult<MesWmOutsourceReceiptLineDO> getOutsourceReceiptLinePage(MesWmOutsourceReceiptLinePageReqVO pageReqVO) {
         return lineMapper.selectPage(pageReqVO);
     }
@@ -188,8 +198,7 @@ public class MesWmOutsourceReceiptLineServiceImpl implements MesWmOutsourceRecei
 
     private void lockDocumentForEdit(Long id) {
         var document=documentMapper.selectForUpdate(id);
-        if(document==null || (!java.util.Objects.equals(document.getStatus(),cn.iocoder.yudao.module.mes.enums.MesOrderStatusConstants.PREPARE)
-            && !java.util.Objects.equals(document.getStatus(),cn.iocoder.yudao.module.mes.enums.MesOrderStatusConstants.APPROVING)))
+        if(document==null || !java.util.Objects.equals(document.getStatus(),cn.iocoder.yudao.module.mes.enums.MesOrderStatusConstants.PREPARE))
             throw exception(cn.iocoder.yudao.module.mes.enums.ErrorCodeConstants.WM_OUTSOURCE_RECEIPT_STATUS_ERROR);
     }
 }

@@ -109,4 +109,8 @@ public class MesProFeedbackSaveReqVO {
     @Schema(description = "备注", example = "备注")
     private String remark;
 
+    @jakarta.validation.Valid
+    @jakarta.validation.constraints.Size(max=1000)
+    private java.util.List<MesProFeedbackFlowVO.Source> sources;
+
 }

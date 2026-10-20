@@ -4,6 +4,8 @@ import cn.idev.excel.annotation.ExcelIgnoreUnannotated;
 import cn.idev.excel.annotation.ExcelProperty;
 import io.swagger.v3.oas.annotations.media.Schema;
 import lombok.Data;
+import com.fasterxml.jackson.databind.annotation.JsonSerialize;
+import com.fasterxml.jackson.databind.ser.std.ToStringSerializer;
 
 import java.math.BigDecimal;
 import java.time.LocalDateTime;
@@ -75,14 +77,17 @@ public class MesQcRqcRespVO {
 
     @Schema(description = "检测数量", example = "100")
     @ExcelProperty("检测数量")
+    @JsonSerialize(using=ToStringSerializer.class)
     private BigDecimal checkQuantity;
 
     @Schema(description = "合格品数量", example = "90")
     @ExcelProperty("合格品数量")
+    @JsonSerialize(using=ToStringSerializer.class)
     private BigDecimal qualifiedQuantity;
 
     @Schema(description = "不合格数量", example = "10")
     @ExcelProperty("不合格数量")
+    @JsonSerialize(using=ToStringSerializer.class)
     private BigDecimal unqualifiedQuantity;
 
     // ========== 缺陷统计 ==========

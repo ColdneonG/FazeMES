@@ -15,6 +15,15 @@ export interface WmWarehouseVO {
 
 // MES 仓库 API
 export const WmWarehouseApi = {
+  // 幂等创建本租户质量隔离仓、库区和库位，不创建库存。
+  initializeQualityQuarantine: async (): Promise<{
+    warehouseId: number
+    locationId: number
+    areaId: number
+  }> => {
+    return await request.post({ url: '/mes/wm/warehouse/initialize-quality-quarantine' })
+  },
+
   // 查询仓库分页
   getWarehousePage: async (params: any) => {
     return await request.get({ url: '/mes/wm/warehouse/page', params })

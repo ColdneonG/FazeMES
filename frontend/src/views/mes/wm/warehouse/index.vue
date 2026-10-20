@@ -1,5 +1,4 @@
 <template>
-
   <ContentWrap>
     <el-form
       class="-mb-15px"
@@ -43,6 +42,15 @@
         >
           <Icon icon="ep:plus" class="mr-5px" /> 新增
         </el-button>
+        <el-button
+          type="warning"
+          plain
+          :loading="initializingQuarantine"
+          @click="initializeQuarantine"
+          v-hasPermi="['mes:wm-warehouse:create']"
+        >
+          初始化隔离仓
+        </el-button>
       </el-form-item>
     </el-form>
   </ContentWrap>
@@ -56,7 +64,14 @@
           </el-link>
         </template>
       </el-table-column>
-      <el-table-column label="仓库名称" align="center" prop="name" min-width="140" />
+      <el-table-column label="仓库名称" align="center" prop="name" min-width="140">
+        <template #default="{ row }">
+          {{ row.name }}
+          <el-tag v-if="isQualityQuarantineWarehouse(row.code)" size="small" type="danger"
+            >质量隔离 · 禁止出库</el-tag
+          >
+        </template>
+      </el-table-column>
       <el-table-column label="仓库地址" align="center" prop="address" min-width="150" />
       <el-table-column label="面积（㎡）" align="center" prop="area" min-width="100" />
       <el-table-column label="负责人" align="center" prop="chargeUserId" min-width="100">
@@ -95,6 +110,7 @@
             link
             type="primary"
             @click="openForm('update', scope.row.id)"
+            v-if="!isQualityQuarantineWarehouse(scope.row.code)"
             v-hasPermi="['mes:wm-warehouse:update']"
           >
             编辑
@@ -103,6 +119,7 @@
             link
             type="danger"
             @click="handleDelete(scope.row.id)"
+            v-if="!isQualityQuarantineWarehouse(scope.row.code)"
             v-hasPermi="['mes:wm-warehouse:delete']"
           >
             删除
@@ -139,6 +156,7 @@ import * as UserApi from '@/api/system/user'
 import WarehouseForm from './WarehouseForm.vue'
 import { BarcodeDetail } from '@/views/mes/wm/barcode/components'
 import { BarcodeBizTypeEnum } from '@/views/mes/utils/constants'
+import { isQualityQuarantineWarehouse } from '../qualityPolicy'
 
 defineOptions({ name: 'MesWmWarehouse' })
 
@@ -150,6 +168,7 @@ const loading = ref(true) // 列表的加载中
 const list = ref<WmWarehouseVO[]>([]) // 列表的数据
 const userList = ref<UserApi.UserVO[]>([]) // 用户列表
 const total = ref(0) // 列表的总页数
+const initializingQuarantine = ref(false)
 const queryParams = reactive({
   pageNo: 1,
   pageSize: 10,
@@ -158,6 +177,17 @@ const queryParams = reactive({
   frozen: undefined
 }) // 查询参数
 const queryFormRef = ref() // 查询表单 Ref
+
+const initializeQuarantine = async () => {
+  initializingQuarantine.value = true
+  try {
+    await WmWarehouseApi.initializeQualityQuarantine()
+    message.success('质量隔离仓已就绪，仅创建仓库、库区和库位配置，未创建库存')
+    await getList()
+  } finally {
+    initializingQuarantine.value = false
+  }
+}
 
 /** 加载用户列表 */
 const loadUserList = async () => {

@@ -36,6 +36,8 @@ public class MesWmReturnSalesLineDO extends BaseDO {
      * 关联 {@link MesWmReturnSalesDO#getId()}
      */
     private Long returnId;
+    /** Exact immutable original negative sales-outbound transaction, never guessed from batch. */
+    private Long originTransactionId;
     /**
      * 物料 ID
      *

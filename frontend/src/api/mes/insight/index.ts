@@ -1,4 +1,12 @@
 import request from '@/config/axios'
+import type {
+  BusinessAnswer,
+  BusinessAskInput,
+  BusinessConversation,
+  BusinessHistory,
+  StockEvidence
+} from './business'
+export type { BusinessAnswer as Answer } from './business'
 
 export interface Reason {
   type: string
@@ -193,14 +201,6 @@ export interface Draft {
   incidentId?: number
   at?: string
 }
-export interface Answer {
-  answer: string
-  mode: string
-  topic: string
-  evidence: Record<string, unknown>
-  suggestions: Draft[]
-  generatedAt: string
-}
 const base = '/mes/insight'
 export const InsightApi = {
   jevStatus: () => request.get<JevStatus>({ url: `${base}/jev/status` }),
@@ -242,8 +242,31 @@ export const InsightApi = {
     request.get<Record<string, unknown>[]>({ url: `${base}/incident-history`, params: { id } }),
   createIncident: (data: IncidentInput) => request.post<number>({ url: `${base}/incident`, data }),
   moveIncident: (data: IncidentMove) => request.put({ url: `${base}/incident`, data }),
-  ask: (question: string, useModel: boolean) =>
-    request.post<Answer>({ url: `${base}/assistant`, data: { question, useModel } }),
+  ask: (input: string | BusinessAskInput, useModel = false) =>
+    request.post<BusinessAnswer>({
+      url: `${base}/assistant`,
+      data: typeof input === 'string' ? { question: input, useModel } : input,
+      timeout: 90000
+    }),
+  conversationPage: (pageNo = 1, pageSize = 20) =>
+    request.get<{ list: BusinessConversation[]; total: number }>({
+      url: `${base}/conversation/page`,
+      params: { pageNo, pageSize }
+    }),
+  createConversation: (title?: string) =>
+    request.post<BusinessConversation>({ url: `${base}/conversation/create`, data: { title } }),
+  conversation: (id: number, beforeTurnId?: number, pageSize = 20) =>
+    request.get<BusinessHistory>({
+      url: `${base}/conversation/get`,
+      params: { id, beforeTurnId, pageSize }
+    }),
+  deleteConversation: (id: number, version: number) =>
+    request.delete<boolean>({ url: `${base}/conversation/delete`, params: { id, version } }),
+  conversationEvidence: (turnId: number, pageNo = 1, pageSize = 20) =>
+    request.get<StockEvidence>({
+      url: `${base}/conversation/evidence`,
+      params: { turnId, pageNo, pageSize }
+    }),
   drafts: () => request.get<Draft[]>({ url: `${base}/drafts` }),
   saveDraft: (data: Pick<Draft, 'title' | 'content' | 'workOrderId'>) =>
     request.post<number>({ url: `${base}/draft`, data }),

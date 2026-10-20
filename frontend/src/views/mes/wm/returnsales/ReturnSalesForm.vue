@@ -94,6 +94,16 @@
         :client-id="formData.clientId"
         :sales-order-code="formData.salesOrderCode"
       />
+      <el-button
+        v-if="checkPermi(['mes:cost:query'])"
+        class="mt-16px"
+        @click="costOpen = !costOpen"
+        >{{ costOpen ? '收起退货成本' : '查看退货成本' }}</el-button
+      >
+      <ReturnSalesCostPanel
+        v-if="costOpen && dialogVisible && checkPermi(['mes:cost:query'])"
+        :return-id="formData.id"
+      />
     </template>
     <template #footer>
       <el-button v-if="isEditable" @click="submitForm" type="primary" :disabled="formLoading">
@@ -124,12 +134,15 @@ import { AutoCodeRecordApi } from '@/api/mes/md/autocode/record'
 import { MesAutoCodeRuleCode, MesWmReturnSalesStatusEnum } from '@/views/mes/utils/constants'
 import MdClientSelect from '@/views/mes/md/client/components/MdClientSelect.vue'
 import ReturnSalesLineList from './ReturnSalesLineList.vue'
+import ReturnSalesCostPanel from '@/views/mes/cost/components/ReturnSalesCostPanel.vue'
+import { checkPermi } from '@/utils/permission'
 
 defineOptions({ name: 'ReturnSalesForm' })
 const emit = defineEmits(['success'])
 
 const message = useMessage() // 消息弹窗
 const dialogVisible = ref(false) // 弹窗的是否展示
+const costOpen = ref(false)
 const formLoading = ref(false) // 表单的加载中
 const formType = ref<string>('create') // 表单的类型：create / update / stock / finish / detail
 const isEditable = computed(() => ['create', 'update'].includes(formType.value)) // 是否为编辑模式
@@ -177,6 +190,7 @@ const generateCode = async () => {
 
 /** 打开弹窗 */
 const open = async (type: string, id?: number) => {
+  costOpen.value = false
   dialogVisible.value = true
   formType.value = type
   resetForm()

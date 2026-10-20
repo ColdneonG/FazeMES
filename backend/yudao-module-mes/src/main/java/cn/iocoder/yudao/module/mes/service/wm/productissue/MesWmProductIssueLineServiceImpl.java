@@ -18,10 +18,12 @@ import org.springframework.transaction.annotation.Transactional;
 import org.springframework.validation.annotation.Validated;
 
 import java.util.List;
+import java.util.Objects;
 
 import static cn.iocoder.yudao.framework.common.exception.util.ServiceExceptionUtil.exception;
 import static cn.iocoder.yudao.module.mes.enums.ErrorCodeConstants.WM_PRODUCT_ISSUE_LINE_ITEM_NOT_IN_BOM;
 import static cn.iocoder.yudao.module.mes.enums.ErrorCodeConstants.WM_PRODUCT_ISSUE_LINE_NOT_EXISTS;
+import static cn.iocoder.yudao.module.mes.enums.ErrorCodeConstants.WM_PRODUCT_ISSUE_DETAIL_LINE_NOT_MATCH;
 
 /**
  * MES 领料出库单行 Service 实现类
@@ -57,9 +59,17 @@ public class MesWmProductIssueLineServiceImpl implements MesWmProductIssueLineSe
 
     @Override
     public void updateProductIssueLine(MesWmProductIssueLineSaveReqVO updateReqVO) {
-        // 校验存在
-        validateProductIssueLineExists(updateReqVO.getId());
+        MesWmProductIssueLineDO located = validateProductIssueLineExists(updateReqVO.getId());
+        issueService.validateProductIssueExistsAndPrepare(located.getIssueId());
+        MesWmProductIssueLineDO current = validateProductIssueLineExistsForUpdate(located.getId());
+        if (!Objects.equals(current.getIssueId(),located.getIssueId()) || !Objects.equals(current.getIssueId(),updateReqVO.getIssueId())) {
+            throw exception(WM_PRODUCT_ISSUE_DETAIL_LINE_NOT_MATCH);
+        }
         validateProductIssueLineSaveData(updateReqVO);
+        if (!Objects.equals(current.getItemId(),updateReqVO.getItemId())
+                && !issueDetailService.getProductIssueDetailListByLineIdForUpdate(current.getId()).isEmpty()) {
+            throw exception(WM_PRODUCT_ISSUE_DETAIL_LINE_NOT_MATCH);
+        }
 
         // 更新
         MesWmProductIssueLineDO updateObj = BeanUtils.toBean(updateReqVO, MesWmProductIssueLineDO.class);
@@ -72,6 +82,8 @@ public class MesWmProductIssueLineServiceImpl implements MesWmProductIssueLineSe
         MesWmProductIssueLineDO line = validateProductIssueLineExists(id);
         // 校验主单为草稿状态才允许删除行
         issueService.validateProductIssueExistsAndPrepare(line.getIssueId());
+        MesWmProductIssueLineDO current = validateProductIssueLineExistsForUpdate(id);
+        if (!Objects.equals(current.getIssueId(),line.getIssueId())) throw exception(WM_PRODUCT_ISSUE_DETAIL_LINE_NOT_MATCH);
         // 级联删除该行的明细
         issueDetailService.deleteProductIssueDetailByLineId(id);
         // 删除行
@@ -95,6 +107,10 @@ public class MesWmProductIssueLineServiceImpl implements MesWmProductIssueLineSe
 
     @Override
     public void deleteProductIssueLineByIssueId(Long issueId) {
+        issueService.validateProductIssueExistsAndPrepare(issueId);
+        // This public cascade is safe even when invoked without the header-delete facade.
+        issueLineMapper.selectListByIssueIdForUpdate(issueId);
+        issueDetailService.deleteProductIssueDetailByIssueId(issueId);
         issueLineMapper.deleteByIssueId(issueId);
     }
 
@@ -105,6 +121,14 @@ public class MesWmProductIssueLineServiceImpl implements MesWmProductIssueLineSe
             throw exception(WM_PRODUCT_ISSUE_LINE_NOT_EXISTS);
         }
         return line;
+    }
+    @Override public MesWmProductIssueLineDO validateProductIssueLineExistsForUpdate(Long id) {
+        MesWmProductIssueLineDO line=issueLineMapper.selectByIdForUpdate(id);
+        if(line==null)throw exception(WM_PRODUCT_ISSUE_LINE_NOT_EXISTS);
+        return line;
+    }
+    @Override public List<MesWmProductIssueLineDO> getProductIssueLineListByIssueIdForUpdate(Long issueId) {
+        return issueLineMapper.selectListByIssueIdForUpdate(issueId);
     }
 
     /**

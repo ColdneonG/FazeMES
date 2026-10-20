@@ -39,6 +39,7 @@ public class MesWmSalesNoticeServiceImpl implements MesWmSalesNoticeService {
     private MesWmSalesNoticeLineService salesNoticeLineService;
     @Resource
     private MesMdClientService clientService;
+    @Resource private MesWmSalesNoticeFulfillmentService fulfillmentService;
 
     @Override
     public Long createSalesNotice(MesWmSalesNoticeSaveReqVO createReqVO) {
@@ -53,6 +54,7 @@ public class MesWmSalesNoticeServiceImpl implements MesWmSalesNoticeService {
     }
 
     @Override
+    @Transactional(rollbackFor=Exception.class)
     public void updateSalesNotice(MesWmSalesNoticeSaveReqVO updateReqVO) {
         // 校验存在 + 草稿状态
         validateSalesNoticeExistsAndDraft(updateReqVO.getId());
@@ -96,6 +98,7 @@ public class MesWmSalesNoticeServiceImpl implements MesWmSalesNoticeService {
         if (CollUtil.isEmpty(lines)) {
             throw exception(WM_SALES_NOTICE_LINE_EMPTY);
         }
+        for(var line:lines)fulfillmentService.requireQuantity(line.getQuantity());
 
         // 2. 更新状态：草稿 → 待出库
         salesNoticeMapper.updateById(new MesWmSalesNoticeDO()
@@ -123,7 +126,9 @@ public class MesWmSalesNoticeServiceImpl implements MesWmSalesNoticeService {
      * 校验发货通知单存在且为草稿状态
      */
     private MesWmSalesNoticeDO validateSalesNoticeExistsAndDraft(Long id) {
-        MesWmSalesNoticeDO notice = validateSalesNoticeExists(id);
+        fulfillmentService.requireDraftNoticeWithoutSales(id);
+        MesWmSalesNoticeDO notice = salesNoticeMapper.selectForUpdate(id);
+        if(notice==null)throw exception(WM_SALES_NOTICE_NOT_EXISTS);
         if (ObjUtil.notEqual(PREPARE.getStatus(), notice.getStatus())) {
             throw exception(WM_SALES_NOTICE_STATUS_NOT_ALLOW_DELETE);
         }

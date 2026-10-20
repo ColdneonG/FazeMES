@@ -1,8 +1,12 @@
 package cn.iocoder.yudao.module.mes.service.insight;
 
 import org.junit.jupiter.api.Test;
+import org.junit.jupiter.params.ParameterizedTest;
+import org.junit.jupiter.params.provider.Arguments;
+import org.junit.jupiter.params.provider.MethodSource;
 import java.time.*;
 import java.util.*;
+import java.util.stream.Stream;
 import static org.junit.jupiter.api.Assertions.*;
 
 class MesScheduleEngineTest {
@@ -34,5 +38,43 @@ class MesScheduleEngineTest {
         assertEquals(monday.plusHours(10),overtime.finishes().get(1L));
         assertEquals(2.0,overtime.overtimeHours(),.0001);
         assertEquals(0.0,baseline.overtimeHours());
+    }
+
+    private static Stream<Arguments> actualWorkingWindows() {
+        var monday = LocalDateTime.of(2026,10,19,8,0);
+        var tuesday = monday.plusDays(1);
+        var friday = monday.plusDays(4).withHour(15);
+        return Stream.of(
+                Arguments.of("ordinary shift crosses a night", monday, 540, 8, tuesday.plusHours(1), 0.0),
+                Arguments.of("extended shift crosses a night", monday, 660, 10, tuesday.plusHours(1), 2.0),
+                Arguments.of("two complete extended shifts", monday, 1200, 10, tuesday.plusHours(10), 4.0),
+                Arguments.of("weekend contains no work", friday, 240, 10, monday.plusWeeks(1).plusHours(1), 2.0),
+                Arguments.of("minute boundary in ordinary shift", monday.withHour(15).withMinute(59), 2, 8, tuesday.plusMinutes(1), 0.0),
+                Arguments.of("maximum extended shift crosses a night", monday, 780, 12, tuesday.plusHours(1), 4.0),
+                Arguments.of("starts at overtime boundary", monday.withHour(16), 120, 10, monday.withHour(18), 2.0),
+                Arguments.of("starts at closed shift boundary", monday.withHour(18), 1, 10, tuesday.plusMinutes(1), 0.0),
+                Arguments.of("ends exactly at ordinary shift boundary", monday, 480, 8, monday.withHour(16), 0.0),
+                Arguments.of("one real overtime minute", monday.withHour(15).withMinute(59), 2, 10, monday.withHour(16).plusMinutes(1), 1.0 / 60)
+        );
+    }
+
+    @ParameterizedTest(name = "{0}")
+    @MethodSource("actualWorkingWindows")
+    void overtimeIncludesOnlyScheduledWorkingMinutes(String description, LocalDateTime start, double minutes,
+                                                     int dailyHours, LocalDateTime expectedEnd, double expectedOvertime) {
+        var task = new MesScheduleEngine.Job(1,1,1,description,start,start.plusWeeks(2),minutes,1);
+        var plan = MesScheduleEngine.schedule(List.of(task),start,dailyHours,null);
+        assertEquals(expectedEnd,plan.finishes().get(1L));
+        assertEquals(expectedOvertime,plan.slots().get(0).overtimeHours(),0.0000001);
+        assertEquals(expectedOvertime,plan.overtimeHours(),0.0000001);
+    }
+
+    @Test void parallelStationsAccumulateResourceHoursEvenWhenCalendarWindowsOverlap() {
+        var plan = MesScheduleEngine.schedule(List.of(job(1,1,1,600,1),job(2,2,2,600,1)),monday,10,1L);
+        assertEquals(monday.plusHours(10),plan.finishes().get(1L));
+        assertEquals(monday.plusHours(10),plan.finishes().get(2L));
+        assertEquals(2.0,plan.slots().get(0).overtimeHours());
+        assertEquals(2.0,plan.slots().get(1).overtimeHours());
+        assertEquals(4.0,plan.overtimeHours());
     }
 }

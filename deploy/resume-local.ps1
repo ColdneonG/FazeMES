@@ -78,13 +78,12 @@ try {
     Wait-Port 'mysql' 3308
     $dbProbe = & $mysqlClient ("--defaults-extra-file="+(Join-Path $runtimeRoot 'mysql-client.local.ini')) --batch --skip-column-names --execute 'SELECT 1;' 2>&1
     if ($LASTEXITCODE -ne 0 -or ($dbProbe -join '').Trim() -ne '1') { throw 'Existing database could not be read; check the local MySQL configuration.' }
-    # Digest-tracked, pending migrations must precede starting the new application.
-    & (Join-Path $PSScriptRoot 'apply-migrations.ps1') -MysqlClient $mysqlClient
     Start-Managed 'redis' 6381 $redisExe @((Join-Path $runtimeRoot 'redis.local.conf')) $runtimeRoot
     Wait-Port 'redis' 6381
     Start-Managed 'face-auth' 8091 $facePython @((Join-Path $projectRoot 'face-auth\app.py'),'--model-dir',(Join-Path $faceRoot 'models'),'--token-file',$faceTokenFile) $projectRoot
-    if ($Build) { & (Join-Path $PSScriptRoot 'restart-backend.ps1') -Build }
-    else { Start-Managed 'backend' 48080 $javaExe @('-Xms128m','-Xmx1536m','-Dfile.encoding=UTF-8','-jar',$jarPath,'--spring.profiles.active=meslocal',('--spring.config.additional-location=file:'+$configPath.Replace('\','/'))) $projectRoot }
+    # Restart owns the stop -> migration -> optional build -> start sequence, also
+    # when resuming without a build. Never migrate underneath an old live writer.
+    & (Join-Path $PSScriptRoot 'restart-backend.ps1') -Build:$Build
     Start-Managed 'frontend' 5173 $nodeExe @('--max-old-space-size=4096',$vitePath,'--mode','env.local','--host','127.0.0.1','--port','5173','--strictPort') (Join-Path $projectRoot 'frontend')
     Write-Host 'Waiting for services to become ready...'
     foreach ($service in @(@{Name='backend'; Url='http://127.0.0.1:48080/admin-api/system/tenant/get-by-website?website=127.0.0.1:5173'},@{Name='frontend'; Url='http://127.0.0.1:5173/'},@{Name='face-auth'; Url='http://127.0.0.1:8091/health'; Headers=@{'X-Faze-Face-Token'=(Get-Content -LiteralPath $faceTokenFile -Raw).Trim()}})) {

@@ -43,6 +43,7 @@ public class MesWmProductSalesDetailServiceImpl implements MesWmProductSalesDeta
     private MesWmMaterialStockService materialStockService;
     @Resource
     private MesWmWarehouseAreaService warehouseAreaService;
+    @Resource private cn.iocoder.yudao.module.mes.service.wm.salesnotice.MesWmSalesNoticeFulfillmentService fulfillmentService;
 
     @Override
     @Transactional(rollbackFor=Exception.class)
@@ -63,8 +64,11 @@ public class MesWmProductSalesDetailServiceImpl implements MesWmProductSalesDeta
         var persisted=productSalesDetailMapper.selectById(updateReqVO.getId());
         if(persisted==null) throw exception(cn.iocoder.yudao.module.mes.enums.ErrorCodeConstants.WM_PRODUCT_SALES_CANNOT_PICK);
         lockDocumentForEdit(persisted.getSalesId());
+        persisted=productSalesDetailMapper.selectByIdForUpdate(updateReqVO.getId());
+        if(persisted==null)throw exception(WM_PRODUCT_SALES_DETAIL_NOT_EXISTS);
         if(!java.util.Objects.equals(persisted.getSalesId(),updateReqVO.getSalesId()))
             throw exception(cn.iocoder.yudao.module.mes.enums.ErrorCodeConstants.WM_PRODUCT_SALES_CANNOT_PICK);
+        if(!java.util.Objects.equals(persisted.getLineId(),updateReqVO.getLineId()))throw exception(WM_PRODUCT_SALES_DETAIL_LINE_NOT_MATCH);
         // 校验存在
         validateProductSalesDetailExists(updateReqVO.getId());
         // 校验数据
@@ -94,7 +98,7 @@ public class MesWmProductSalesDetailServiceImpl implements MesWmProductSalesDeta
 
     @Override
     public List<MesWmProductSalesDetailDO> getProductSalesDetailListBySalesId(Long salesId) {
-        return productSalesDetailMapper.selectListBySalesId(salesId);
+        return productSalesDetailMapper.selectListBySalesIdForUpdate(salesId);
     }
 
     @Override
@@ -103,12 +107,16 @@ public class MesWmProductSalesDetailServiceImpl implements MesWmProductSalesDeta
     }
 
     @Override
+    @Transactional(rollbackFor=Exception.class)
     public void deleteProductSalesDetailByLineId(Long lineId) {
+        var line=productSalesLineService.validateProductSalesLineExists(lineId);lockDocumentForEdit(line.getSalesId());
         productSalesDetailMapper.deleteByLineId(lineId);
     }
 
     @Override
+    @Transactional(rollbackFor=Exception.class)
     public void deleteProductSalesDetailBySalesId(Long salesId) {
+        lockDocumentForEdit(salesId);
         productSalesDetailMapper.deleteBySalesId(salesId);
     }
 
@@ -122,7 +130,8 @@ public class MesWmProductSalesDetailServiceImpl implements MesWmProductSalesDeta
 
     private void validateProductSalesDetailSaveData(MesWmProductSalesDetailSaveReqVO reqVO) {
         // 校验父数据（行）存在
-        MesWmProductSalesLineDO line = productSalesLineService.getProductSalesLine(reqVO.getLineId());
+        MesWmProductSalesLineDO line = productSalesLineService.getProductSalesLineListBySalesId(reqVO.getSalesId()).stream()
+                .filter(row->java.util.Objects.equals(row.getId(),reqVO.getLineId())).findFirst().orElse(null);
         if (line == null) {
             throw exception(WM_PRODUCT_SALES_LINE_NOT_EXISTS);
         }
@@ -134,6 +143,9 @@ public class MesWmProductSalesDetailServiceImpl implements MesWmProductSalesDeta
         if (ObjUtil.notEqual(line.getItemId(), reqVO.getItemId())) {
             throw exception(WM_PRODUCT_SALES_DETAIL_ITEM_MISMATCH);
         }
+        fulfillmentService.requireQuantity(reqVO.getQuantity());
+        if(line.getBatchId()!=null&&!java.util.Objects.equals(line.getBatchId(),reqVO.getBatchId())
+                ||line.getBatchCode()!=null&&!line.getBatchCode().isBlank()&&!java.util.Objects.equals(line.getBatchCode(),reqVO.getBatchCode()))throw exception(WM_PRODUCT_SALES_LINE_NOTICE_LINE_BATCH_MISMATCH);
         // 校验库位存在
         warehouseAreaService.validateWarehouseAreaExists(
                 reqVO.getWarehouseId(), reqVO.getLocationId(), reqVO.getAreaId());
@@ -144,7 +156,8 @@ public class MesWmProductSalesDetailServiceImpl implements MesWmProductSalesDeta
     }
 
     private void lockDocumentForEdit(Long id) {
-        var document=documentMapper.selectForUpdate(id);
+        var document=fulfillmentService.lockSales(id);
+        fulfillmentService.requireNoPosting(id);
         if(document==null || (!java.util.Objects.equals(document.getStatus(),cn.iocoder.yudao.module.mes.enums.MesOrderStatusConstants.PREPARE)
             && !java.util.Objects.equals(document.getStatus(),cn.iocoder.yudao.module.mes.enums.MesOrderStatusConstants.APPROVING)))
             throw exception(cn.iocoder.yudao.module.mes.enums.ErrorCodeConstants.WM_PRODUCT_SALES_CANNOT_PICK);

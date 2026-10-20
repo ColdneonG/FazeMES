@@ -1,4 +1,12 @@
 import request from '@/config/axios'
+import type {
+  UsagePolicy,
+  UsagePolicySave,
+  UsageSummary,
+  UsagePageParams,
+  UsageRow,
+  UsageReconcile
+} from './usage'
 
 export interface KnowledgeBase {
   id: number
@@ -39,7 +47,7 @@ export interface AssistantMessage {
   id: number
   role: 'user' | 'assistant'
   content: string
-  status: 'ANSWERED' | 'MODEL_NOT_CONFIGURED' | 'MODEL_ERROR'
+  status: 'PROCESSING' | 'ANSWERED' | 'MODEL_NOT_CONFIGURED' | 'MODEL_ERROR'
   citations: Citation[]
   modelName: string
   createTime: number | string
@@ -52,6 +60,8 @@ export interface AssistantSession {
 }
 export interface ModelStatus {
   configured: boolean
+  budgetReady?: boolean
+  blockReason?: string | null
   provider: string
   model: string
   retrievalMode: 'lexical_bm25'
@@ -75,6 +85,14 @@ export interface SearchResult {
 }
 const url = '/mes/assistant'
 export const AssistantApi = {
+  usagePolicy: () => request.get<UsagePolicy>({ url: `${url}/usage-policy` }),
+  saveUsagePolicy: (data: UsagePolicySave) =>
+    request.put<UsagePolicy>({ url: `${url}/usage-policy`, data }),
+  usageSummary: () => request.get<UsageSummary>({ url: `${url}/usage-summary` }),
+  usagePage: (params: UsagePageParams) =>
+    request.get<{ list: UsageRow[]; total: number }>({ url: `${url}/usage-page`, params }),
+  reconcileUsage: (data: UsageReconcile) =>
+    request.post<UsageRow>({ url: `${url}/usage-reconcile`, data }),
   status: () => request.get<ModelStatus>({ url: `${url}/status` }),
   bases: () => request.get<KnowledgeBase[]>({ url: `${url}/bases` }),
   saveBase: (data: { id?: number; name: string; description: string }) =>

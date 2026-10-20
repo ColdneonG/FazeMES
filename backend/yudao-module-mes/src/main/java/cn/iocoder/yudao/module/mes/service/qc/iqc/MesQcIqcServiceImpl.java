@@ -130,6 +130,13 @@ public class MesQcIqcServiceImpl implements MesQcIqcService {
         if (iqc.getCheckResult() == null) {
             throw exception(QC_IQC_CHECK_RESULT_EMPTY);
         }
+        if (Objects.equals(iqc.getSourceDocType(), MesBizTypeConstants.WM_OUTSOURCE_RECPT)) {
+            BigDecimal qualified = iqc.getQualifiedQuantity() == null ? BigDecimal.ZERO : iqc.getQualifiedQuantity();
+            BigDecimal rejected = iqc.getUnqualifiedQuantity() == null ? BigDecimal.ZERO : iqc.getUnqualifiedQuantity();
+            // A FAIL conclusion with no rejected quantity must never be rewritten as a PASS source line.
+            cn.iocoder.yudao.module.mes.service.wm.quality.MesWmQualityPolicy.validateInspectionSplit(
+                    qualified.add(rejected), qualified, rejected, iqc.getCheckResult());
+        }
         // 1.2 校验至少存在一条检测结果
         indicatorResultService.validateIndicatorResultExistsByQcIdAndType(id, MesQcTypeEnum.IQC.getType());
 

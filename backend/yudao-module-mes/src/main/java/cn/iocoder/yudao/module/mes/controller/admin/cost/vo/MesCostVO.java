@@ -78,6 +78,10 @@ public final class MesCostVO {
         @NotNull private Long id;
         @NotBlank @Size(max=500) private String reason;
     }
+    @Data public static class LossAllocation {
+        @NotNull private Long workorderId;
+        @NotBlank @Size(max=500) private String reason;
+    }
     @Data public static class WorkorderCost {
         private Long workorderId;
         private String status;
@@ -95,6 +99,11 @@ public final class MesCostVO {
         @com.fasterxml.jackson.annotation.JsonFormat(shape = com.fasterxml.jackson.annotation.JsonFormat.Shape.STRING) private BigDecimal actualTotalCost;
         @com.fasterxml.jackson.annotation.JsonFormat(shape = com.fasterxml.jackson.annotation.JsonFormat.Shape.STRING) private BigDecimal producedQuantity;
         @com.fasterxml.jackson.annotation.JsonFormat(shape = com.fasterxml.jackson.annotation.JsonFormat.Shape.STRING) private BigDecimal actualUnitCost;
+        @com.fasterxml.jackson.annotation.JsonFormat(shape = com.fasterxml.jackson.annotation.JsonFormat.Shape.STRING) private BigDecimal lossQuantity;
+        private String lossAllocationMethod;
+        private String lossAllocationReason;
+        private Long lossAllocatedBy;
+        @com.fasterxml.jackson.annotation.JsonFormat(pattern = "yyyy-MM-dd'T'HH:mm:ss") private LocalDateTime lossAllocatedAt;
         private List<String> issues = new ArrayList<>();
         private List<Effort> efforts = new ArrayList<>();
     }
@@ -122,6 +131,54 @@ public final class MesCostVO {
         @com.fasterxml.jackson.annotation.JsonFormat(shape = com.fasterxml.jackson.annotation.JsonFormat.Shape.STRING) private BigDecimal grossProfit;
         @com.fasterxml.jackson.annotation.JsonFormat(shape = com.fasterxml.jackson.annotation.JsonFormat.Shape.STRING) private BigDecimal grossMargin;
         private List<SaleLine> lines = new ArrayList<>();
+        private List<String> issues = new ArrayList<>();
+    }
+    @Data public static class ReturnSaleLine {
+        private Long lineId;
+        private Long itemId;
+        private String itemCode;
+        private String itemName;
+        @com.fasterxml.jackson.annotation.JsonFormat(shape = com.fasterxml.jackson.annotation.JsonFormat.Shape.STRING) private BigDecimal quantity;
+        @com.fasterxml.jackson.annotation.JsonFormat(shape = com.fasterxml.jackson.annotation.JsonFormat.Shape.STRING) private BigDecimal postedQuantity;
+        private Long originTransactionId;
+        private Long originSalesId;
+        private String originSalesCode;
+        private Long originSalesLineId;
+        @com.fasterxml.jackson.annotation.JsonFormat(shape = com.fasterxml.jackson.annotation.JsonFormat.Shape.STRING) private BigDecimal materialAmount;
+        @com.fasterxml.jackson.annotation.JsonFormat(shape = com.fasterxml.jackson.annotation.JsonFormat.Shape.STRING) private BigDecimal laborAmount;
+        @com.fasterxml.jackson.annotation.JsonFormat(shape = com.fasterxml.jackson.annotation.JsonFormat.Shape.STRING) private BigDecimal overheadAmount;
+        @com.fasterxml.jackson.annotation.JsonFormat(shape = com.fasterxml.jackson.annotation.JsonFormat.Shape.STRING) private BigDecimal costAmount;
+        private String status;
+        private List<String> issues = new ArrayList<>();
+    }
+    @Data public static class ReturnSaleOriginal {
+        private Long originTransactionId;
+        private Long salesId;
+        private String salesCode;
+        private Long salesLineId;
+        private Long itemId;
+        private String itemCode;
+        private String itemName;
+        @com.fasterxml.jackson.annotation.JsonFormat(shape = com.fasterxml.jackson.annotation.JsonFormat.Shape.STRING) private BigDecimal outboundQuantity;
+        @com.fasterxml.jackson.annotation.JsonFormat(shape = com.fasterxml.jackson.annotation.JsonFormat.Shape.STRING) private BigDecimal returnedQuantity;
+        @com.fasterxml.jackson.annotation.JsonFormat(shape = com.fasterxml.jackson.annotation.JsonFormat.Shape.STRING) private BigDecimal remainingQuantity;
+        @com.fasterxml.jackson.annotation.JsonFormat(shape = com.fasterxml.jackson.annotation.JsonFormat.Shape.STRING) private BigDecimal originalCostAmount;
+        @com.fasterxml.jackson.annotation.JsonFormat(shape = com.fasterxml.jackson.annotation.JsonFormat.Shape.STRING) private BigDecimal returnedCostAmount;
+        @com.fasterxml.jackson.annotation.JsonFormat(shape = com.fasterxml.jackson.annotation.JsonFormat.Shape.STRING) private BigDecimal remainingCostAmount;
+        private String status;
+        private List<String> issues = new ArrayList<>();
+    }
+    @Data public static class ReturnSale {
+        private Long returnId;
+        private String returnCode;
+        private String status;
+        private Boolean posted;
+        @com.fasterxml.jackson.annotation.JsonFormat(shape = com.fasterxml.jackson.annotation.JsonFormat.Shape.STRING) private BigDecimal materialAmount;
+        @com.fasterxml.jackson.annotation.JsonFormat(shape = com.fasterxml.jackson.annotation.JsonFormat.Shape.STRING) private BigDecimal laborAmount;
+        @com.fasterxml.jackson.annotation.JsonFormat(shape = com.fasterxml.jackson.annotation.JsonFormat.Shape.STRING) private BigDecimal overheadAmount;
+        @com.fasterxml.jackson.annotation.JsonFormat(shape = com.fasterxml.jackson.annotation.JsonFormat.Shape.STRING) private BigDecimal costAmount;
+        private List<ReturnSaleLine> lines = new ArrayList<>();
+        private List<ReturnSaleOriginal> originals = new ArrayList<>();
         private List<String> issues = new ArrayList<>();
     }
 }

@@ -16,6 +16,7 @@ class MesWmTransactionAreaLockTest {
     @Spy @InjectMocks private MesWmTransactionServiceImpl service;
     @Mock private MesWmMaterialStockService materialStockService;
     @Mock private cn.iocoder.yudao.module.mes.service.cost.MesCostService costService;
+    @Mock private cn.iocoder.yudao.module.mes.service.wm.returnsales.MesWmReturnSalesSourceService returnSourceService;
 
     @Test
     void batchPrelocksDistinctAreasInOrderBeforeAnyMovement() {
@@ -24,7 +25,8 @@ class MesWmTransactionAreaLockTest {
         var third = new MesWmTransactionSaveReqDTO().setAreaId(90L);
         doReturn(1L).when(service).createTransaction(any());
         service.createTransactionList(List.of(first, second, third));
-        var locks = inOrder(materialStockService, service);
+        var locks = inOrder(returnSourceService, materialStockService, service);
+        locks.verify(returnSourceService).preflight(List.of(first, second, third));
         locks.verify(materialStockService).lockStockArea(20L);
         locks.verify(materialStockService).lockStockArea(90L);
         locks.verify(service).createTransaction(first);

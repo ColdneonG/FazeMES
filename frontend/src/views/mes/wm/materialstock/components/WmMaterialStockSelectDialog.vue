@@ -60,6 +60,7 @@
             <el-form-item label="仓库">
               <WmWarehouseSelect
                 v-model="queryParams.warehouseId"
+                :quarantine-filter="outboundOnly ? 'exclude' : 'all'"
                 @change="handleWarehouseChange"
                 class="!w-220px"
               />
@@ -109,6 +110,7 @@
               v-if="multiple"
               type="selection"
               :reserve-selection="true"
+              :selectable="canSelectStock"
               width="50"
               align="center"
             />
@@ -118,6 +120,7 @@
                 <el-radio
                   v-model="selectedRadioId"
                   :value="row.id"
+                  :disabled="!canSelectStock(row)"
                   class="radio-no-label"
                   @change="handleRadioChange(row)"
                 />
@@ -130,6 +133,12 @@
             <el-table-column label="所属工单" prop="workOrderCode" min-width="140" />
             <el-table-column label="入库批次号" align="center" prop="batchCode" min-width="120" />
             <el-table-column label="仓库" align="center" prop="warehouseName" min-width="100" />
+            <el-table-column label="质量管控" min-width="180">
+              <template #default="{ row }">
+                <span v-if="stockQualityBlockReason(row)">{{ stockQualityBlockReason(row) }}</span>
+                <span v-else>—</span>
+              </template>
+            </el-table-column>
             <el-table-column label="库区" align="center" prop="locationName" min-width="100" />
             <el-table-column label="库位" align="center" prop="areaName" min-width="100" />
             <el-table-column label="在库数量" align="center" prop="quantity" min-width="100" />
@@ -168,6 +177,7 @@ import MdVendorSelect from '@/views/mes/md/vendor/components/MdVendorSelect.vue'
 import WmWarehouseSelect from '@/views/mes/wm/warehouse/components/WmWarehouseSelect.vue'
 import WmWarehouseLocationSelect from '@/views/mes/wm/warehouse/components/WmWarehouseLocationSelect.vue'
 import WmWarehouseAreaSelect from '@/views/mes/wm/warehouse/components/WmWarehouseAreaSelect.vue'
+import { stockQualityBlockReason, stockSelectionFilters } from '../../qualityPolicy'
 
 defineOptions({ name: 'WmMaterialStockSelectDialog' })
 
@@ -180,9 +190,11 @@ const props = withDefaults(
     batchId?: number // 按批次 ID 过滤
     warehouseId?: number // 按仓库 ID 过滤
     virtualFilter?: 'exclude' | 'only' | 'all' // 虚拟仓过滤：'exclude' 排除（默认），'only' 只看，'all' 不过滤
+    outboundOnly?: boolean // 出库选择默认排除隔离仓、质量待核对及冻结库存；盘点可查看全部
   }>(),
   {
     multiple: true,
+    outboundOnly: true,
     virtualFilter: 'exclude'
   }
 )
@@ -204,22 +216,25 @@ const selectedRows = ref<WmMaterialStockVO[]>([]) // 多选模式：选中行
 const selectedRadioId = ref<number>() // 单选模式：选中 ID
 const currentRadioRow = ref<WmMaterialStockVO>() // 单选模式：选中行对象
 const preSelectedIds = ref<number[]>([]) // 打开弹窗时传入的已选 ID
+const canSelectStock = (row: WmMaterialStockVO) =>
+  !props.outboundOnly || !stockQualityBlockReason(row)
 
 /** 多选：checkbox 变化 */
 const handleSelectionChange = (rows: WmMaterialStockVO[]) => {
   if (props.multiple) {
-    selectedRows.value = rows
+    selectedRows.value = rows.filter(canSelectStock)
   }
 }
 
 /** 单选：radio 变化 */
 const handleRadioChange = (row: WmMaterialStockVO) => {
+  if (!canSelectStock(row)) return
   currentRadioRow.value = row
 }
 
 /** 单击行：单选模式下点击整行即选中（降低操作成本），多选不处理（避免和 dblclick 冲突） */
 const handleRowClick = (row: WmMaterialStockVO) => {
-  if (props.multiple) {
+  if (props.multiple || !canSelectStock(row)) {
     return
   }
   selectedRadioId.value = row.id
@@ -228,6 +243,10 @@ const handleRowClick = (row: WmMaterialStockVO) => {
 
 /** 双击行：多选模式切换勾选，单选模式直接确认 */
 const handleRowDblClick = (row: WmMaterialStockVO) => {
+  if (!canSelectStock(row)) {
+    message.warning(stockQualityBlockReason(row))
+    return
+  }
   if (props.multiple) {
     tableRef.value?.toggleRowSelection(row)
     return
@@ -282,7 +301,8 @@ const getList = async () => {
       workOrderId: props.workOrderId,
       vendorId: props.vendorId ?? queryParams.vendorId,
       itemId: props.itemId ?? queryParams.itemId,
-      batchId: props.batchId ?? queryParams.batchId
+      batchId: props.batchId ?? queryParams.batchId,
+      ...stockSelectionFilters(props.outboundOnly)
     })
     list.value = data.list
     total.value = data.total
@@ -304,12 +324,14 @@ const applyPreSelection = () => {
       return
     }
     list.value.forEach((row) => {
-      if (preSelectedIds.value.includes(row.id)) {
+      if (preSelectedIds.value.includes(row.id) && canSelectStock(row)) {
         table.toggleRowSelection(row, true)
       }
     })
   } else {
-    const match = list.value.find((row) => preSelectedIds.value.includes(row.id))
+    const match = list.value.find(
+      (row) => preSelectedIds.value.includes(row.id) && canSelectStock(row)
+    )
     if (match) {
       selectedRadioId.value = match.id
       currentRadioRow.value = match
@@ -341,6 +363,16 @@ const resetQuery = () => {
 
 /** 确认选择 */
 const confirmSelect = () => {
+  const candidates = props.multiple
+    ? selectedRows.value
+    : currentRadioRow.value
+      ? [currentRadioRow.value]
+      : []
+  const blocked = candidates.find((row) => !canSelectStock(row))
+  if (blocked) {
+    message.warning(stockQualityBlockReason(blocked))
+    return
+  }
   if (props.multiple) {
     if (selectedRows.value.length === 0) {
       message.warning('请至少选择一条数据')
@@ -407,12 +439,14 @@ const alertTitle = computed(() => {
   if (props.virtualFilter === 'only') {
     parts.push('只看虚拟仓')
   }
-  return `已按${parts.join('/')}预过滤`
+  const scope = parts.length ? `已按${parts.join('/')}预过滤。` : ''
+  return scope + (props.outboundOnly ? '已排除冻结、质量待核对和隔离仓库存。' : '')
 })
 
 /** 是否显示 alert 提示 */
 const showAlert = computed(() => {
   return (
+    props.outboundOnly ||
     props.workOrderId != null ||
     props.vendorId != null ||
     props.batchId != null ||

@@ -27,7 +27,13 @@
           <div>物料编码：{{ selectedItem.itemCode }}</div>
           <div>物料名称：{{ selectedItem.itemName }}</div>
           <div>规格型号：{{ selectedItem.specification || '-' }}</div>
-          <div>发货数量：{{ selectedItem.quantity }}</div>
+          <div>通知计划：{{ selectedItem.noticeQuantity }}</div>
+          <div>已发货：{{ selectedItem.shippedQuantity }}</div>
+          <div>未过账占用：{{ selectedItem.reservedQuantity }}</div>
+          <div>本行当前可填：{{ selectedItem.editableAvailableQuantity }}</div>
+          <div v-if="!selectedItem.fulfillmentReliable">{{
+            selectedItem.fulfillmentWarning || '历史履约数据待核对'
+          }}</div>
         </div>
       </template>
       <el-input
@@ -45,6 +51,7 @@
     ref="dialogRef"
     :multiple="false"
     :notice-id="noticeId"
+    :editing-sales-line-id="editingSalesLineId"
     @selected="handleSelected"
   />
 </template>
@@ -53,6 +60,7 @@
 import { WmSalesNoticeLineApi, WmSalesNoticeLineVO } from '@/api/mes/wm/salesnotice/line'
 import { Search, CircleClose } from '@element-plus/icons-vue'
 import WmSalesNoticeLineSelectDialog from './WmSalesNoticeLineSelectDialog.vue'
+import { canSelectNoticeLine } from '../fulfillment'
 
 // 组件有两个根节点（div + Dialog），Vue 不会自动继承 attrs；
 // 手动透传到外层 div，确保父组件传入的 class / style 等生效
@@ -64,6 +72,7 @@ const props = withDefaults(
   defineProps<{
     modelValue?: number // 绑定的发货通知单行 ID
     noticeId?: number // 发货通知单 ID
+    editingSalesLineId?: number
     disabled?: boolean // 是否禁用
     clearable?: boolean // 是否允许清空
     placeholder?: string // 占位文字
@@ -85,6 +94,7 @@ const hovering = ref(false) // 鼠标是否悬停
 
 // ==================== 名称回显 ====================
 const selectedItem = ref<WmSalesNoticeLineVO | undefined>() // 当前选中的行对象
+let resolveVersion = 0
 
 /** 输入框显示文本：展示 "物料编码 - 物料名称"，保持简洁易读 */
 const displayLabel = computed(() => {
@@ -106,25 +116,30 @@ const suffixIcon = computed(() => {
 
 /** 根据 ID 单条查询行信息（用于编辑回显） */
 const resolveItemById = async (id: number | undefined) => {
+  const version = ++resolveVersion
+  selectedItem.value = undefined
   if (id == null) {
     selectedItem.value = undefined
     return
   }
-  if (selectedItem.value?.id === id) {
-    return
-  }
   try {
-    selectedItem.value = await WmSalesNoticeLineApi.getSalesNoticeLine(id)
-  } catch (e) {
-    console.error('[WmSalesNoticeLineSelect] resolveItemById failed:', e)
+    const item = await WmSalesNoticeLineApi.getSalesNoticeLine(id, props.editingSalesLineId)
+    if (
+      version === resolveVersion &&
+      item.id === props.modelValue &&
+      item.noticeId === props.noticeId
+    )
+      selectedItem.value = item
+  } catch {
+    if (version === resolveVersion) selectedItem.value = undefined
   }
 }
 
 /** 监听 modelValue 变化，触发回显 */
 watch(
-  () => props.modelValue,
-  (val) => {
-    resolveItemById(val)
+  () => [props.modelValue, props.editingSalesLineId],
+  () => {
+    void resolveItemById(props.modelValue)
   },
   { immediate: true }
 )
@@ -133,6 +148,7 @@ watch(
 watch(
   () => props.noticeId,
   () => {
+    ++resolveVersion
     selectedItem.value = undefined
     emit('update:modelValue', undefined)
     emit('change', undefined)
@@ -142,7 +158,7 @@ watch(
 // ==================== 点击交互 ====================
 
 /** 点击组件：清除或打开弹窗 */
-const handleClick = (e: MouseEvent) => {
+const handleClick = async (e: MouseEvent) => {
   if (props.disabled) {
     return
   }
@@ -150,6 +166,7 @@ const handleClick = (e: MouseEvent) => {
   const target = e.target as HTMLElement
   if (showClear.value && target.closest('.el-input__suffix')) {
     e.stopPropagation()
+    ++resolveVersion
     selectedItem.value = undefined
     emit('update:modelValue', undefined)
     emit('change', undefined)
@@ -157,7 +174,7 @@ const handleClick = (e: MouseEvent) => {
   }
   // 打开弹窗，传入当前选中 ID 用于预选高亮
   const selectedIds = props.modelValue != null ? [props.modelValue] : []
-  dialogRef.value.open(selectedIds)
+  await Promise.all([resolveItemById(props.modelValue), dialogRef.value.open(selectedIds)])
 }
 
 /** 弹窗选中回调 */
@@ -166,6 +183,7 @@ const handleSelected = (rows: WmSalesNoticeLineVO[]) => {
     return
   }
   const item = rows[0]
+  if (item.noticeId !== props.noticeId || !canSelectNoticeLine(item)) return
   selectedItem.value = item
   emit('update:modelValue', item.id)
   emit('change', item)

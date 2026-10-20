@@ -1,11 +1,13 @@
 package cn.iocoder.yudao.module.mes.service.assistant;
 
 import cn.iocoder.yudao.framework.apilog.core.annotation.ApiAccessLog;
+import cn.iocoder.yudao.framework.security.core.LoginUser;
+import cn.iocoder.yudao.framework.security.core.util.SecurityFrameworkUtils;
 import cn.iocoder.yudao.module.mes.controller.admin.assistant.MesAssistantController;
 import org.junit.jupiter.api.Test;
+import org.springframework.mock.web.MockHttpServletRequest;
 import org.springframework.security.access.prepost.PreAuthorize;
 import org.springframework.security.access.AccessDeniedException;
-import org.springframework.security.authentication.UsernamePasswordAuthenticationToken;
 import org.springframework.security.config.annotation.method.configuration.EnableMethodSecurity;
 import org.springframework.security.core.context.SecurityContextHolder;
 import org.springframework.context.annotation.AnnotationConfigApplicationContext;
@@ -15,6 +17,7 @@ import org.springframework.web.bind.annotation.*;
 import java.util.Arrays;
 import java.util.HashSet;
 import java.util.List;
+import java.util.Map;
 import java.util.Set;
 import static org.junit.jupiter.api.Assertions.*;
 
@@ -32,7 +35,10 @@ class MesAssistantControllerPolicyTest extends MesAssistantTestDatabase {
             public boolean hasScope(String scope) { return false; }
             public boolean hasAnyScopes(String... scopes) { return false; }
         };
-        SecurityContextHolder.getContext().setAuthentication(new UsernamePasswordAuthenticationToken("test-user", "unused", List.of()));
+        // Exercise method permissions with the same trusted tenant/user principal as real requests.
+        // A string-only principal deliberately fails the production usage actor checks.
+        SecurityFrameworkUtils.setLoginUser(new LoginUser().setId(10L).setTenantId(1L).setUserType(2),
+                new MockHttpServletRequest());
         try (var context = new AnnotationConfigApplicationContext()) {
             context.register(MethodSecurityConfiguration.class);
             context.registerBean("ss", SecurityFrameworkService.class, () -> permissionService);
@@ -43,7 +49,10 @@ class MesAssistantControllerPolicyTest extends MesAssistantTestDatabase {
             assertThrows(AccessDeniedException.class, controller::testModelConfig);
             assertThrows(AccessDeniedException.class, controller::resetModelConfig);
             permissions.add("mes:assistant:query");
-            assertNotNull(controller.status().getData());
+            var status = controller.status().getData();
+            assertNotNull(status);
+            assertEquals(true, ((Map<?, ?>) status).get("budgetReady"),
+                    "The fixture explicitly seeds an enabled test policy; querying it does not grant config permission");
             assertThrows(AccessDeniedException.class, controller::modelConfig);
             permissions.add("mes:assistant:config");
             assertNotNull(controller.modelConfig().getData());

@@ -103,13 +103,26 @@ public class MesWmMaterialStockServiceImpl implements MesWmMaterialStockService 
         }
 
         // 2. 分页查询
-        return materialStockMapper.selectPage(pageReqVO, itemTypeIds, itemIds, virtualWarehouseId);
+        Long quarantineWarehouseId = null;
+        if ("exclude".equals(pageReqVO.getQuarantineFilter()) || "only".equals(pageReqVO.getQuarantineFilter())) {
+            var quarantine = warehouseService.getWarehouseByCode(
+                    cn.iocoder.yudao.module.mes.service.wm.quality.MesWmQualityPolicy.QUARANTINE_WAREHOUSE);
+            // No configured quarantine means no matching rows for only, no exclusions for exclude.
+            quarantineWarehouseId = quarantine == null ? -1L : quarantine.getId();
+        }
+        return materialStockMapper.selectPage(pageReqVO, itemTypeIds, itemIds, virtualWarehouseId, quarantineWarehouseId);
     }
 
     @Override
+    @Transactional(rollbackFor = Exception.class)
     public void updateMaterialStockFrozen(MesWmMaterialStockFreezeReqVO updateReqVO) {
         // 校验存在
-        validateMaterialStockExists(updateReqVO.getId());
+        var before = validateMaterialStockExists(updateReqVO.getId());
+        lockStockArea(before.getAreaId());
+        var stock = materialStockMapper.selectByIdForUpdate(updateReqVO.getId());
+        if (Boolean.FALSE.equals(updateReqVO.getFrozen())) {
+            cn.iocoder.yudao.module.mes.service.wm.quality.MesWmQualityPolicy.validateNoHistoricalHold(stock);
+        }
 
         // 更新冻结状态
         materialStockMapper.updateById(new MesWmMaterialStockDO()
@@ -117,8 +130,23 @@ public class MesWmMaterialStockServiceImpl implements MesWmMaterialStockService 
     }
 
     @Override
+    @Transactional(rollbackFor = Exception.class)
     public void updateMaterialStockFrozen(Collection<Long> ids, boolean frozen) {
         if (CollUtil.isEmpty(ids)) {
+            return;
+        }
+        getMaterialStockList(ids).stream().map(MesWmMaterialStockDO::getAreaId).distinct().sorted()
+                .forEach(this::lockStockArea);
+        if (!frozen) {
+            // Internal transfer-cancel / count-complete releases its ordinary freeze,
+            // while the independent historical quality hold must survive unchanged.
+            var current = materialStockMapper.selectList(new LambdaQueryWrapperX<MesWmMaterialStockDO>()
+                    .in(MesWmMaterialStockDO::getId, ids).orderByAsc(MesWmMaterialStockDO::getId).last("FOR UPDATE"));
+            var releasable = current.stream().filter(stock -> !Boolean.TRUE.equals(stock.getQualityHold()))
+                    .map(MesWmMaterialStockDO::getId).toList();
+            if (!releasable.isEmpty()) {
+                materialStockMapper.updateByIds(releasable, new MesWmMaterialStockDO().setFrozen(false));
+            }
             return;
         }
         materialStockMapper.updateByIds(ids, new MesWmMaterialStockDO().setFrozen(frozen));

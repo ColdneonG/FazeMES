@@ -33,6 +33,7 @@ public class MesWmOutsourceReceiptDetailServiceImpl implements MesWmOutsourceRec
     @Resource private MesWmOutsourceReceiptLineService lineService;
     @Resource
     private MesWmWarehouseAreaService areaService;
+    @Resource private cn.iocoder.yudao.module.mes.service.wm.warehouse.MesWmWarehouseService warehouseService;
 
     @Override
     @Transactional(rollbackFor=Exception.class)
@@ -108,8 +109,11 @@ public class MesWmOutsourceReceiptDetailServiceImpl implements MesWmOutsourceRec
     private void validateDetailSaveData(MesWmOutsourceReceiptDetailSaveReqVO reqVO) {
         var line=lineService.getOutsourceReceiptLine(reqVO.getLineId());
         if(line==null || !java.util.Objects.equals(line.getReceiptId(),reqVO.getReceiptId())
-            || !java.util.Objects.equals(line.getItemId(),reqVO.getItemId()) || reqVO.getQuantity()==null || reqVO.getQuantity().signum()<=0)
+            || !java.util.Objects.equals(line.getItemId(),reqVO.getItemId())
+            || !java.util.Objects.equals(line.getBatchId(),reqVO.getBatchId()) || reqVO.getQuantity()==null || reqVO.getQuantity().signum()<=0)
             throw exception(cn.iocoder.yudao.module.mes.enums.ErrorCodeConstants.WM_OUTSOURCE_RECEIPT_DETAIL_QUANTITY_MISMATCH);
+        cn.iocoder.yudao.module.mes.service.wm.quality.MesWmQualityPolicy.validateInbound(
+                line.getQualityStatus(), warehouseService.validateWarehouseExists(reqVO.getWarehouseId()));
         // 校验物料存在
         itemService.validateItemExistsAndEnable(reqVO.getItemId());
         // 校验仓库、库区、库位的层级关系

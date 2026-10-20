@@ -117,7 +117,14 @@ public class MesProductionIntegrityService {
         if (products == null || products == 0) throw invalid("子工单产品必须是可生产的产品或半成品");
         BigDecimal required = currentSum("SELECT quantity FROM mes_pro_work_order_bom WHERE work_order_id=? AND item_id=? AND tenant_id=? AND deleted=0 FOR UPDATE", parentId, request.getProductId(), tenant);
         if (required == null || required.signum() <= 0) throw invalid("子工单产品必须属于父工单本层BOM");
-        BigDecimal allocated = currentSum("SELECT quantity FROM mes_pro_work_order WHERE parent_id=? AND product_id=? AND tenant_id=? AND deleted=0 AND status<>3 AND id<>? FOR UPDATE", parentId, request.getProductId(), tenant, excludingId == null ? 0 : excludingId);
+        // Loss-closed children supply verified final good units; their original plan stays immutable.
+        // Unfinished children continue reserving the complete planned quantity.
+        BigDecimal allocated = currentSum("""
+                SELECT CASE WHEN w.status=2 AND loss.work_order_id IS NOT NULL THEN loss.qualified_quantity ELSE w.quantity END
+                FROM mes_pro_work_order w
+                LEFT JOIN mes_pro_work_order_loss loss ON loss.work_order_id=w.id AND loss.tenant_id=w.tenant_id
+                WHERE w.parent_id=? AND w.product_id=? AND w.tenant_id=? AND w.deleted=0 AND w.status<>3 AND w.id<>? FOR UPDATE
+                """, parentId, request.getProductId(), tenant, excludingId == null ? 0 : excludingId);
         if (decimal(allocated).add(request.getQuantity()).compareTo(required) > 0) throw invalid("子工单累计数量超过父工单BOM需求，不能重复生成");
     }
 

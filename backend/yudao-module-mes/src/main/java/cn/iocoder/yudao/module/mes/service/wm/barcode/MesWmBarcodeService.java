@@ -15,6 +15,8 @@ import java.util.Collection;
  */
 public interface MesWmBarcodeService {
 
+    cn.iocoder.yudao.module.mes.controller.admin.wm.barcode.vo.MesWmBarcodeLabelContextRespVO getLabelContext(Long barcodeId, Integer bizType, Long bizId);
+
     /**
      * 创建条码
      *

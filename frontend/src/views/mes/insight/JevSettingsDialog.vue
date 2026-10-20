@@ -1,7 +1,7 @@
 <template>
   <el-dialog v-model="visible" title="Jev 异常分流配置" width="min(640px,95vw)">
     <el-alert
-      title="Jev独立负责分类和部门建议；千问聊天配置继续使用。需要单独的TypeSafe API Key。"
+      title="Jev负责分类和部门建议，使用独立TypeSafe API Key。调用与连接测试均计入共享预算；请在“AI助手与知识库 → 用量与预算”设置配额。Jev未返回Token时用量显示待核定。"
       type="info"
       :closable="false"
     />

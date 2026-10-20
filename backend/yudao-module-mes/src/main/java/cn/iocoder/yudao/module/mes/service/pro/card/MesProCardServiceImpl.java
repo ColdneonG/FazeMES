@@ -46,6 +46,7 @@ public class MesProCardServiceImpl implements MesProCardService {
     private MesWmBarcodeService barcodeService;
 
     @Override
+    @Transactional(rollbackFor = Exception.class)
     public Long createCard(MesProCardSaveReqVO createReqVO) {
         // 1. 校验关联数据
         validateCardSaveData(createReqVO);

@@ -2,6 +2,7 @@ package cn.iocoder.yudao.module.mes.service.insight;
 
 import cn.iocoder.yudao.framework.tenant.core.context.TenantContextHolder;
 import cn.iocoder.yudao.module.mes.service.assistant.MesAssistantSecretStore;
+import cn.iocoder.yudao.module.mes.service.assistant.MesModelUsageService.Purpose;
 import org.springframework.jdbc.core.JdbcTemplate;
 import org.springframework.jdbc.support.GeneratedKeyHolder;
 import org.springframework.stereotype.Service;
@@ -47,18 +48,18 @@ public class MesJevTriageService {
         var stats=jdbc.queryForMap("SELECT COUNT(*) AS `generated`,COALESCE(SUM(incident_id IS NOT NULL),0) AS reviewed,COALESCE(SUM(incident_id IS NOT NULL AND category=final_category),0) AS categoryAgreed,COALESCE(SUM(incident_id IS NOT NULL AND department_id IS NOT NULL AND department_id=final_department_id),0) AS departmentAgreed FROM mes_insight_jev_triage WHERE tenant_id=? AND creator=?",tenant(),user());
         return map("configured",configured(c),"model",c.getOrDefault("model_name","jev-1.13.0"),"departments",departments(),"stats",stats);
     }
-    private MesJevClient.Decision evaluate(String title,String description,Map<String,String> departments){
+    private MesJevClient.Decision evaluate(Purpose purpose,String title,String description,Map<String,String> departments){
         var c=config();if(!configured(c)) throw invalid("Jev尚未配置或启用，请管理员填写TypeSafe密钥；仍可手动建立异常");
-        return client.evaluate(c.get("model_name").toString(),secrets.decrypt(c.get("secret_ciphertext").toString(),tenant()),title,description,departments);
+        return client.evaluate(purpose,c.get("model_name").toString(),title,description,departments);
     }
     public Map<String,Object> test(){
-        var result=evaluate("连接测试：产品尺寸检验不合格","仅用于测试，不创建业务记录。",Map.of("D_1","质量部门"));
+        var result=evaluate(Purpose.JEV_CONNECTION_TEST,"连接测试：产品尺寸检验不合格","仅用于测试，不创建业务记录。",Map.of("D_1","质量部门"));
         return map("connected",true,"model",result.model(),"message","Jev真实接口已返回有效决策；未创建异常或试点评估记录");
     }
     public Map<String,Object> suggest(String title,String description){
         long actor=user();var departmentOptions=new LinkedHashMap<String,String>();
         var deps=departments();for(var dept:deps) departmentOptions.put("D_"+dept.get("id"),dept.get("name").toString());
-        var decision=evaluate(title.strip(),text(description),departmentOptions);
+        var decision=evaluate(Purpose.JEV_TRIAGE,title.strip(),text(description),departmentOptions);
         var key=new GeneratedKeyHolder();
         jdbc.update(connection->{var statement=connection.prepareStatement("INSERT INTO mes_insight_jev_triage(tenant_id,creator,input_hash,model_name,category,department_id,category_confidence,department_confidence) VALUES(?,?,?,?,?,?,?,?)",new String[]{"id"});
             Object[] values={tenant(),actor,inputHash(title,description),decision.model(),decision.category(),decision.departmentId(),decision.categoryConfidence(),decision.departmentConfidence()};

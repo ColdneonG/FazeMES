@@ -6,6 +6,10 @@ import cn.iocoder.yudao.framework.security.core.util.SecurityFrameworkUtils;
 import cn.iocoder.yudao.framework.tenant.core.context.TenantContextHolder;
 import cn.iocoder.yudao.module.mes.controller.admin.insight.MesInsightController.IncidentCreate;
 import cn.iocoder.yudao.module.mes.service.assistant.MesAssistantSecretStore;
+import cn.iocoder.yudao.module.mes.service.assistant.MesAssistantModelGateway;
+import cn.iocoder.yudao.module.mes.service.assistant.MesModelUsageService.Purpose;
+import static org.mockito.Mockito.*;
+import static org.mockito.ArgumentMatchers.*;
 import com.fasterxml.jackson.databind.*;
 import org.junit.jupiter.api.*;
 import org.junit.jupiter.api.io.TempDir;
@@ -27,15 +31,15 @@ class MesJevTriageTest {
     @TempDir Path temporary;
     JdbcTemplate jdbc; MesJevTriageService service; MesInsightWorkflow workflow;
     MesAssistantSecretStore secrets; ObjectMapper json=new ObjectMapper();
-    JsonNode captured; String category="QUALITY",department="D_1"; boolean malformed=false;
+    MesAssistantModelGateway gateway;Purpose purpose; JsonNode captured; String category="QUALITY",department="D_1"; boolean malformed=false;
     @BeforeEach void setup(){
         var source=new DriverManagerDataSource("jdbc:h2:mem:jev_"+UUID.randomUUID()+";MODE=MySQL;DATABASE_TO_LOWER=TRUE;DB_CLOSE_DELAY=-1","sa","");
         new ResourceDatabasePopulator(new ClassPathResource("sql/production_insight.sql")).execute(source);
         jdbc=new JdbcTemplate(source);
         secrets=new MesAssistantSecretStore(new MockEnvironment().withProperty("mes.assistant.master-key-file",temporary.resolve("private/master.key").toString()));
-        var client=new MesJevClient(json){
-            @Override protected byte[] post(byte[] body,String key)throws Exception{
-                assertEquals("test-only-jev-key",key);captured=json.readTree(body);
+        gateway=mock(MesAssistantModelGateway.class);
+        when(gateway.evaluateJev(any(Purpose.class),any(byte[].class))).thenAnswer(invocation->{
+                purpose=invocation.getArgument(0);byte[] body=invocation.getArgument(1);captured=json.readTree(body);
                 var answers=new LinkedHashMap<String,Object>();
                 for(String name:List.of("category","department")){
                     var criteria=captured.path("questions").path(name).path("criteria");
@@ -44,9 +48,11 @@ class MesJevTriageTest {
                     answers.put(name,Map.of("type","choice","choice",selected,"probabilities",probabilities,"confidence",.8));
                 }
                 return json.writeValueAsBytes(Map.of("model","jev-1.13.0","answers",malformed?Map.of():answers));
-            }
-        };
-        service=new MesJevTriageService(jdbc,secrets,client);
+        });
+        var client=new MesJevClient(json,gateway);
+        var triageProxy=new ProxyFactory(new MesJevTriageService(jdbc,secrets,client));
+        triageProxy.addAdvice(new TransactionInterceptor(new DataSourceTransactionManager(source),new AnnotationTransactionAttributeSource()));
+        service=(MesJevTriageService)triageProxy.getProxy();assertTrue(org.springframework.aop.support.AopUtils.isAopProxy(service));
         var proxy=new ProxyFactory(new MesInsightWorkflow(jdbc));
         proxy.addAdvice(new TransactionInterceptor(new DataSourceTransactionManager(source),new AnnotationTransactionAttributeSource()));
         workflow=(MesInsightWorkflow)proxy.getProxy();login(1,10);
@@ -71,13 +77,13 @@ class MesJevTriageTest {
         login(1,10);service.save(new MesJevTriageService.Settings("jev-1.13.0","",true,false));assertEquals(false,service.settings().get("apiKeyConfigured"));
     }
     @Test void protocolUsesTwoAtomicChoicesOnlyExistingTenantDepartmentsAndNoAutomaticIncident(){
-        enable();var result=suggest();assertEquals("QUALITY",result.get("category"));assertEquals(1L,result.get("departmentId"));
+        enable();var result=suggest();assertEquals(Purpose.JEV_TRIAGE,purpose);assertEquals("QUALITY",result.get("category"));assertEquals(1L,result.get("departmentId"));
         assertEquals("jev-1.13.0",captured.path("model").asText());assertEquals(2,captured.path("questions").size());
         var choices=captured.path("questions").path("department").path("criteria");assertTrue(choices.has("D_1"));assertTrue(choices.has("UNKNOWN"));assertEquals(2,choices.size());
         assertFalse(captured.toString().contains("test-only-jev-key"));assertFalse(captured.has("messages"));
         assertEquals(0,jdbc.queryForObject("SELECT COUNT(*) FROM mes_insight_incident",Integer.class));
         assertEquals(1,jdbc.queryForObject("SELECT COUNT(*) FROM mes_insight_jev_triage",Integer.class));
-        service.test();assertEquals(1,jdbc.queryForObject("SELECT COUNT(*) FROM mes_insight_jev_triage",Integer.class));
+        service.test();assertEquals(Purpose.JEV_CONNECTION_TEST,purpose);assertEquals(1,jdbc.queryForObject("SELECT COUNT(*) FROM mes_insight_jev_triage",Integer.class));
     }
     @Test void humanConfirmationPersistsDepartmentAuditAndFeedbackAndCannotConsumeAdviceTwice(){
         enable();long advice=((Number)suggest().get("id")).longValue();long id=workflow.create(request(advice,1L,"尺寸异常"));

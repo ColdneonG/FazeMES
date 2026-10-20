@@ -13,6 +13,8 @@ import java.util.List;
  */
 @Mapper
 public interface MesWmProductSalesDetailMapper extends BaseMapperX<MesWmProductSalesDetailDO> {
+    default MesWmProductSalesDetailDO selectByIdForUpdate(Long id){return selectOne(new cn.iocoder.yudao.framework.mybatis.core.query.LambdaQueryWrapperX<MesWmProductSalesDetailDO>().eq(MesWmProductSalesDetailDO::getId,id).last("FOR UPDATE"));}
+    default List<MesWmProductSalesDetailDO> selectListBySalesIdForUpdate(Long id){return selectList(new cn.iocoder.yudao.framework.mybatis.core.query.LambdaQueryWrapperX<MesWmProductSalesDetailDO>().eq(MesWmProductSalesDetailDO::getSalesId,id).orderByAsc(MesWmProductSalesDetailDO::getId).last("FOR UPDATE"));}
 
     default List<MesWmProductSalesDetailDO> selectListByLineId(Long lineId) {
         return selectList(MesWmProductSalesDetailDO::getLineId, lineId);

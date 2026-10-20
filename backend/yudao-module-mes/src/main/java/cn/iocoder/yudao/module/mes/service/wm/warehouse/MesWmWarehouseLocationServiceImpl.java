@@ -16,6 +16,7 @@ import cn.iocoder.yudao.module.mes.service.wm.materialstock.MesWmMaterialStockSe
 import jakarta.annotation.Resource;
 import org.springframework.context.annotation.Lazy;
 import org.springframework.stereotype.Service;
+import org.springframework.transaction.annotation.Transactional;
 import org.springframework.validation.annotation.Validated;
 
 import java.util.Collection;
@@ -49,6 +50,7 @@ public class MesWmWarehouseLocationServiceImpl implements MesWmWarehouseLocation
     private MesWmBarcodeService barcodeService;
 
     @Override
+    @Transactional(rollbackFor = Exception.class)
     public Long createWarehouseLocation(MesWmWarehouseLocationSaveReqVO createReqVO) {
         // 校验虚拟库区不允许新增
         validateNotVirtual(createReqVO.getCode());
@@ -80,6 +82,7 @@ public class MesWmWarehouseLocationServiceImpl implements MesWmWarehouseLocation
     }
 
     private void validateWarehouseLocationSaveData(MesWmWarehouseLocationSaveReqVO reqVO) {
+        validateNotVirtual(reqVO.getCode());
         // 校验仓库存在
         warehouseService.validateWarehouseExists(reqVO.getWarehouseId());
         // 校验编码唯一
@@ -89,6 +92,7 @@ public class MesWmWarehouseLocationServiceImpl implements MesWmWarehouseLocation
     }
 
     private void validateNotVirtual(String code) {
+        cn.iocoder.yudao.module.mes.service.wm.quality.MesWmQualityPolicy.validateNotSystemCode(code);
         if (MesWmWarehouseLocationDO.WIP_VIRTUAL_LOCATION.equals(code)) {
             throw exception(WM_WAREHOUSE_LOCATION_IS_VIRTUAL);
         }

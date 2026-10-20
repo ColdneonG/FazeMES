@@ -1,5 +1,16 @@
 import request from '@/config/axios'
 
+export interface OqcSourceContext {
+  sourceDocType: number
+  sourceDocId: number
+  sourceLineId: number
+  sourceDocCode: string
+  clientId: number
+  itemId: number
+  batchCode?: string | null
+  outQuantity: string
+}
+
 // MES 出货检验单 VO
 export interface QcOqcVO {
   id: number // 编号
@@ -18,11 +29,11 @@ export interface QcOqcVO {
   itemSpecification: string // 规格型号（关联查询）
   unitName: string // 单位名称（关联查询）
   minCheckQuantity: number // 最低检测数
-  maxUnqualifiedQuantity: number // 最大不合格数
-  outQuantity: number // 本次出货数量
-  checkQuantity: number // 本次检测数量
-  qualifiedQuantity: number // 合格品数量
-  unqualifiedQuantity: number // 不合格品数量
+  maxUnqualifiedQuantity: number | string // 最大不合格数
+  outQuantity: number | string // 本次出货数量
+  checkQuantity: number | string // 本次检测数量
+  qualifiedQuantity: number | string // 合格品数量
+  unqualifiedQuantity: number | string | string // 不合格品数量
   criticalRate: number // 致命缺陷率（%）
   majorRate: number // 严重缺陷率（%）
   minorRate: number // 轻微缺陷率（%）
@@ -40,6 +51,11 @@ export interface QcOqcVO {
 
 // MES 出货检验单 API
 export const QcOqcApi = {
+  getSourceContext: (sourceDocId: number, sourceLineId: number) =>
+    request.get<OqcSourceContext>({
+      url: '/mes/qc/oqc/source-context',
+      params: { sourceDocId, sourceLineId }
+    }),
   // 查询出货检验单分页
   getOqcPage: async (params: any) => {
     return await request.get({ url: `/mes/qc/oqc/page`, params })

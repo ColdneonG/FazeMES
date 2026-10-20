@@ -13,6 +13,12 @@ import cn.iocoder.yudao.module.mes.service.wm.productsales.MesWmProductSalesLine
 import cn.iocoder.yudao.module.mes.service.wm.productsales.MesWmProductSalesService;
 import cn.iocoder.yudao.module.mes.service.qc.indicatorresult.MesQcIndicatorResultService;
 import cn.iocoder.yudao.module.system.api.user.AdminUserApi;
+import cn.iocoder.yudao.module.mes.dal.mysql.wm.productsales.MesWmProductSalesLineMapper;
+import cn.iocoder.yudao.module.mes.dal.dataobject.wm.productsales.*;
+import cn.iocoder.yudao.module.mes.service.wm.salesnotice.MesWmSalesNoticeFulfillmentService;
+import cn.iocoder.yudao.framework.common.exception.ServiceException;
+import java.math.BigDecimal;
+import java.util.List;
 import jakarta.annotation.Resource;
 import org.junit.jupiter.api.Test;
 import org.springframework.context.annotation.Import;
@@ -58,6 +64,8 @@ public class MesQcOqcServiceImplTest extends BaseDbUnitTest {
     private AdminUserApi adminUserApi;
     @MockitoBean
     private MesQcIndicatorResultService indicatorResultService;
+    @MockitoBean private MesWmSalesNoticeFulfillmentService fulfillmentService;
+    @MockitoBean private MesWmProductSalesLineMapper salesLineMapper;
 
     @Test
     public void testFinishOqc_writeBack_productSales() {
@@ -69,8 +77,12 @@ public class MesQcOqcServiceImplTest extends BaseDbUnitTest {
             o.setSourceDocType(MesBizTypeConstants.WM_PRODUCT_SALES);
             o.setSourceLineId(sourceLineId);
             o.setCheckResult(checkResult);
+            o.setOutQuantity(BigDecimal.TEN);
         });
         oqcMapper.insert(oqc);
+        var parent=new MesWmProductSalesDO().setId(oqc.getSourceDocId()).setStatus(1).setClientId(oqc.getClientId()).setCode("REAL-SALE");
+        var line=new MesWmProductSalesLineDO().setId(sourceLineId).setSalesId(parent.getId()).setItemId(oqc.getItemId()).setQuantity(BigDecimal.TEN).setBatchCode(oqc.getBatchCode()).setOqcCheckFlag(true).setQualityStatus(0);
+        when(salesLineMapper.selectById(sourceLineId)).thenReturn(line);when(salesLineMapper.selectListBySalesIdForUpdate(parent.getId())).thenReturn(List.of(line));when(fulfillmentService.lockSales(parent.getId())).thenReturn(parent);
 
         // 调用
         oqcService.finishOqc(oqc.getId());
@@ -91,6 +103,7 @@ public class MesQcOqcServiceImplTest extends BaseDbUnitTest {
             o.setCheckResult(1);
             o.setSourceDocType(null);
             o.setSourceLineId(null);
+            o.setSourceDocId(null);
         });
         oqcMapper.insert(oqc);
 
@@ -117,7 +130,7 @@ public class MesQcOqcServiceImplTest extends BaseDbUnitTest {
         oqcMapper.insert(oqc);
 
         // 调用，并断言异常
-        assertThrows(IllegalArgumentException.class, () -> oqcService.finishOqc(oqc.getId()));
+        assertThrows(ServiceException.class, () -> oqcService.finishOqc(oqc.getId()));
     }
 
     @Test
@@ -132,7 +145,7 @@ public class MesQcOqcServiceImplTest extends BaseDbUnitTest {
         oqcMapper.insert(oqc);
 
         // 调用，并断言异常
-        assertThrows(IllegalArgumentException.class, () -> oqcService.finishOqc(oqc.getId()));
+        assertThrows(ServiceException.class, () -> oqcService.finishOqc(oqc.getId()));
     }
 
     @Test
@@ -149,6 +162,7 @@ public class MesQcOqcServiceImplTest extends BaseDbUnitTest {
         // 准备参数：状态为已完成
         MesQcOqcDO oqc = randomPojo(MesQcOqcDO.class, o -> {
             o.setStatus(MesQcStatusEnum.FINISHED.getStatus());
+            o.setSourceDocType(null);o.setSourceDocId(null);o.setSourceLineId(null);
         });
         oqcMapper.insert(oqc);
 
@@ -163,6 +177,7 @@ public class MesQcOqcServiceImplTest extends BaseDbUnitTest {
             o.setStatus(MesQcStatusEnum.DRAFT.getStatus());
             o.setCheckResult(null); // 检测结论为空
             o.setSourceDocType(null);
+            o.setSourceDocId(null);o.setSourceLineId(null);
         });
         oqcMapper.insert(oqc);
 

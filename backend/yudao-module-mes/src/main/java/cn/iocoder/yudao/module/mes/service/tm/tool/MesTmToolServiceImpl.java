@@ -14,6 +14,7 @@ import cn.iocoder.yudao.module.mes.service.wm.batch.MesWmBatchService;
 import jakarta.annotation.Resource;
 import org.springframework.context.annotation.Lazy;
 import org.springframework.stereotype.Service;
+import org.springframework.transaction.annotation.Transactional;
 import org.springframework.validation.annotation.Validated;
 
 import java.util.Collection;
@@ -46,6 +47,7 @@ public class MesTmToolServiceImpl implements MesTmToolService {
     private MesWmBatchService batchService;
 
     @Override
+    @Transactional(rollbackFor = Exception.class)
     public Long createTool(MesTmToolSaveReqVO createReqVO) {
         // 校验数据
         validateToolSaveData(null, createReqVO);

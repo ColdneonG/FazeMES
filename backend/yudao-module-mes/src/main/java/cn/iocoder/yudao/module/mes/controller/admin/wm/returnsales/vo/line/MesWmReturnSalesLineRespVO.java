@@ -20,6 +20,22 @@ public class MesWmReturnSalesLineRespVO {
 
     @Schema(description = "退货单ID", requiredMode = Schema.RequiredMode.REQUIRED, example = "1")
     private Long returnId;
+    private Long originTransactionId;
+    private Long originSalesId;
+    private String originSalesCode;
+    private Long originSalesLineId;
+    @com.fasterxml.jackson.databind.annotation.JsonSerialize(using=com.fasterxml.jackson.databind.ser.std.ToStringSerializer.class)
+    private BigDecimal outboundQuantity;
+    @com.fasterxml.jackson.databind.annotation.JsonSerialize(using=com.fasterxml.jackson.databind.ser.std.ToStringSerializer.class)
+    private BigDecimal returnedQuantity;
+    @com.fasterxml.jackson.databind.annotation.JsonSerialize(using=com.fasterxml.jackson.databind.ser.std.ToStringSerializer.class)
+    private BigDecimal reservedQuantity;
+    @com.fasterxml.jackson.databind.annotation.JsonSerialize(using=com.fasterxml.jackson.databind.ser.std.ToStringSerializer.class)
+    private BigDecimal availableQuantity;
+    @com.fasterxml.jackson.databind.annotation.JsonSerialize(using=com.fasterxml.jackson.databind.ser.std.ToStringSerializer.class)
+    private BigDecimal editableAvailableQuantity;
+    private boolean sourceReliable;
+    private String sourceWarning;
 
     @Schema(description = "物料ID", requiredMode = Schema.RequiredMode.REQUIRED, example = "1")
     private Long itemId;
@@ -37,6 +53,7 @@ public class MesWmReturnSalesLineRespVO {
     private String itemUnit;
 
     @Schema(description = "退货数量", requiredMode = Schema.RequiredMode.REQUIRED, example = "100.00")
+    @com.fasterxml.jackson.databind.annotation.JsonSerialize(using=com.fasterxml.jackson.databind.ser.std.ToStringSerializer.class)
     private BigDecimal quantity;
 
     @Schema(description = "批次ID", example = "1")

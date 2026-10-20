@@ -16,9 +16,8 @@ foreach($servicePort in @(3308,6381)) {
 $jar=Join-Path $projectRoot 'backend\yudao-server\target\yudao-server.jar'
 $config=Join-Path $runtimeRoot 'application-meslocal.yaml'
 if(-not (Test-Path -LiteralPath $config)){throw 'Existing local configuration required.'}
-# Validate tools/configuration and apply pending migrations before interrupting services.
+# Validate tools/configuration before interrupting services.
 if(-not $Build -and -not (Test-LocalBackendJar -JarPath $jar)){throw 'Runnable backend JAR missing; rebuild with -Build or restore the saved previous JAR.'}
-& (Join-Path $PSScriptRoot 'apply-migrations.ps1')
 if($Build) { Backup-LocalBackend -ProjectRoot $projectRoot }
 $pidPath=Join-Path $runtimeRoot 'backend.pid'
 $backendIds=[Collections.Generic.HashSet[int]]::new()
@@ -45,6 +44,10 @@ for($attempt=0;$attempt -lt 20;$attempt++) {
  Start-Sleep -Milliseconds 250
 }
 if(@(Get-NetTCPConnection -LocalPort 48080 -State Listen -ErrorAction SilentlyContinue).Count -gt 0){throw 'Backend port is still occupied; no new application was started.'}
+# Old application code must not write new unguarded returns while quality holds
+# and source-evidence migrations inspect historical rows.
+try { & (Join-Path $PSScriptRoot 'apply-migrations.ps1') }
+catch { throw "Backend remains stopped. Resolve the migration failure before restarting; the previous application must not write across a partial schema upgrade. $($_.Exception.Message)" }
 # Windows may lock a running Spring Boot JAR. Build only after its owner has exited.
 if($Build) {
  try { Build-LocalBackend -ProjectRoot $projectRoot }

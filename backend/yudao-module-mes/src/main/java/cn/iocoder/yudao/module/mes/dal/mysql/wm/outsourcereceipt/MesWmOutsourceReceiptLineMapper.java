@@ -14,6 +14,16 @@ import java.util.List;
  */
 @Mapper
 public interface MesWmOutsourceReceiptLineMapper extends BaseMapperX<MesWmOutsourceReceiptLineDO> {
+    default MesWmOutsourceReceiptLineDO selectByIdForUpdate(Long id) {
+        return selectOne(new LambdaQueryWrapperX<MesWmOutsourceReceiptLineDO>()
+                .eq(MesWmOutsourceReceiptLineDO::getId, id).last("FOR UPDATE"));
+    }
+
+    default List<MesWmOutsourceReceiptLineDO> selectListByReceiptIdForUpdate(Long receiptId) {
+        return selectList(new LambdaQueryWrapperX<MesWmOutsourceReceiptLineDO>()
+                .eq(MesWmOutsourceReceiptLineDO::getReceiptId, receiptId)
+                .orderByAsc(MesWmOutsourceReceiptLineDO::getId).last("FOR UPDATE"));
+    }
 
     default PageResult<MesWmOutsourceReceiptLineDO> selectPage(MesWmOutsourceReceiptLinePageReqVO reqVO) {
         return selectPage(reqVO, new LambdaQueryWrapperX<MesWmOutsourceReceiptLineDO>()

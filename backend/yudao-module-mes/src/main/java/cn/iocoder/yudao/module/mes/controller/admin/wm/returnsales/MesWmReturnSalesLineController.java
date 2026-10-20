@@ -42,6 +42,15 @@ public class MesWmReturnSalesLineController {
     private MesMdItemService itemService;
     @Resource
     private MesMdUnitMeasureService unitMeasureService;
+    @Resource
+    private cn.iocoder.yudao.module.mes.service.wm.returnsales.MesWmReturnSalesSourceService sourceService;
+
+    @GetMapping("/source-options")
+    @PreAuthorize("@ss.hasAnyPermissions('mes:wm-return-sales:query','mes:wm-return-sales:create','mes:wm-return-sales:update')")
+    public CommonResult<PageResult<cn.iocoder.yudao.module.mes.controller.admin.wm.returnsales.vo.line.MesWmReturnSalesSourceRespVO>> sourceOptions(
+            @Valid cn.iocoder.yudao.module.mes.controller.admin.wm.returnsales.vo.line.MesWmReturnSalesSourcePageReqVO req) {
+        return success(sourceService.options(req));
+    }
 
     @PostMapping("/create")
     @Operation(summary = "创建销售退货单行")
@@ -110,12 +119,14 @@ public class MesWmReturnSalesLineController {
         Map<Long, MesMdUnitMeasureDO> unitMeasureMap = unitMeasureService.getUnitMeasureMap(
                 convertSet(itemMap.values(), MesMdItemDO::getUnitMeasureId));
         // 2. 构建结果
-        return BeanUtils.toBean(list, MesWmReturnSalesLineRespVO.class, vo ->
+        var values=BeanUtils.toBean(list, MesWmReturnSalesLineRespVO.class, vo ->
                 MapUtils.findAndThen(itemMap, vo.getItemId(), item -> {
                     vo.setItemCode(item.getCode()).setItemName(item.getName()).setItemSpecification(item.getSpecification());
                     MapUtils.findAndThen(unitMeasureMap, item.getUnitMeasureId(),
                             unitMeasure -> vo.setItemUnit(unitMeasure.getName()));
         }));
+        sourceService.populate(values);
+        return values;
     }
 
 }

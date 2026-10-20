@@ -46,6 +46,7 @@ public class MesMdClientServiceImpl implements MesMdClientService {
     private MesWmBarcodeService barcodeService;
 
     @Override
+    @Transactional(rollbackFor = Exception.class)
     public Long createClient(MesMdClientSaveReqVO createReqVO) {
         // 校验数据
         validateClientSaveData(createReqVO);

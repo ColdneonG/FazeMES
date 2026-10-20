@@ -1,6 +1,13 @@
 <!-- MES 采购入库上架明细表单弹窗 -->
 <template>
   <Dialog :title="dialogTitle" v-model="dialogVisible" width="600px">
+    <el-alert
+      title="来料检验不合格的物料必须进入质量隔离仓；待检验不能执行入库。隔离库存不能销售、领料或调拨出库。"
+      type="warning"
+      :closable="false"
+      show-icon
+      class="!mb-16px"
+    />
     <el-form
       ref="formRef"
       :model="formData"

@@ -5,7 +5,7 @@
       <el-tag :type="modelStatus?.configured ? 'success' : 'info'">
         {{
           modelStatus?.configured
-            ? `${modelStatus.provider} · ${modelStatus.model}`
+            ? `${modelStatus.provider} · ${modelStatus.model}（凭据已配置）`
             : '模型尚未配置'
         }}
       </el-tag>
@@ -77,6 +77,16 @@
               >
             </div>
             <el-alert
+              v-if="modelStatus?.configured && modelStatus.budgetReady === false"
+              :title="
+                modelStatus.blockReason ||
+                '模型预算尚未配置或暂不可用，文档检索仍可使用。管理员可在“用量与预算”核查。'
+              "
+              type="warning"
+              :closable="false"
+              show-icon
+            />
+            <el-alert
               v-if="!modelStatus?.configured"
               title="模型未配置：可以检索真实文档和查看引用，不会生成或伪造模型答复。管理员可在“模型配置”接入服务。"
               type="info"
@@ -103,9 +113,11 @@
                 <el-alert
                   v-if="item.role === 'user' && item.status !== 'ANSWERED'"
                   :title="
-                    item.status === 'MODEL_NOT_CONFIGURED'
-                      ? '模型未配置，本次没有模型答复。以下为真实检索结果。'
-                      : '模型服务未能返回答复；本次检索依据仍可查看。'
+                    item.status === 'PROCESSING'
+                      ? '此请求正在处理，提问已保存。长时间未完成时可重新打开会话核查；管理员可核对用量审计。'
+                      : item.status === 'MODEL_NOT_CONFIGURED'
+                        ? '模型未配置，本次没有模型答复。以下为真实检索结果。'
+                        : '模型服务未能返回答复；本次检索依据仍可查看。'
                   "
                   type="info"
                   :closable="false"
@@ -268,6 +280,11 @@
       <el-tab-pane v-if="canConfig" label="模型配置" name="config">
         <div class="assistant-config">
           <el-alert
+            title="配置凭据与调用预算分别保存。连接测试也消耗共享调用额度；请在“用量与预算”配置配额。文档检索不调用模型。"
+            type="info"
+            :closable="false"
+          />
+          <el-alert
             title="API Key仅提交到本地后端并加密保存。页面不会读取已保存的密钥；聊天和检索不会接收服务地址或密钥。"
             type="info"
             show-icon
@@ -360,6 +377,9 @@
             :closable="false"
           />
         </div>
+      </el-tab-pane>
+      <el-tab-pane v-if="canConfig" label="用量与预算" name="usage">
+        <ModelUsagePanel v-if="tab === 'usage'" @changed="refreshModelStatus" />
       </el-tab-pane>
     </el-tabs>
   </ContentWrap>
@@ -474,12 +494,13 @@ import {
 } from '@/api/mes/assistant'
 import { checkPermi } from '@/utils/permission'
 import { formatAssistantTime as time } from './assistantTime'
+import ModelUsagePanel from './ModelUsagePanel.vue'
 
 defineOptions({ name: 'MesAssistant' })
 const canChat = checkPermi(['mes:assistant:chat'])
 const canKnowledge = checkPermi(['mes:assistant:knowledge'])
 const canManage = checkPermi(['mes:assistant:manage'])
-const canConfig = checkPermi(['mes:assistant:config'])
+const canConfig = computed(() => checkPermi(['mes:assistant:config']))
 const tab = ref(canChat || canKnowledge ? 'chat' : canManage ? 'knowledge' : 'config')
 const error = ref('')
 const modelStatus = ref<ModelStatus>()
@@ -786,6 +807,7 @@ function changeProvider() {
     config.baseUrl = 'https://api.openai.com/v1'
 }
 async function saveConfig() {
+  if (!canConfig.value || configSaving.value) return
   if (!config.model.trim() || !config.baseUrl.trim())
     return ElMessage.warning('请填写服务地址和实际模型名称')
   configSaving.value = true
@@ -812,6 +834,7 @@ async function saveConfig() {
   }
 }
 async function testConfig() {
+  if (!canConfig.value || testing.value || configSaving.value) return
   testing.value = true
   connectionMessage.value = ''
   try {
@@ -826,12 +849,19 @@ async function testConfig() {
     testing.value = false
   }
 }
+async function refreshModelStatus() {
+  try {
+    modelStatus.value = await AssistantApi.status()
+  } catch (exception) {
+    failure(exception, '模型状态刷新失败，请刷新页面核查')
+  }
+}
 onMounted(async () => {
   try {
     modelStatus.value = await AssistantApi.status()
     await Promise.all([loadBases(), loadSessions()])
     await loadDocuments()
-    if (canConfig) {
+    if (canConfig.value) {
       configLoading.value = true
       Object.assign(config, await AssistantApi.modelConfig())
     }

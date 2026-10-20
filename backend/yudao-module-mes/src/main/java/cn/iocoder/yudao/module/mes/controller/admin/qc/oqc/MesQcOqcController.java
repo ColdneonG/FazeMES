@@ -64,6 +64,13 @@ public class MesQcOqcController {
     public CommonResult<Long> createOqc(@Valid @RequestBody MesQcOqcSaveReqVO createReqVO) {
         return success(oqcService.createOqc(createReqVO));
     }
+    @GetMapping("/source-context")
+    @Operation(summary = "获得新建出货检验的真实待检来源")
+    @PreAuthorize("@ss.hasPermission('mes:qc-oqc:create')")
+    public CommonResult<cn.iocoder.yudao.module.mes.controller.admin.qc.oqc.vo.MesQcOqcSourceContextRespVO> getSourceContext(
+            @RequestParam("sourceDocId") Long sourceDocId,@RequestParam("sourceLineId") Long sourceLineId) {
+        return success(oqcService.getSourceContext(sourceDocId,sourceLineId));
+    }
 
     @PutMapping("/update")
     @Operation(summary = "更新出货检验单")

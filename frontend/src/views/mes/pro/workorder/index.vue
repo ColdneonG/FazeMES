@@ -202,6 +202,24 @@
           >
             新增
           </el-button>
+          <el-button
+            v-if="scope.row.status === MesProWorkOrderStatusEnum.CONFIRMED"
+            v-hasPermi="['mes:pro-work-order:update']"
+            link
+            type="warning"
+            @click="lossClosureRef?.open(scope.row.id)"
+          >
+            损耗结案
+          </el-button>
+          <el-button
+            v-if="scope.row.status === MesProWorkOrderStatusEnum.FINISHED"
+            v-hasPermi="['mes:pro-work-order:query']"
+            link
+            type="primary"
+            @click="lossClosureRef?.open(scope.row.id, true)"
+          >
+            损耗记录
+          </el-button>
           <!-- 已确认状态：完成、取消 -->
           <el-button
             link
@@ -243,6 +261,7 @@
     />
   </ContentWrap>
 
+  <LossClosureDialog ref="lossClosureRef" @success="getList" />
   <!-- 表单弹窗：添加/修改/确认/完成/详情 -->
   <WorkOrderForm ref="formRef" @success="getList" />
   <!-- 条码详情弹窗 -->
@@ -257,6 +276,7 @@ import { handleTree } from '@/utils/tree'
 import { ProWorkOrderApi, ProWorkOrderVO } from '@/api/mes/pro/workorder'
 import { openCostCenter } from '@/views/mes/cost/navigation'
 import WorkOrderForm from './WorkOrderForm.vue'
+import LossClosureDialog from './LossClosureDialog.vue'
 import MdItemSelect from '@/views/mes/md/item/components/MdItemSelect.vue'
 import MdClientSelect from '@/views/mes/md/client/components/MdClientSelect.vue'
 import { BarcodeDetail } from '@/views/mes/wm/barcode/components'
@@ -289,6 +309,7 @@ const queryParams = reactive({
 })
 const queryFormRef = ref() // 搜索的表单
 const formRef = ref() // 表单弹窗
+const lossClosureRef = ref<InstanceType<typeof LossClosureDialog>>()
 const barcodeDetailRef = ref() // 条码详情弹窗
 
 /** 查询列表（分页 + 前端 handleTree 拼接树） */

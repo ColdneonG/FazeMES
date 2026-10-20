@@ -41,6 +41,7 @@ public class MesWmPackageServiceImpl implements MesWmPackageService {
     private MesWmBarcodeService barcodeService;
 
     @Override
+    @Transactional(rollbackFor = Exception.class)
     public Long createPackage(MesWmPackageSaveReqVO createReqVO) {
         // 校验编码唯一性
         validateCodeUnique(null, createReqVO.getCode());

@@ -1,5 +1,4 @@
 <template>
-
   <ContentWrap>
     <!-- 搜索工作栏 -->
     <el-form
@@ -70,6 +69,15 @@
           v-hasPermi="['mes:wm-barcode:delete']"
         >
           <Icon icon="ep:delete" class="mr-5px" /> 删除
+        </el-button>
+        <el-button
+          type="primary"
+          plain
+          @click="handlePrintSelected"
+          :disabled="!selectedIds.length"
+          v-hasPermi="['mes:wm-barcode:query']"
+        >
+          <Icon icon="ep:printer" class="mr-5px" /> 打印所选标签
         </el-button>
         <el-button
           type="success"
@@ -178,6 +186,7 @@
 
   <!-- 查看弹窗 -->
   <BarcodeDetail ref="viewDialogRef" />
+  <LabelPrintDialog ref="printDialogRef" />
 </template>
 
 <script setup lang="ts">
@@ -186,6 +195,7 @@ import { WmBarcodeApi } from '@/api/mes/wm/barcode'
 import { Barcode, BarcodeDetail } from './components'
 import BarcodeForm from './BarcodeForm.vue'
 import download from '@/utils/download'
+import LabelPrintDialog from './components/LabelPrintDialog.vue'
 
 defineOptions({ name: 'MesWmBarcode' })
 
@@ -255,6 +265,9 @@ const handleDelete = async (id?: number) => {
 
 /** 查看条码 */
 const viewDialogRef = ref()
+const printDialogRef = ref<InstanceType<typeof LabelPrintDialog>>()
+const handlePrintSelected = () =>
+  printDialogRef.value?.open(selectedIds.value.map((barcodeId) => ({ barcodeId })))
 const handleView = (row: any) => {
   viewDialogRef.value.open(row)
 }

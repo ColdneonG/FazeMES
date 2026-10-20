@@ -17,16 +17,16 @@ class MesAssistantModelGatewayTest extends MesAssistantTestDatabase {
     @Test void administratorResetDeletesOnlyTheCurrentTenantAndRestoresTheUnconfiguredGetContract() {
         var pristine = models.settings();
         models.save(settings("http://127.0.0.1:11434", "tenant-one-test-only-key", false), 10);
-        TenantContextHolder.setTenantId(2L);
+        login(2L);
         models.save(settings("http://127.0.0.1:11435", "tenant-two-test-only-key", false), 20);
         var otherTenant = models.settings();
-        TenantContextHolder.setTenantId(1L);
+        login(1L);
         models.reset();
         assertEquals(pristine, models.settings());
         assertEquals(false, models.status().get("configured"));
         assertEquals(false, models.settings().get("apiKeyConfigured"));
         assertEquals("", models.settings().get("model"));
-        TenantContextHolder.setTenantId(2L);
+        login(2L);
         assertEquals(otherTenant, models.settings());
         assertEquals(true, models.status().get("configured"));
         TenantContextHolder.clear(); assertThrows(NullPointerException.class, models::reset);
@@ -50,9 +50,9 @@ class MesAssistantModelGatewayTest extends MesAssistantTestDatabase {
         models.save(settings("http://127.0.0.1:11434", "", false), 10);
         assertEquals(ciphertext, jdbc.queryForObject("SELECT secret_ciphertext FROM mes_assistant_model_config WHERE tenant_id=1", String.class));
         assertEquals(true, models.status().get("configured"));
-        TenantContextHolder.setTenantId(2L);
+        login(2L);
         assertEquals(false, models.status().get("configured")); assertEquals(false, models.settings().get("apiKeyConfigured"));
-        TenantContextHolder.setTenantId(1L);
+        login(1L);
         models.save(settings("http://127.0.0.1:11434", "", true), 10);
         assertEquals(false, models.settings().get("apiKeyConfigured"));
         assertEquals(false, models.status().get("configured"));
@@ -196,6 +196,7 @@ class MesAssistantModelGatewayTest extends MesAssistantTestDatabase {
         } finally { server.stop(0); }
     }
 
+    private static void login(long tenant) { TenantContextHolder.setTenantId(tenant); cn.iocoder.yudao.framework.security.core.util.SecurityFrameworkUtils.setLoginUser(new cn.iocoder.yudao.framework.security.core.LoginUser().setId(10L).setTenantId(tenant).setUserType(2),new org.springframework.mock.web.MockHttpServletRequest()); }
     private static MesAssistantModelGateway.Settings settings(String url, String key, boolean clear) {
         return new MesAssistantModelGateway.Settings("openai", url, "test-model", key, clear, .2, 1024, true);
     }

@@ -43,6 +43,8 @@ import static org.mockito.Mockito.*;
 @Import(MesProFeedbackServiceImpl.class)
 public class MesProFeedbackServiceImplTest extends BaseDbUnitTest {
 
+    @MockitoBean private MesProFeedbackFlowService flowService;
+
     @Resource
     private MesProFeedbackServiceImpl feedbackService;
 

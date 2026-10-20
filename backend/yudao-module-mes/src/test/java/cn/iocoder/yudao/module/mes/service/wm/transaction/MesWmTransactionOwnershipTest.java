@@ -27,6 +27,7 @@ class MesWmTransactionOwnershipTest {
     @InjectMocks private MesWmTransactionServiceImpl service;
     @Mock private MesWmTransactionMapper transactionMapper;
     @Mock private cn.iocoder.yudao.module.mes.service.cost.MesCostService costService;
+    @Mock private cn.iocoder.yudao.module.mes.service.wm.returnsales.MesWmReturnSalesSourceService returnSourceService;
     @Mock private MesWmMaterialStockService materialStockService;
     @Mock private MesWmBatchService batchService;
     @Mock private MesMdItemService itemService;

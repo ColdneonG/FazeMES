@@ -409,152 +409,12 @@
         </el-tab-pane>
 
         <el-tab-pane label="实时业务助手" name="assistant">
-          <p class="section-note"
-            >查询交期、缺料、异常、质量、流程及指定编码的 BOM
-            成本。成本查询需独立授权；模型分析复用“AI助手与知识库”的模型配置。</p
-          >
-          <div class="quick-questions"
-            ><el-button v-for="q in questions" :key="q" plain @click="askPreset(q)">{{
-              q
-            }}</el-button></div
-          >
-          <el-input
-            v-model="question"
-            type="textarea"
-            :rows="3"
-            maxlength="1000"
-            show-word-limit
-            placeholder="例如：今天哪些工单有交付风险？也可以输入具体工单编码。"
+          <BusinessAssistant
+            ref="businessAssistantRef"
+            :active="tab === 'assistant'"
+            @draft="editDraft"
+            @navigate="tab = $event"
           />
-          <div class="toolbar"
-            ><el-checkbox v-model="useModel" :disabled="!canModel"
-              >调用已配置模型分析上述业务数据</el-checkbox
-            ><el-button
-              v-hasPermi="['mes:insight:chat']"
-              type="primary"
-              :disabled="!question.trim()"
-              @click="ask"
-              >查询业务依据</el-button
-            ><el-button @click="router.push('/mes/assistant')">知识库与模型配置</el-button></div
-          >
-          <div v-if="answer" class="answer"
-            ><el-tag>{{
-              answer.mode === 'MODEL' ? '模型分析 · 请核对业务依据' : '业务规则答复'
-            }}</el-tag
-            ><p class="answer-text">{{ answer.answer }}</p
-            ><small>查询时间 {{ fmt(answer.generatedAt) }}</small>
-            <el-collapse
-              ><el-collapse-item title="查看本次查询的业务依据" name="evidence">
-                <el-table
-                  :data="answerRows"
-                  max-height="360"
-                  size="small"
-                  empty-text="当前范围没有符合条件的业务记录"
-                >
-                  <el-table-column
-                    v-if="answer.topic === 'risks'"
-                    prop="code"
-                    label="工单编码"
-                    min-width="150"
-                  />
-                  <el-table-column
-                    v-if="answer.topic === 'risks'"
-                    prop="productName"
-                    label="产品"
-                    min-width="140"
-                  />
-                  <el-table-column v-if="answer.topic === 'risks'" label="估算完工" min-width="160"
-                    ><template #default="{ row }">{{
-                      row.forecastAt ? fmt(row.forecastAt) : '资料不足，暂不能估算'
-                    }}</template></el-table-column
-                  >
-                  <el-table-column v-if="answer.topic === 'risks'" label="主要依据" min-width="220"
-                    ><template #default="{ row }">{{
-                      row.reasons?.map((r) => r.message).join('；') || '当前未发现风险'
-                    }}</template></el-table-column
-                  >
-                  <el-table-column
-                    v-if="answer.topic === 'quality'"
-                    prop="dimension"
-                    label="维度"
-                  />
-                  <el-table-column v-if="answer.topic === 'quality'" prop="value" label="分组" />
-                  <el-table-column v-if="answer.topic === 'quality'" prop="product" label="产品" />
-                  <el-table-column v-if="answer.topic === 'quality'" label="不良率"
-                    ><template #default="{ row }">{{ row.rate }}%</template></el-table-column
-                  >
-                  <el-table-column
-                    v-if="answer.topic === 'quality'"
-                    prop="quantity"
-                    label="样本数量"
-                  />
-                  <el-table-column v-if="answer.topic === 'flow'" prop="station" label="工作站" />
-                  <el-table-column v-if="answer.topic === 'flow'" prop="tasks" label="任务数" />
-                  <el-table-column v-if="answer.topic === 'flow'" prop="pending" label="未完成" />
-                  <el-table-column v-if="answer.topic === 'flow'" label="计划至首报间隔中位数"
-                    ><template #default="{ row }">{{
-                      row.medianWaitHours == null ? '尚无有效样本' : `${row.medianWaitHours} 小时`
-                    }}</template></el-table-column
-                  >
-                  <el-table-column
-                    v-if="answer.topic === 'incidents'"
-                    prop="title"
-                    label="异常"
-                    min-width="180"
-                  />
-                  <el-table-column
-                    v-if="answer.topic === 'incidents'"
-                    prop="ownerName"
-                    label="负责人"
-                  />
-                  <el-table-column v-if="answer.topic === 'incidents'" label="状态"
-                    ><template #default="{ row }">{{
-                      statusNames[row.status]
-                    }}</template></el-table-column
-                  >
-                  <el-table-column v-if="answer.topic === 'incidents'" label="处理截止"
-                    ><template #default="{ row }">{{ fmt(row.dueAt) }}</template></el-table-column
-                  >
-                  <template v-if="answer.topic === 'cost'">
-                    <el-table-column prop="code" label="产品／工单编码" min-width="170" />
-                    <el-table-column prop="costBasis" label="核算口径" min-width="210" />
-                    <el-table-column prop="status" label="核算状态" min-width="110" />
-                    <el-table-column
-                      v-for="column in costColumns"
-                      :key="column.key"
-                      :label="column.label"
-                      min-width="130"
-                    >
-                      <template #default="{ row }">{{
-                        row[column.key] === undefined ? '—' : money(row[column.key])
-                      }}</template>
-                    </el-table-column>
-                    <el-table-column label="缺失依据" min-width="220">
-                      <template #default="{ row }">{{ row.issues?.join('；') || '无' }}</template>
-                    </el-table-column>
-                    <el-table-column label="核对原始记录" min-width="130">
-                      <template #default="{ row }">
-                        <el-button link type="primary" @click="openCostRecord(row)"
-                          >成本明细</el-button
-                        >
-                      </template>
-                    </el-table-column>
-                  </template>
-                </el-table>
-                <el-button link type="primary" @click="showEvidence"
-                  >前往分析页查看原始记录</el-button
-                >
-              </el-collapse-item></el-collapse
-            >
-            <div v-for="suggestion in answer.suggestions" :key="suggestion.title" class="suggestion"
-              ><div
-                ><strong>{{ suggestion.title }}</strong
-                ><p>{{ suggestion.content }}</p></div
-              ><el-button v-hasPermi="['mes:insight:manage']" @click="editDraft(suggestion)"
-                >编辑并保存建议草稿</el-button
-              ></div
-            >
-          </div>
           <h3>我的建议草稿</h3
           ><el-table :data="drafts" empty-text="暂无建议草稿"
             ><el-table-column prop="title" label="建议" min-width="180" /><el-table-column
@@ -800,6 +660,7 @@
 
 <script setup lang="ts">
 import JevSettingsDialog from './JevSettingsDialog.vue'
+import BusinessAssistant from './BusinessAssistant.vue'
 import JevIncidentAssist from './JevIncidentAssist.vue'
 import {
   InsightApi,
@@ -813,17 +674,12 @@ import {
   type Incident,
   type IncidentInput,
   type IncidentMove,
-  type Answer,
   type Draft,
   type JevSuggestion
 } from '@/api/mes/insight'
-import { checkPermi } from '@/utils/permission'
 import { ElMessage } from 'element-plus'
-import { money } from '@/views/mes/cost/format'
-import { openCostCenter } from '@/views/mes/cost/navigation'
 defineOptions({ name: 'MesInsight' })
-const router = useRouter(),
-  route = useRoute()
+const route = useRoute()
 const tabs = ['risks', 'simulation', 'quality', 'incidents', 'assistant', 'flow']
 const tab = ref(tabs.includes(String(route.query.tab)) ? String(route.query.tab) : 'risks')
 const busy = ref(false),
@@ -835,56 +691,12 @@ const risks = ref<RiskData>(),
   simulation = ref<SimulationData>(),
   quality = ref<QualityData>(),
   flow = ref<FlowData>(),
-  incidentData = ref<IncidentData>(),
-  answer = ref<Answer>()
+  incidentData = ref<IncidentData>()
 const days = ref(30),
   minSample = ref(30),
   flowDays = ref(30),
-  question = ref(''),
-  useModel = ref(false),
   drafts = ref<Draft[]>([])
-const canModel = computed(() => checkPermi(['mes:assistant:chat']))
-const answerRows = computed(() => {
-  const key =
-    answer.value?.topic === 'cost'
-      ? 'items'
-      : answer.value?.topic === 'risks'
-        ? 'orders'
-        : answer.value?.topic === 'quality'
-          ? 'groups'
-          : answer.value?.topic === 'flow'
-            ? 'stations'
-            : 'cases'
-  return (answer.value?.evidence[key] || []) as Record<string, unknown>[]
-})
-function showEvidence() {
-  if (answer.value?.topic === 'cost') {
-    void openCostCenter(router, {})
-    return
-  }
-  if (answer.value && tabs.includes(answer.value.topic)) tab.value = answer.value.topic
-}
-function openCostRecord(row: Record<string, unknown>) {
-  const id = Number(row.recordId)
-  if (!Number.isSafeInteger(id) || id <= 0) return
-  void openCostCenter(router, row.sourceType === 'WORKORDER' ? { workorderId: id } : { itemId: id })
-}
-const costColumns = [
-  { key: 'totalCost', label: '标准单位／实际总额' },
-  { key: 'planTotalCost', label: '工单冻结计划总额' },
-  { key: 'materialCost', label: '材料成本' },
-  { key: 'laborCost', label: '人工成本' },
-  { key: 'overheadCost', label: '制造费用' },
-  { key: 'salePrice', label: '产品参考售价' }
-]
-const questions = [
-  '今天哪些工单有交付风险？',
-  '当前缺料情况如何？',
-  '有哪些待处理异常？',
-  '近30天质量有哪些关联差异？',
-  '哪些工作站可能存在流程瓶颈？',
-  ...(checkPermi(['mes:cost:query']) ? ['BROKY-FG-V2 的 BOM 标准成本是多少？'] : [])
-]
+const businessAssistantRef = ref<InstanceType<typeof BusinessAssistant>>()
 const statusNames: Record<string, string> = {
   OPEN: '待处理',
   IN_PROGRESS: '处理中',
@@ -967,7 +779,10 @@ async function refresh() {
       quality.value = await InsightApi.quality(days.value, minSample.value)
     else if (tab.value === 'flow') flow.value = await InsightApi.flow(flowDays.value)
     else if (tab.value === 'incidents') await loadIncidents()
-    else drafts.value = await InsightApi.drafts()
+    else {
+      drafts.value = await InsightApi.drafts()
+      await businessAssistantRef.value?.refresh()
+    }
   })
 }
 watch(tab, () => {
@@ -1088,17 +903,6 @@ async function moveIncident() {
     await loadRisks()
     ElMessage.success('处理记录已保存')
   })
-}
-async function ask() {
-  if (!question.value.trim()) return
-  answer.value = undefined
-  await run(async () => {
-    answer.value = await InsightApi.ask(question.value, useModel.value)
-  })
-}
-function askPreset(value: string) {
-  question.value = value
-  void ask()
 }
 function editDraft(value: Draft) {
   draftForm.value = { ...value }

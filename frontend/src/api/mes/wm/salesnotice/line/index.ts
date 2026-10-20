@@ -1,7 +1,17 @@
 import request from '@/config/axios'
 
+export interface SalesFulfillment {
+  noticeQuantity: string | null
+  shippedQuantity: string | null
+  reservedQuantity: string | null
+  availableQuantity: string | null
+  editableAvailableQuantity: string | null
+  fulfillmentReliable: boolean
+  fulfillmentWarning?: string
+}
+
 // MES 发货通知单行 VO
-export interface WmSalesNoticeLineVO {
+export interface WmSalesNoticeLineVO extends SalesFulfillment {
   id: number
   noticeId: number
   itemId: number
@@ -11,7 +21,7 @@ export interface WmSalesNoticeLineVO {
   unitMeasureName: string
   batchId: number
   batchCode: string
-  quantity: number
+  quantity: number | string
   oqcCheckFlag: boolean
   remark: string
   createTime: string
@@ -25,8 +35,11 @@ export const WmSalesNoticeLineApi = {
   },
 
   // 查询发货通知单行详情
-  getSalesNoticeLine: async (id: number) => {
-    return await request.get({ url: '/mes/wm/sales-notice-line/get?id=' + id })
+  getSalesNoticeLine: async (id: number, editingSalesLineId?: number) => {
+    return await request.get({
+      url: '/mes/wm/sales-notice-line/get',
+      params: { id, editingSalesLineId }
+    })
   },
 
   // 新增发货通知单行

@@ -6,7 +6,7 @@ export interface WmReturnSalesDetailVO {
   returnId: number
   lineId: number
   itemId: number
-  quantity: number
+  quantity: number | string
   batchId?: number
   batchCode?: string
   warehouseId: number

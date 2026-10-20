@@ -1,0 +1,128 @@
+package cn.iocoder.yudao.module.mes.service.wm.returnsales;
+
+import cn.iocoder.yudao.framework.common.exception.ServiceException;
+import cn.iocoder.yudao.framework.tenant.core.context.TenantContextHolder;
+import cn.iocoder.yudao.framework.test.core.ut.BaseDbUnitTest;
+import cn.iocoder.yudao.module.mes.controller.admin.wm.returnsales.vo.MesWmReturnSalesSaveReqVO;
+import cn.iocoder.yudao.module.mes.controller.admin.wm.returnsales.vo.line.MesWmReturnSalesLineSaveReqVO;
+import cn.iocoder.yudao.module.mes.controller.admin.wm.returnsales.vo.detail.MesWmReturnSalesDetailSaveReqVO;
+import cn.iocoder.yudao.module.mes.dal.dataobject.md.item.MesMdItemDO;
+import cn.iocoder.yudao.module.mes.dal.dataobject.wm.batch.MesWmBatchDO;
+import cn.iocoder.yudao.module.mes.dal.dataobject.wm.warehouse.MesWmWarehouseDO;
+import cn.iocoder.yudao.module.mes.dal.dataobject.wm.warehouse.MesWmWarehouseLocationDO;
+import cn.iocoder.yudao.module.mes.dal.dataobject.wm.warehouse.MesWmWarehouseAreaDO;
+import cn.iocoder.yudao.module.mes.dal.dataobject.wm.returnsales.*;
+import cn.iocoder.yudao.module.mes.dal.mysql.wm.returnsales.*;
+import cn.iocoder.yudao.module.mes.enums.wm.MesWmReturnSalesStatusEnum;
+import cn.iocoder.yudao.module.mes.service.md.client.MesMdClientService;
+import cn.iocoder.yudao.module.mes.service.md.item.MesMdItemService;
+import cn.iocoder.yudao.module.mes.service.wm.batch.MesWmBatchService;
+import cn.iocoder.yudao.module.mes.service.wm.materialstock.MesWmMaterialStockService;
+import cn.iocoder.yudao.module.mes.service.wm.transaction.MesWmTransactionService;
+import cn.iocoder.yudao.module.mes.service.wm.warehouse.*;
+import jakarta.annotation.Resource;
+import org.junit.jupiter.api.*;
+import org.springframework.context.annotation.*;
+import org.springframework.jdbc.core.JdbcTemplate;
+import org.springframework.transaction.annotation.EnableTransactionManagement;
+import org.springframework.test.context.TestPropertySource;
+import org.springframework.test.context.bean.override.mockito.MockitoBean;
+import java.math.BigDecimal;
+import static org.junit.jupiter.api.Assertions.*;
+import static org.mockito.ArgumentMatchers.*;
+import static org.mockito.Mockito.*;
+
+/** Actual draft -> inspection/execution -> putaway lifecycle revalidates immutable delivery evidence. */
+@Import({MesWmReturnSalesServiceImpl.class,MesWmReturnSalesLineServiceImpl.class,MesWmReturnSalesDetailServiceImpl.class,
+        MesWmReturnSalesDeliveryService.class,MesWmReturnSalesSourceService.class,cn.iocoder.yudao.module.mes.service.wm.transaction.MesWmTransactionServiceImpl.class,MesWmReturnSalesOriginPostingTest.Database.class})
+// Other BaseDbUnitTest contexts create deliberately smaller master-data tables.
+// Their shared testdb DDL survives row cleanup; this lifecycle fixture owns its
+// metadata schema so source-option coverage cannot depend on class execution order.
+@TestPropertySource(properties="spring.datasource.url=jdbc:h2:mem:return_sales_origin_posting;MODE=MYSQL;DATABASE_TO_UPPER=false;NON_KEYWORDS=value,day;")
+class MesWmReturnSalesOriginPostingTest extends BaseDbUnitTest {
+    @Configuration(proxyBeanMethods=false) @EnableTransactionManagement(proxyTargetClass=true)
+    static class Database {@Bean JdbcTemplate jdbcTemplate(javax.sql.DataSource source){return new JdbcTemplate(source);}}
+    @Resource MesWmReturnSalesService sales;
+    @Resource MesWmReturnSalesLineService lines;
+    @Resource MesWmReturnSalesDetailService details;
+    @Resource MesWmReturnSalesMapper headers;
+    @Resource MesWmReturnSalesLineMapper lineMapper;
+    @Resource JdbcTemplate jdbc;
+    @Resource MesWmReturnSalesSourceService sourceService;
+    @Resource cn.iocoder.yudao.module.mes.dal.mysql.wm.transaction.MesWmTransactionMapper transactionMapper;
+    @MockitoBean MesMdItemService items;
+    @MockitoBean MesMdClientService clients;
+    @MockitoBean MesWmBatchService batches;
+    @MockitoBean MesWmWarehouseService warehouses;
+    @MockitoBean MesWmWarehouseAreaService areas;
+    @MockitoBean MesWmMaterialStockService stocks;
+    @Resource MesWmTransactionService posting;
+    @MockitoBean cn.iocoder.yudao.module.mes.service.cost.MesCostService costs;
+    @MockitoBean cn.iocoder.yudao.module.mes.service.pro.kitting.MesProKittingService kitting;
+    @MockitoBean MesWmWarehouseLocationService locations;
+    @Resource cn.iocoder.yudao.module.mes.dal.mysql.wm.materialstock.MesWmMaterialStockMapper stockMapper;
+    @Resource cn.iocoder.yudao.module.mes.dal.mysql.qc.rqc.MesQcRqcMapper rqcMapper;
+    long returnId;
+    @BeforeEach void fixture(){
+        TenantContextHolder.setTenantId(0L);
+        String audit=",creator VARCHAR(64) DEFAULT '',create_time TIMESTAMP DEFAULT CURRENT_TIMESTAMP,updater VARCHAR(64) DEFAULT '',update_time TIMESTAMP DEFAULT CURRENT_TIMESTAMP,deleted BOOLEAN DEFAULT FALSE,tenant_id BIGINT DEFAULT 0";
+        jdbc.execute("CREATE TABLE IF NOT EXISTS mes_wm_return_sales(id BIGINT GENERATED BY DEFAULT AS IDENTITY PRIMARY KEY,code VARCHAR(64),name VARCHAR(64),sales_order_code VARCHAR(64),client_id BIGINT,return_date TIMESTAMP,return_reason VARCHAR(255),status INT,remark VARCHAR(500)"+audit+")");
+        jdbc.execute("CREATE TABLE IF NOT EXISTS mes_wm_return_sales_detail(id BIGINT GENERATED BY DEFAULT AS IDENTITY PRIMARY KEY,return_id BIGINT,line_id BIGINT,item_id BIGINT,quantity DECIMAL(20,6),batch_id BIGINT,batch_code VARCHAR(64),warehouse_id BIGINT,location_id BIGINT,area_id BIGINT,remark VARCHAR(500)"+audit+")");
+        jdbc.update("DELETE FROM mes_wm_return_sales");jdbc.update("DELETE FROM mes_wm_return_sales_detail");
+        when(items.validateItemExistsAndEnable(7L)).thenReturn(new MesMdItemDO().setId(7L).setBatchFlag(true));
+        var batch=MesWmBatchDO.builder().id(9L).itemId(7L).code("BROKY-B9").build();
+        when(batches.validateBatchExists(9L,7L)).thenReturn(batch);when(batches.getBatchByCode("BROKY-B9")).thenReturn(batch);
+        when(warehouses.validateWarehouseExists(anyLong())).thenAnswer(i->new MesWmWarehouseDO().setId(i.getArgument(0)).setCode(i.getArgument(0).equals(20L)?"QUALITY_QUARANTINE_WAREHOUSE":"FG"));
+        jdbc.update("INSERT INTO mes_wm_batch(id,code,item_id,client_id) VALUES(9,'BROKY-B9',7,NULL)");
+        jdbc.update("INSERT INTO mes_wm_product_sales(id,client_id,status) VALUES(20,10,4)");
+        jdbc.update("INSERT INTO mes_wm_product_sales_line(id,sales_id,item_id,quantity,batch_id,batch_code,quality_status,oqc_check_flag) VALUES(21,20,7,5,9,'BROKY-B9',1,FALSE)");
+        jdbc.update("INSERT INTO mes_wm_product_sales_detail(id,sales_id,line_id,item_id,quantity,batch_id,batch_code,warehouse_id,location_id,area_id,material_stock_id) VALUES(22,20,21,7,5,9,'BROKY-B9',2,3,4,8)");
+        jdbc.update("INSERT INTO mes_wm_transaction(id,type,biz_type,biz_id,biz_line_id,item_id,quantity,batch_id,batch_code,warehouse_id,location_id,area_id,material_stock_id) VALUES(23,2,118,20,21,7,-5,9,'BROKY-B9',2,3,4,8)");
+        var header=new MesWmReturnSalesDO().setCode("RET").setName("Broky退货").setClientId(10L).setStatus(0);headers.insert(header);returnId=header.getId();
+    }
+    @AfterEach void clear(){TenantContextHolder.clear();}
+    long line(){var req=new MesWmReturnSalesLineSaveReqVO();req.setReturnId(returnId);req.setOriginTransactionId(23L);req.setItemId(7L);req.setQuantity(BigDecimal.ONE);req.setBatchId(9L);req.setBatchCode("BROKY-B9");req.setRqcCheckFlag(false);return lines.createReturnSalesLine(req);}
+    void state(MesWmReturnSalesStatusEnum state){headers.updateById(new MesWmReturnSalesDO().setId(returnId).setStatus(state.getStatus()));}
+    MesWmReturnSalesDetailSaveReqVO detail(long line,long warehouse){var req=new MesWmReturnSalesDetailSaveReqVO();req.setReturnId(returnId);req.setLineId(line);req.setItemId(7L);req.setQuantity(BigDecimal.ONE);req.setBatchId(9L);req.setBatchCode("BROKY-B9");req.setWarehouseId(warehouse);req.setLocationId(3L);req.setAreaId(4L);return req;}
+    void loseEvidence(){jdbc.update("DELETE FROM mes_wm_transaction");}
+
+    @BeforeEach void actualStock(){
+        when(items.validateItemExists(7L)).thenReturn(new MesMdItemDO().setId(7L).setBatchFlag(true));
+        when(batches.getBatch(9L)).thenReturn(new MesWmBatchDO().setId(9L).setItemId(7L).setCode("BROKY-B9"));
+        when(locations.validateWarehouseLocationExists(3L)).thenReturn(new MesWmWarehouseLocationDO().setId(3L).setFrozen(false));
+        when(areas.validateWarehouseAreaExists(4L)).thenReturn(new MesWmWarehouseAreaDO().setId(4L).setFrozen(false));
+        stockMapper.insert(new cn.iocoder.yudao.module.mes.dal.dataobject.wm.materialstock.MesWmMaterialStockDO().setId(80L).setItemId(7L).setBatchId(9L).setBatchCode("BROKY-B9").setWarehouseId(2L).setLocationId(3L).setAreaId(4L).setQuantity(new BigDecimal("100")).setFrozen(false));
+        stockMapper.insert(new cn.iocoder.yudao.module.mes.dal.dataobject.wm.materialstock.MesWmMaterialStockDO().setId(81L).setItemId(7L).setBatchId(9L).setBatchCode("BROKY-B9").setWarehouseId(20L).setLocationId(3L).setAreaId(4L).setQuantity(BigDecimal.ZERO).setFrozen(false));
+        when(stocks.getOrCreateMaterialStock(any(),any(),any(),any(),any(),any(),any(),any(),any())).thenAnswer(call->stockMapper.selectById(call.getArgument(1).equals(20L)?81L:80L));
+        doAnswer(call->{BigDecimal delta=call.getArgument(1);Long stockId=call.getArgument(0);jdbc.update("UPDATE mes_wm_material_stock SET quantity=quantity+? WHERE id=?",delta,stockId);return null;}).when(stocks).updateMaterialStockQuantity(anyLong(),any(BigDecimal.class),anyBoolean());
+    }
+    long line(String amount,boolean inspect){var req=new MesWmReturnSalesLineSaveReqVO();req.setReturnId(returnId);req.setOriginTransactionId(23L);req.setQuantity(new BigDecimal(amount));req.setRqcCheckFlag(inspect);return lines.createReturnSalesLine(req);}
+    void putaway(long line,String amount,long warehouse){var req=detail(line,warehouse);req.setQuantity(new BigDecimal(amount));details.createReturnSalesDetail(req);}
+    BigDecimal stock(long id){return stockMapper.selectById(id).getQuantity();}
+    BigDecimal budget(String field){return jdbc.queryForObject("SELECT "+field+" FROM mes_wm_return_source_budget WHERE origin_transaction_id=23 AND tenant_id=0",BigDecimal.class);}
+    int count119(){return jdbc.queryForObject("SELECT COUNT(*) FROM mes_wm_transaction WHERE biz_type=119",Integer.class);}
+    @Test void actualSharedPostingMultipleDetailsConservesStockCountersAndImmutableSource(){long id=line("2",false);sales.submitReturnSales(returnId);sales.finishReturnSales(returnId);putaway(id,"1",2);putaway(id,"1",2);sales.stockReturnSales(returnId);assertEquals(0,new BigDecimal("102").compareTo(stock(80)));assertEquals(2,count119());assertEquals(0,new BigDecimal("2").compareTo(budget("returned_quantity")));assertEquals(0,budget("reserved_quantity").signum());assertEquals(2,jdbc.queryForObject("SELECT COUNT(*) FROM mes_wm_return_posted_evidence",Integer.class));assertEquals(0,new BigDecimal("-5").compareTo(jdbc.queryForObject("SELECT quantity FROM mes_wm_transaction WHERE id=23",BigDecimal.class)));assertThrows(ServiceException.class,()->sales.stockReturnSales(returnId));assertEquals(2,count119());}
+    @Test void secondCostFailureRollsBackBoth119StockAndAllQuotaEvidenceThenRetryWorks(){long id=line("2",false);sales.submitReturnSales(returnId);sales.finishReturnSales(returnId);putaway(id,"1",2);putaway(id,"1",2);var attempts=new java.util.concurrent.atomic.AtomicInteger();doAnswer(call->{if(attempts.incrementAndGet()==2)throw new IllegalStateException("cost failed after second physical insert");return null;}).when(costs).recordTransaction(any(),any());assertThrows(IllegalStateException.class,()->sales.stockReturnSales(returnId));assertEquals(0,count119());assertEquals(0,new BigDecimal("100").compareTo(stock(80)));assertEquals(0,budget("returned_quantity").signum());assertEquals(0,new BigDecimal("2").compareTo(budget("reserved_quantity")));assertEquals(0,jdbc.queryForObject("SELECT COUNT(*) FROM mes_wm_return_posted_evidence",Integer.class));assertEquals(3,headers.selectById(returnId).getStatus());reset(costs);sales.stockReturnSales(returnId);assertEquals(2,count119());assertEquals(0,new BigDecimal("102").compareTo(stock(80)));}
+    @Test void forged119DtoWithoutActualPutawayCannotMutateStockOrQuota(){long id=line("2",false);state(MesWmReturnSalesStatusEnum.APPROVED);var req=new cn.iocoder.yudao.module.mes.service.wm.transaction.dto.MesWmTransactionSaveReqDTO().setType(1).setBizType(119).setBizId(returnId).setBizCode("RET").setBizLineId(id).setItemId(7L).setBatchId(9L).setBatchCode("BROKY-B9").setWarehouseId(2L).setLocationId(3L).setAreaId(4L).setQuantity(BigDecimal.ONE).setReturnSourceTransactionId(23L).setReturnDetailId(999L);assertThrows(ServiceException.class,()->posting.createTransaction(req));assertEquals(0,count119());assertEquals(0,new BigDecimal("100").compareTo(stock(80)));assertEquals(0,budget("returned_quantity").signum());}
+    @Test void non119CannotCarrySalesReturnOrigin(){var req=new cn.iocoder.yudao.module.mes.service.wm.transaction.dto.MesWmTransactionSaveReqDTO().setType(1).setBizType(110).setBizId(returnId).setBizCode("RET").setBizLineId(1L).setItemId(7L).setBatchId(9L).setBatchCode("BROKY-B9").setWarehouseId(2L).setLocationId(3L).setAreaId(4L).setQuantity(BigDecimal.ONE).setReturnSourceTransactionId(23L);assertThrows(ServiceException.class,()->posting.createTransaction(req));assertEquals(0,new BigDecimal("100").compareTo(stock(80)));}
+    @Test void sourceLineUpdateUsesOnlyItsOwnAddBackAndCancelReleasesUnposted(){long id=line("3",false);var req=new MesWmReturnSalesLineSaveReqVO();req.setId(id);req.setReturnId(returnId);req.setOriginTransactionId(23L);req.setQuantity(new BigDecimal("5"));req.setRqcCheckFlag(false);lines.updateReturnSalesLine(req);assertEquals(0,new BigDecimal("5").compareTo(budget("reserved_quantity")));assertThrows(ServiceException.class,()->line("1",false));sales.cancelReturnSales(returnId);assertEquals(0,budget("reserved_quantity").signum());assertEquals("RELEASED",jdbc.queryForObject("SELECT state FROM mes_wm_return_source_reservation WHERE return_line_id=?",String.class,id));}
+    @Test void partialRqcKeepsExactOriginAndReservationThenPostsGoodAndQuarantine(){long id=line("5",true);sales.submitReturnSales(returnId);var qc=new cn.iocoder.yudao.module.mes.dal.dataobject.qc.rqc.MesQcRqcDO().setCode("QC").setName("QC").setTemplateId(7L).setSourceDocType(119).setSourceDocId(returnId).setSourceLineId(id).setItemId(7L).setBatchCode("BROKY-B9").setType(4).setCheckQuantity(new BigDecimal("5")).setQualifiedQuantity(new BigDecimal("3")).setUnqualifiedQuantity(new BigDecimal("2")).setCheckResult(1).setStatus(4);rqcMapper.insert(qc);lineMapper.updateById(new MesWmReturnSalesLineDO().setId(id).setRqcId(qc.getId()));lines.updateReturnSalesLineWhenRqcFinish(id,returnId,1,new BigDecimal("3"),new BigDecimal("2"));var split=lineMapper.selectListByReturnId(returnId);assertEquals(2,split.size());assertTrue(split.stream().allMatch(l->l.getOriginTransactionId().equals(23L)&&l.getRqcId().equals(qc.getId())));assertEquals(0,new BigDecimal("5").compareTo(budget("reserved_quantity")));sales.finishReturnSales(returnId);for(var l:split)putaway(l.getId(),l.getQuantity().toPlainString(),l.getQualityStatus()==2?20:2);sales.stockReturnSales(returnId);assertEquals(0,new BigDecimal("103").compareTo(stock(80)));assertEquals(0,new BigDecimal("2").compareTo(stock(81)));assertEquals(0,new BigDecimal("5").compareTo(budget("returned_quantity")));assertEquals(0,budget("reserved_quantity").signum());assertThrows(ServiceException.class,()->lines.updateReturnSalesLineWhenRqcFinish(id,returnId,1,new BigDecimal("3"),new BigDecimal("2")));}
+    @Test void legacy119WithUnknownOriginalFailsClosedWithoutRewritingHistory(){jdbc.update("INSERT INTO mes_wm_transaction(id,type,biz_type,biz_id,biz_line_id,item_id,quantity,batch_id,batch_code) VALUES(99,1,119,999,999,7,1,9,'BROKY-B9')");assertThrows(ServiceException.class,()->line("1",false));assertEquals(0,new BigDecimal("1").compareTo(jdbc.queryForObject("SELECT quantity FROM mes_wm_transaction WHERE id=99",BigDecimal.class)));assertEquals(0,jdbc.queryForObject("SELECT COUNT(*) FROM mes_wm_return_source_reservation",Integer.class));}
+    void metadata(){
+        jdbc.execute("CREATE TABLE IF NOT EXISTS mes_md_item(id BIGINT PRIMARY KEY,tenant_id BIGINT DEFAULT 0,code VARCHAR(64),name VARCHAR(128),specification VARCHAR(255),unit_measure_id BIGINT,deleted BOOLEAN DEFAULT FALSE)");
+        jdbc.execute("CREATE TABLE IF NOT EXISTS mes_md_unit_measure(id BIGINT PRIMARY KEY,tenant_id BIGINT DEFAULT 0,name VARCHAR(128),deleted BOOLEAN DEFAULT FALSE)");
+        jdbc.execute("CREATE TABLE IF NOT EXISTS mes_wm_warehouse(id BIGINT PRIMARY KEY,tenant_id BIGINT DEFAULT 0,code VARCHAR(64),name VARCHAR(128),frozen BOOLEAN DEFAULT FALSE,deleted BOOLEAN DEFAULT FALSE)");
+        jdbc.execute("CREATE TABLE IF NOT EXISTS mes_wm_warehouse_location(id BIGINT PRIMARY KEY,tenant_id BIGINT DEFAULT 0,warehouse_id BIGINT,name VARCHAR(128),frozen BOOLEAN DEFAULT FALSE,deleted BOOLEAN DEFAULT FALSE)");
+        jdbc.execute("CREATE TABLE IF NOT EXISTS mes_wm_warehouse_area(id BIGINT PRIMARY KEY,tenant_id BIGINT DEFAULT 0,location_id BIGINT,code VARCHAR(64),name VARCHAR(128),status INT DEFAULT 0,frozen BOOLEAN DEFAULT FALSE,allow_item_mixing BOOLEAN DEFAULT TRUE,allow_batch_mixing BOOLEAN DEFAULT TRUE,deleted BOOLEAN DEFAULT FALSE)");
+        for(String table:java.util.List.of("mes_md_item","mes_md_unit_measure","mes_wm_warehouse","mes_wm_warehouse_location","mes_wm_warehouse_area"))jdbc.update("DELETE FROM "+table+" WHERE tenant_id=0");
+        jdbc.update("INSERT INTO mes_md_item(id,code,name,specification,unit_measure_id) VALUES(7,'ITEM%7','产品','规格',1)");jdbc.update("INSERT INTO mes_md_unit_measure(id,name) VALUES(1,'件')");jdbc.update("INSERT INTO mes_wm_warehouse(id,code,name) VALUES(2,'FG','成品仓')");jdbc.update("INSERT INTO mes_wm_warehouse_location(id,warehouse_id,name) VALUES(3,2,'成品区')");jdbc.update("INSERT INTO mes_wm_warehouse_area(id,location_id,name) VALUES(4,3,'成品位')");jdbc.update("UPDATE mes_wm_transaction SET transaction_time='2026-10-20 10:15:00' WHERE id=23");
+    }
+    cn.iocoder.yudao.module.mes.controller.admin.wm.returnsales.vo.line.MesWmReturnSalesSourcePageReqVO options(Long editing){var q=new cn.iocoder.yudao.module.mes.controller.admin.wm.returnsales.vo.line.MesWmReturnSalesSourcePageReqVO();q.setReturnId(returnId);q.setLineId(editing);q.setPageSize(10);return q;}
+    @Test void sourceOptionsReturnOwnEditAddBackAndPreciseJsonWithoutCosts(){metadata();Long id=line("3",false);var option=sourceService.options(options(id)).getList().get(0);assertEquals(0,new BigDecimal("2").compareTo(option.getAvailableQuantity()));assertEquals(0,new BigDecimal("5").compareTo(option.getEditableAvailableQuantity()));String json=cn.iocoder.yudao.framework.common.util.json.JsonUtils.toJsonString(option);assertTrue(json.contains("\"outboundAt\":\"2026-10-20T10:15:00\""),json);for(String field:java.util.List.of("outboundQuantity","returnedQuantity","reservedQuantity","availableQuantity","editableAvailableQuantity"))assertTrue(json.contains("\""+field+"\":\""),json);assertFalse(json.contains("cost"));assertEquals(23L,option.getOriginTransactionId());}
+    @Test void sourceOptionsUseEscapedFiltersAndBoundedLargeOffset(){metadata();var q=options(null);q.setItemCode("%");assertEquals(1,sourceService.options(q).getTotal());q.setItemCode("x' OR 1=1 --");assertEquals(0,sourceService.options(q).getTotal());q.setItemCode(null);q.setPageNo(Integer.MAX_VALUE);q.setPageSize(50);var empty=sourceService.options(q);assertEquals(1,empty.getTotal());assertTrue(empty.getList().isEmpty());}
+    @Test void unknownLegacySourceOptionsExposeNullEvidenceAndZeroQuota(){metadata();jdbc.update("INSERT INTO mes_wm_transaction(id,type,biz_type,biz_id,biz_line_id,item_id,quantity,batch_id,batch_code) VALUES(99,1,119,999,999,7,1,9,'BROKY-B9')");var option=sourceService.options(options(null)).getList().get(0);assertFalse(option.isSourceReliable());assertNull(option.getReturnedQuantity());assertNull(option.getReservedQuantity());assertEquals(0,option.getAvailableQuantity().signum());assertTrue(option.getSourceWarning().contains("历史"));}
+    @Test void evidenceIdempotencyCannotIncrementSourceCounterTwice(){Long id=line("1",false);state(MesWmReturnSalesStatusEnum.APPROVED);putaway(id,"1",2);sales.stockReturnSales(returnId);var original=transactionMapper.selectList().stream().filter(t->t.getBizType()==119).findFirst().orElseThrow();sourceService.recordPosted(original);assertEquals(0,BigDecimal.ONE.compareTo(budget("returned_quantity")));original.setQuantity(new BigDecimal("2"));assertThrows(ServiceException.class,()->sourceService.recordPosted(original));assertEquals(0,BigDecimal.ONE.compareTo(budget("returned_quantity")));assertEquals(1,jdbc.queryForObject("SELECT COUNT(*) FROM mes_wm_return_posted_evidence",Integer.class));}
+    @Test void lostPostedEvidenceCannotBeRecreatedToCountAnOld119Again(){Long id=line("1",false);state(MesWmReturnSalesStatusEnum.APPROVED);putaway(id,"1",2);sales.stockReturnSales(returnId);var original=transactionMapper.selectList().stream().filter(t->t.getBizType()==119).findFirst().orElseThrow();jdbc.update("DELETE FROM mes_wm_return_posted_evidence");assertThrows(ServiceException.class,()->sourceService.recordPosted(original));assertEquals(0,BigDecimal.ONE.compareTo(budget("returned_quantity")));assertEquals(0,jdbc.queryForObject("SELECT COUNT(*) FROM mes_wm_return_posted_evidence",Integer.class));}
+    @Test void evidenceWithWrongOriginCannotBeTrustedForMoreReservations(){Long id=line("1",false);state(MesWmReturnSalesStatusEnum.APPROVED);putaway(id,"1",2);sales.stockReturnSales(returnId);jdbc.update("UPDATE mes_wm_return_posted_evidence SET origin_transaction_id=999");jdbc.update("INSERT INTO mes_wm_return_sales(id,code,client_id,status,tenant_id,deleted) VALUES(777,'RET2',10,0,0,0)");var req=new MesWmReturnSalesLineSaveReqVO();req.setReturnId(777L);req.setOriginTransactionId(23L);req.setQuantity(BigDecimal.ONE);req.setRqcCheckFlag(false);var failure=assertThrows(ServiceException.class,()->lines.createReturnSalesLine(req));assertTrue(failure.getMessage().contains("归属不一致"));assertEquals(0,BigDecimal.ONE.compareTo(budget("returned_quantity")));assertEquals(0,budget("reserved_quantity").signum());}
+    @Test void invalidExplicitLegacyOriginIsNotTreatedAsKnownCapacity(){jdbc.update("INSERT INTO mes_wm_transaction(id,type,biz_type,biz_id,biz_line_id,item_id,quantity,batch_id,batch_code,return_source_transaction_id) VALUES(99,1,119,999,999,7,1,9,'BROKY-B9',999)");assertThrows(ServiceException.class,()->line("1",false));assertEquals(0,jdbc.queryForObject("SELECT COUNT(*) FROM mes_wm_return_source_reservation",Integer.class));}
+}

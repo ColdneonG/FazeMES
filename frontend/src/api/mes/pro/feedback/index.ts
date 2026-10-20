@@ -1,5 +1,34 @@
 import request from '@/config/axios'
 
+export interface FeedbackSource {
+  sourceFeedbackId: number
+  quantity: string
+}
+
+export interface FeedbackSourceOption {
+  id: number
+  code: string
+  processName: string
+  qualified: string
+  used: string
+  available: string
+  complete: boolean
+  legacy: boolean
+}
+
+export interface FeedbackSourceContext {
+  firstProcess: boolean
+  required: boolean
+  complete: boolean
+  legacy: boolean
+  allocations: (FeedbackSource & {
+    sourceFeedbackCode: string
+    complete: boolean
+    legacy: boolean
+  })[]
+  options: FeedbackSourceOption[]
+}
+
 // MES 生产报工 VO
 export interface ProFeedbackVO {
   id: number // 编号
@@ -29,10 +58,10 @@ export interface ProFeedbackVO {
   unitMeasureName: string // 单位名称
   expireDate: Date // 过期日期
   scheduledQuantity: number // 排产数量
-  feedbackQuantity: number // 本次报工数量
-  qualifiedQuantity: number // 合格品数量
-  unqualifiedQuantity: number // 不良品数量
-  uncheckQuantity: number // 待检测数量
+  feedbackQuantity: number | string // 本次报工数量
+  qualifiedQuantity: number | string // 合格品数量
+  unqualifiedQuantity: number | string // 不良品数量
+  uncheckQuantity: number | string // 待检测数量
   laborScrapQuantity: number // 工废数量
   materialScrapQuantity: number // 料废数量
   otherScrapQuantity: number // 其他废品数量
@@ -42,10 +71,13 @@ export interface ProFeedbackVO {
   approveUserNickname: string // 审核人昵称
   status: number // 状态
   remark: string // 备注
+  sources?: FeedbackSource[]
 }
 
 // MES 生产报工 API
 export const ProFeedbackApi = {
+  getSourceOptions: (taskId: number, feedbackId?: number): Promise<FeedbackSourceContext> =>
+    request.get({ url: '/mes/pro/feedback/source-options', params: { taskId, feedbackId } }),
   // 查询生产报工分页
   getFeedbackPage: async (params: any) => {
     return await request.get({ url: `/mes/pro/feedback/page`, params })

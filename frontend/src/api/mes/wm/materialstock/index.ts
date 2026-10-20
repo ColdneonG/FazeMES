@@ -25,11 +25,37 @@ export interface WmMaterialStockVO {
   quantity: number
   receiptTime: string
   frozen: boolean
+  qualityHold?: boolean
+  qualityHoldReason?: string
+  createTime: string
+}
+
+// 历史质量核查证据：只读记录，不代表已经完成实物核对或质量处置。
+export interface WmStockQualityHoldVO {
+  id: number
+  materialStockId?: number | null
+  sourceTransactionId: number
+  sourceBizType?: number | null
+  sourceBizId?: number | null
+  sourceBizLineId?: number | null
+  arrivalTransactionId: number
+  /** 服务端返回精确十进制文本；number 仅兼容旧版响应，展示时不作数值转换。 */
+  observedQuantity?: string | number | null
+  reason: string
+  status: string
   createTime: string
 }
 
 // MES 库存台账 API
 export const WmMaterialStockApi = {
+  getQualityHoldPage: async (params: {
+    pageNo: number
+    pageSize: number
+    materialStockId?: number
+  }): Promise<{ list: WmStockQualityHoldVO[]; total: number }> => {
+    return await request.get({ url: '/mes/wm/material-stock/quality-hold-page', params })
+  },
+
   // 查询库存台账分页
   getMaterialStockPage: async (params: any) => {
     return await request.get({ url: '/mes/wm/material-stock/page', params })

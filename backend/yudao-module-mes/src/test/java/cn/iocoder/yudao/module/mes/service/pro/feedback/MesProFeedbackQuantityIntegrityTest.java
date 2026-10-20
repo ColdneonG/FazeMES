@@ -47,6 +47,8 @@ import static org.mockito.Mockito.*;
 @ExtendWith(MockitoExtension.class)
 class MesProFeedbackQuantityIntegrityTest {
 
+    @Mock private MesProFeedbackFlowService flowService;
+
     @InjectMocks private MesProFeedbackServiceImpl service;
     @Mock private MesProFeedbackMapper mapper;
     @Mock private MesProWorkOrderService workOrderService;
@@ -139,6 +141,8 @@ class MesProFeedbackQuantityIntegrityTest {
         ArgumentCaptor<MesProFeedbackDO> saved = ArgumentCaptor.forClass(MesProFeedbackDO.class);
         verify(mapper).insert(saved.capture());
         assertEquals(0, new BigDecimal("0.3").compareTo(saved.getValue().getFeedbackQuantity()));
+        assertTrue(saved.getValue().getFlowRequired());
+        assertFalse(saved.getValue().getFlowComplete());
         assertEquals(BigDecimal.ZERO, saved.getValue().getUncheckQuantity());
         assertEquals(BigDecimal.ZERO, saved.getValue().getLaborScrapQuantity());
         assertEquals(BigDecimal.ZERO, saved.getValue().getMaterialScrapQuantity());

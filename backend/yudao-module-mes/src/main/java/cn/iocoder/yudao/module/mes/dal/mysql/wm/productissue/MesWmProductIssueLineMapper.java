@@ -14,6 +14,12 @@ import java.util.List;
  */
 @Mapper
 public interface MesWmProductIssueLineMapper extends BaseMapperX<MesWmProductIssueLineDO> {
+    default MesWmProductIssueLineDO selectByIdForUpdate(Long id) {
+        return selectOne(new LambdaQueryWrapperX<MesWmProductIssueLineDO>().eq(MesWmProductIssueLineDO::getId,id).last("FOR UPDATE"));
+    }
+    default List<MesWmProductIssueLineDO> selectListByIssueIdForUpdate(Long issueId) {
+        return selectList(new LambdaQueryWrapperX<MesWmProductIssueLineDO>().eq(MesWmProductIssueLineDO::getIssueId,issueId).orderByAsc(MesWmProductIssueLineDO::getId).last("FOR UPDATE"));
+    }
 
     default PageResult<MesWmProductIssueLineDO> selectPage(MesWmProductIssueLinePageReqVO reqVO) {
         return selectPage(reqVO, new LambdaQueryWrapperX<MesWmProductIssueLineDO>()

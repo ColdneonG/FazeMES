@@ -191,6 +191,8 @@ public class MesWmReturnIssueServiceImpl implements MesWmReturnIssueService {
             throw exception(WM_RETURN_ISSUE_NOT_APPROVED);
         }
 
+        validateFinalQualityAndQuantities(issue);
+
         // 2. 遍历所有明细，创建库存事务（增加库存 + 记录流水）
         createTransactionList(issue);
 
@@ -227,6 +229,36 @@ public class MesWmReturnIssueServiceImpl implements MesWmReturnIssueService {
                     .setBizType(MesBizTypeConstants.WM_RETURN_ISSUE).setBizId(issue.getId())
                     .setBizCode(issue.getCode()).setBizLineId(detail.getLineId())
                     .setRelatedTransactionId(outTransactionId)); // 关联出库事务
+        }
+    }
+
+    private void validateFinalQualityAndQuantities(MesWmReturnIssueDO issue) {
+        var lines = issueLineService.getReturnIssueLineListByIssueId(issue.getId());
+        var details = issueDetailService.getReturnIssueDetailListByIssueId(issue.getId());
+        var byId = new java.util.HashMap<Long, MesWmReturnIssueLineDO>();
+        var totals = new java.util.HashMap<Long, BigDecimal>();
+        for (var line : lines) byId.put(line.getId(), line);
+        if (byId.isEmpty()) throw exception(WM_RETURN_ISSUE_DETAIL_QUANTITY_MISMATCH);
+        for (var detail : details) {
+            var line = byId.get(detail.getLineId());
+            if (line == null || !java.util.Objects.equals(issue.getId(), detail.getIssueId())
+                    || !java.util.Objects.equals(line.getItemId(), detail.getItemId())
+                    || !java.util.Objects.equals(line.getBatchId(), detail.getBatchId())
+                    || !java.util.Objects.equals(line.getMaterialStockId(), detail.getMaterialStockId())
+                    || detail.getQuantity() == null || detail.getQuantity().signum() <= 0) {
+                throw exception(WM_RETURN_ISSUE_DETAIL_QUANTITY_MISMATCH);
+            }
+            totals.merge(line.getId(), detail.getQuantity(), BigDecimal::add);
+        }
+        for (var line : lines) {
+            if (line.getQuantity() == null || line.getQuantity().signum() <= 0
+                    || line.getQuantity().compareTo(totals.getOrDefault(line.getId(), BigDecimal.ZERO)) != 0) {
+                throw exception(WM_RETURN_ISSUE_DETAIL_QUANTITY_MISMATCH);
+            }
+        }
+        for (var detail : details) {
+            cn.iocoder.yudao.module.mes.service.wm.quality.MesWmQualityPolicy.validateInbound(
+                    byId.get(detail.getLineId()).getQualityStatus(), warehouseService.validateWarehouseExists(detail.getWarehouseId()));
         }
     }
 

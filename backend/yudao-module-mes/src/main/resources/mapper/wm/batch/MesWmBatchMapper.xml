@@ -16,7 +16,8 @@
            output-station feedback to its actual completed product output details.
         The SN's registered product_batch_code is a work-order lot, not an inventory
         batch identity; inventory batches always come from the actual output details.
-        Earlier-process materials without an SN allocation are deliberately not guessed.
+        3) immutable ancestor evidence created from frozen adjacent-process report transfers.
+        Earlier-process materials without either transfer or SN evidence are never guessed.
         tenant_id is explicit on every table, including when a caller bypasses the tenant plugin.
         State 4 is MesOrderStatusConstants.FINISHED for feedback/consume/produce.
     -->
@@ -78,6 +79,36 @@
         <choose>
             <when test="forward">AND sm.batch_code = #{batchCode}</when>
             <otherwise>AND ppd.batch_code = #{batchCode}</otherwise>
+        </choose>
+
+        UNION
+
+        SELECT source.work_order_id,
+               icd.item_id AS raw_item_id, icd.batch_id AS raw_batch_id, icd.batch_code AS raw_batch_code,
+               ppd.item_id AS product_item_id, ppd.batch_id AS product_batch_id, ppd.batch_code AS product_batch_code
+        FROM mes_pro_feedback_ancestor a
+        INNER JOIN mes_pro_feedback target ON target.id=a.feedback_id
+            AND target.tenant_id=#{tenantId} AND target.deleted=0 AND target.status=4
+        INNER JOIN mes_pro_feedback source ON source.id=a.ancestor_feedback_id
+            AND source.work_order_id=target.work_order_id AND source.item_id=target.item_id AND source.route_id=target.route_id
+            AND source.tenant_id=#{tenantId} AND source.deleted=0 AND source.status=4
+        INNER JOIN mes_wm_item_consume ic ON ic.feedback_id=source.id AND ic.work_order_id=source.work_order_id
+            AND ic.tenant_id=#{tenantId} AND ic.deleted=0 AND ic.status=4
+        INNER JOIN mes_wm_item_consume_detail icd ON icd.consume_id=ic.id
+            AND icd.tenant_id=#{tenantId} AND icd.deleted=0 AND icd.quantity>0
+        INNER JOIN mes_wm_product_produce pp ON pp.feedback_id=target.id AND pp.work_order_id=target.work_order_id
+            AND pp.tenant_id=#{tenantId} AND pp.deleted=0 AND pp.status=4
+        INNER JOIN mes_wm_product_produce_detail ppd ON ppd.produce_id=pp.id AND ppd.item_id=target.item_id
+            AND ppd.tenant_id=#{tenantId} AND ppd.deleted=0 AND ppd.quantity>0
+        WHERE a.tenant_id=#{tenantId} AND a.deleted=0
+          AND EXISTS(SELECT 1 FROM mes_pro_feedback_source frozen_source
+              WHERE frozen_source.feedback_id=target.id AND frozen_source.tenant_id=#{tenantId}
+                AND frozen_source.frozen=1 AND frozen_source.deleted=0 AND frozen_source.quantity>0)
+          AND icd.batch_code IS NOT NULL AND icd.batch_code!=''
+          AND ppd.batch_code IS NOT NULL AND ppd.batch_code!=''
+        <choose>
+            <when test="forward">AND icd.batch_code=#{batchCode}</when>
+            <otherwise>AND ppd.batch_code=#{batchCode}</otherwise>
         </choose>
     </sql>
 

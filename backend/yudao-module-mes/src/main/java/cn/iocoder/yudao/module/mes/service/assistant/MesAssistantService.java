@@ -7,6 +7,9 @@ import org.springframework.jdbc.core.JdbcTemplate;
 import org.springframework.jdbc.support.GeneratedKeyHolder;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
+import org.springframework.beans.factory.annotation.Autowired;
+import org.springframework.jdbc.datasource.DataSourceTransactionManager;
+import org.springframework.transaction.support.TransactionSynchronizationManager;
 import java.util.*;
 
 /** Native document RAG and user-owned conversation persistence. Every table access is explicitly scoped. */
@@ -17,9 +20,15 @@ public class MesAssistantService {
     private final MesAssistantDocumentParser parser;
     private final MesAssistantRetriever retriever;
     private final MesAssistantModelGateway models;
+    private final MesAssistantMessageStore messages;
     public MesAssistantService(JdbcTemplate jdbc, ObjectMapper json, MesAssistantDocumentParser parser,
                                MesAssistantRetriever retriever, MesAssistantModelGateway models) {
-        this.jdbc = jdbc; this.json = json; this.parser = parser; this.retriever = retriever; this.models = models;
+        this(jdbc,json,parser,retriever,models,new MesAssistantMessageStore(jdbc,json,new DataSourceTransactionManager(Objects.requireNonNull(jdbc.getDataSource()))));
+    }
+    @Autowired
+    public MesAssistantService(JdbcTemplate jdbc,ObjectMapper json,MesAssistantDocumentParser parser,
+                               MesAssistantRetriever retriever,MesAssistantModelGateway models,MesAssistantMessageStore messages){
+        this.jdbc = jdbc; this.json = json; this.parser = parser; this.retriever = retriever; this.models = models;this.messages=messages;
     }
 
     public List<Map<String, Object>> bases(boolean manage) {
@@ -162,19 +171,21 @@ public class MesAssistantService {
     public void deleteSession(long id, long userId) {
         long tenant = tenant(); requireSession(id, userId, true);
         jdbc.update("UPDATE mes_assistant_message SET deleted=1 WHERE session_id=? AND tenant_id=? AND user_id=? AND deleted=0", id, tenant, userId);
-        jdbc.update("UPDATE mes_assistant_session SET deleted=1 WHERE id=? AND tenant_id=? AND user_id=? AND deleted=0", id, tenant, userId);
+        jdbc.update("UPDATE mes_assistant_session SET deleted=1,version=version+1,pending_request_id=NULL,pending_started_at=NULL WHERE id=? AND tenant_id=? AND user_id=? AND deleted=0", id, tenant, userId);
     }
 
-    @Transactional
     @SuppressWarnings("unchecked")
     public Map<String, Object> send(long sessionId, String question, List<Long> baseIds, long userId) {
+        if(TransactionSynchronizationManager.isActualTransactionActive())
+            throw MesAssistantErrors.invalid("模型问答不能在活动业务事务中执行，请在事务完成后重试");
         long tenant = tenant(); question = text(question, 4000, "提问");
-        Map<String, Object> session = requireSession(sessionId, userId, true);
-        long messageCount = count("SELECT COUNT(*) FROM mes_assistant_message WHERE session_id=? AND tenant_id=? AND user_id=? AND deleted=0", sessionId, tenant, userId);
-        if (messageCount >= 198) throw MesAssistantErrors.invalid("会话已达到200条，请新建会话");
+        MesAssistantMessageStore.Claim claim=messages.claim(sessionId,userId,question);
+        List<Map<String,Object>> citations=List.of();
+        Map<String,Object> modelStatus=Map.of();
+        try {
         Map<String, Object> retrieval = search(question.length() > 1000 ? question.substring(0, 1000) : question, baseIds, 5);
-        List<Map<String, Object>> citations = (List<Map<String, Object>>) retrieval.get("items");
-        Map<String, Object> modelStatus = models.status();
+        citations = (List<Map<String, Object>>) retrieval.get("items");
+        modelStatus = models.status();
         String status = "MODEL_NOT_CONFIGURED", answer = null;
         String message = "模型尚未配置或启用，本次仅展示真实知识检索结果，没有生成模型答复。";
         if (Boolean.TRUE.equals(modelStatus.get("configured"))) {
@@ -198,27 +209,24 @@ public class MesAssistantService {
             citations = List.copyOf(includedCitations);
             if (citations.isEmpty()) context.append("无匹配资料。不得编造知识库引用；如提供一般性建议，明确标注未得到本知识库验证。\n");
             prompt.add(Map.of("role", "system", "content", context.toString()));
-            var history = rows("SELECT role,content_text AS content FROM mes_assistant_message WHERE session_id=? AND tenant_id=? AND user_id=? AND deleted=0 AND status='ANSWERED' ORDER BY id DESC LIMIT 12", sessionId, tenant, userId);
-            Collections.reverse(history);
+            var history = claim.history();
             for (var item : history) {
                 prompt.add(Map.of("role", item.get("role").toString(), "content", item.get("content").toString()));
             }
             prompt.add(Map.of("role", "user", "content", question));
-            answer = models.complete(prompt); status = "ANSWERED"; message = "模型已返回响应，引用为本次真实检索片段。";
+            answer = models.complete(MesModelUsageService.Purpose.KNOWLEDGE_CHAT,prompt); status = "ANSWERED"; message = "模型已返回响应，引用为本次真实检索片段。";
             }
             catch (cn.iocoder.yudao.framework.common.exception.ServiceException exception) { status = "MODEL_ERROR"; message = exception.getMessage(); }
         }
-        long userMessageId = insert("INSERT INTO mes_assistant_message(session_id,user_id,role,content_text,status,citations_json,model_name,tenant_id) VALUES(?,?,'user',?,?,?,?,?)",
-                sessionId, userId, question, status, encode(citations), modelStatus.get("model"), tenant);
-        Long assistantMessageId = null;
-        if (answer != null) assistantMessageId = insert("INSERT INTO mes_assistant_message(session_id,user_id,role,content_text,status,citations_json,model_name,tenant_id) VALUES(?,?,'assistant',?,'ANSWERED',?,?,?)",
-                sessionId, userId, answer, encode(citations), modelStatus.get("model"), tenant);
-        String title = session.get("title").toString().equals("新会话") ? question.substring(0, Math.min(40, question.length())) : session.get("title").toString();
-        jdbc.update("UPDATE mes_assistant_session SET title=?,update_time=CURRENT_TIMESTAMP WHERE id=? AND tenant_id=? AND user_id=? AND deleted=0", title, sessionId, tenant, userId);
+        var saved=messages.finish(claim,question,status,answer,citations,modelStatus.get("model"));
         Map<String, Object> result = new LinkedHashMap<>();
-        result.put("sessionId", sessionId); result.put("userMessageId", userMessageId); result.put("assistantMessageId", assistantMessageId);
+        result.put("sessionId", sessionId); result.put("userMessageId", saved.get("userMessageId")); result.put("assistantMessageId", saved.get("assistantMessageId"));
         result.put("status", status); result.put("message", message); result.put("answer", answer); result.put("citations", citations);
         result.put("model", modelStatus.get("model")); result.put("retrievalMode", "lexical_bm25"); return result;
+        } catch(RuntimeException|Error failure) {
+            try { messages.release(claim,citations,modelStatus.get("model")); } catch(RuntimeException releaseFailure) { failure.addSuppressed(releaseFailure); }
+            throw failure;
+        }
     }
 
     private Map<String, Object> requireSession(long id, long userId, boolean lock) {

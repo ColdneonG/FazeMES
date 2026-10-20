@@ -159,7 +159,12 @@
         label="库存"
         prop="bizId"
       >
-        <WmMaterialStockSelect v-model="formData.bizId" @change="handleBizSelect" class="!w-1/1" />
+        <WmMaterialStockSelect
+          v-model="formData.bizId"
+          :outbound-only="false"
+          @change="handleBizSelect"
+          class="!w-1/1"
+        />
       </el-form-item>
       <el-form-item
         v-else-if="formData.bizType === BarcodeBizTypeEnum.BATCH"
@@ -175,13 +180,24 @@
       >
         <ProCardSelect v-model="formData.bizId" @change="handleBizSelect" class="!w-1/1" />
       </el-form-item>
-      <!-- TODO 流转单（TRANSORDER）后端模块尚未实现，待后续补充 -->
-      <el-form-item v-else-if="formData.bizType" label="暂未接入" prop="bizId">
+      <el-form-item
+        v-else-if="formData.bizType === BarcodeBizTypeEnum.SN"
+        label="SN编号"
+        prop="bizId"
+      >
         <el-input-number
           v-model="formData.bizId"
           :min="1"
           class="!w-240px"
           placeholder="请输入业务编号"
+        />
+        <el-button @click="loadSnIdentity" :loading="contentLoading">核对 SN</el-button>
+      </el-form-item>
+      <el-form-item v-else-if="formData.bizType" label="暂未接入">
+        <el-alert
+          title="此业务类型尚未接入，请选择已接入的业务对象。"
+          type="warning"
+          :closable="false"
         />
       </el-form-item>
       <el-form-item label="业务编码" prop="bizCode">
@@ -209,7 +225,9 @@
       </el-form-item>
     </el-form>
     <template #footer>
-      <el-button @click="submitForm" type="primary" :disabled="formLoading">确 定</el-button>
+      <el-button @click="submitForm" type="primary" :disabled="formLoading || contentLoading"
+        >确 定</el-button
+      >
       <el-button @click="dialogVisible = false">取 消</el-button>
     </template>
   </Dialog>
@@ -238,6 +256,7 @@ import WmBatchSelect from '@/views/mes/wm/batch/components/WmBatchSelect.vue'
 import ProCardSelect from '@/views/mes/pro/card/components/ProCardSelect.vue'
 import { WmWarehouseLocationApi } from '@/api/mes/wm/warehouse/location'
 import { WmWarehouseAreaApi } from '@/api/mes/wm/warehouse/area'
+import { assertContext, barcodeBusinessType, positiveId } from './labelPrint'
 
 defineOptions({ name: 'BarcodeForm' })
 
@@ -271,9 +290,15 @@ const locationWarehouseId = ref<number>() // 库区选择器的临时数据：�
 const areaWarehouseId = ref<number>() // 库位选择器的临时数据：选择仓库后，传给库位选择器
 const areaLocationId = ref<number>() // 库位选择器的临时数据：选择库区后，传给库位选择器
 const isLoadingData = ref(false) // 标记是否正在加载数据，避免 watch 清空字段
+const contentLoading = ref(false)
+let openVersion = 0,
+  selectionVersion = 0
 
 /** 业务 Select 选中回调：自动填充 bizId、bizCode、bizName */
 const handleBizSelect = async (item: any) => {
+  const version = ++selectionVersion
+  contentLoading.value = false
+  formData.value.content = undefined
   if (!item) {
     formData.value.bizId = undefined
     formData.value.bizCode = undefined
@@ -285,12 +310,12 @@ const handleBizSelect = async (item: any) => {
   // 根据业务类型映射字段
   switch (formData.value.bizType) {
     case BarcodeBizTypeEnum.STOCK:
-      formData.value.bizCode = item.itemCode
+      formData.value.bizCode = String(item.id)
       formData.value.bizName = item.itemName
       break
     case BarcodeBizTypeEnum.PACKAGE:
       formData.value.bizCode = item.code
-      formData.value.bizName = item.clientName || item.code
+      formData.value.bizName = item.code
       break
     case BarcodeBizTypeEnum.BATCH:
       formData.value.bizCode = item.code
@@ -298,7 +323,7 @@ const handleBizSelect = async (item: any) => {
       break
     case BarcodeBizTypeEnum.PROCARD:
       formData.value.bizCode = item.code
-      formData.value.bizName = item.workOrderName || item.code
+      formData.value.bizName = item.code
       break
     default:
       formData.value.bizCode = item.code || item.username
@@ -307,20 +332,60 @@ const handleBizSelect = async (item: any) => {
 
   // 自动生成条码内容
   if (formData.value.bizType && formData.value.bizCode) {
+    const identity = { type: formData.value.bizType, id: formData.value.bizId }
+    contentLoading.value = true
     try {
-      formData.value.content = await WmBarcodeApi.generateBarcodeContent(
+      const content = await WmBarcodeApi.generateBarcodeContent(
         formData.value.bizType,
         formData.value.bizCode
       )
+      if (
+        version === selectionVersion &&
+        identity.type === formData.value.bizType &&
+        identity.id === formData.value.bizId
+      )
+        formData.value.content = content
     } catch (error) {
-      console.error('生成条码内容失败:', error)
-      formData.value.content = undefined
+      if (version === selectionVersion) {
+        formData.value.content = undefined
+        message.warning('无法生成当前业务的有效条码，请检查条码配置')
+      }
+    } finally {
+      if (version === selectionVersion) contentLoading.value = false
     }
+  }
+}
+const loadSnIdentity = async () => {
+  if (!positiveId(formData.value.bizId)) return
+  const version = ++selectionVersion
+  const selector = { bizType: BarcodeBizTypeEnum.SN, bizId: formData.value.bizId }
+  formData.value.bizCode = undefined
+  formData.value.bizName = undefined
+  formData.value.content = undefined
+  contentLoading.value = true
+  try {
+    const context = await WmBarcodeApi.getLabelContext(selector)
+    if (
+      version !== selectionVersion ||
+      formData.value.bizType !== selector.bizType ||
+      formData.value.bizId !== selector.bizId
+    )
+      return
+    assertContext(context, selector)
+    formData.value.bizCode = context.bizCode
+    formData.value.bizName = context.bizName ?? context.bizCode
+    formData.value.content = context.content ?? context.candidateContent ?? undefined
+  } catch {
+    if (version === selectionVersion) message.warning('无法核对该 SN，请检查编号及条码配置')
+  } finally {
+    if (version === selectionVersion) contentLoading.value = false
   }
 }
 
 /** 库区仓库选择回调：清空库区 */
 const handleLocationWarehouseChange = () => {
+  selectionVersion++
+  contentLoading.value = false
   formData.value.bizId = undefined
   formData.value.bizCode = undefined
   formData.value.bizName = undefined
@@ -329,6 +394,8 @@ const handleLocationWarehouseChange = () => {
 
 /** 库位仓库选择回调：清空库区和库位 */
 const handleAreaWarehouseChange = () => {
+  selectionVersion++
+  contentLoading.value = false
   areaLocationId.value = undefined
   formData.value.bizId = undefined
   formData.value.bizCode = undefined
@@ -338,6 +405,8 @@ const handleAreaWarehouseChange = () => {
 
 /** 库位库区选择回调：清空库位 */
 const handleAreaLocationChange = () => {
+  selectionVersion++
+  contentLoading.value = false
   formData.value.bizId = undefined
   formData.value.bizCode = undefined
   formData.value.bizName = undefined
@@ -345,7 +414,7 @@ const handleAreaLocationChange = () => {
 }
 
 /** 加载级联选择器的数据（编辑时回填上级数据） */
-const loadCascadeData = async () => {
+const loadCascadeData = async (version: number) => {
   if (!formData.value.bizType || !formData.value.bizId) {
     return
   }
@@ -353,6 +422,7 @@ const loadCascadeData = async () => {
     // 库区类型：需要查询库区信息，获取所属仓库ID
     if (formData.value.bizType === BarcodeBizTypeEnum.LOCATION) {
       const location = await WmWarehouseLocationApi.getWarehouseLocation(formData.value.bizId)
+      if (version !== openVersion) return
       if (location?.warehouseId) {
         locationWarehouseId.value = location.warehouseId
       }
@@ -360,6 +430,7 @@ const loadCascadeData = async () => {
     // 库位类型：需要查询库位信息，获取所属仓库ID和库区ID
     else if (formData.value.bizType === BarcodeBizTypeEnum.AREA) {
       const area = await WmWarehouseAreaApi.getWarehouseArea(formData.value.bizId)
+      if (version !== openVersion) return
       if (area?.warehouseId) {
         areaWarehouseId.value = area.warehouseId
       }
@@ -380,6 +451,8 @@ watch(
     if (isLoadingData.value) {
       return
     }
+    selectionVersion++
+    contentLoading.value = false
 
     formData.value.bizId = undefined
     formData.value.bizCode = undefined
@@ -394,6 +467,11 @@ watch(
 
 /** 打开弹窗 */
 const open = async (type: string, id?: number) => {
+  const version = ++openVersion
+  selectionVersion++
+  contentLoading.value = false
+  isLoadingData.value = Boolean(id)
+  formLoading.value = Boolean(id)
   dialogVisible.value = true
   dialogTitle.value = type === 'create' ? '新增条码' : '修改条码'
   formType.value = type
@@ -402,12 +480,17 @@ const open = async (type: string, id?: number) => {
     formLoading.value = true
     isLoadingData.value = true
     try {
-      formData.value = await WmBarcodeApi.getBarcode(id)
+      const saved = await WmBarcodeApi.getBarcode(id)
+      if (version !== openVersion) return
+      formData.value = { ...saved }
       // 编辑时，需要回填级联选择器的中间层级数据
-      await loadCascadeData()
+      await loadCascadeData(version)
+      await nextTick()
     } finally {
-      formLoading.value = false
-      isLoadingData.value = false
+      if (version === openVersion) {
+        formLoading.value = false
+        isLoadingData.value = false
+      }
     }
   }
 }
@@ -416,23 +499,52 @@ defineExpose({ open })
 /** 提交表单 */
 const emit = defineEmits(['success'])
 const submitForm = async () => {
+  if (
+    formLoading.value ||
+    contentLoading.value ||
+    !barcodeBusinessType(formData.value.bizType ?? -1)
+  )
+    return
   await formRef.value.validate()
+  const version = openVersion
   formLoading.value = true
   try {
-    const data = formData.value as unknown as WmBarcodeVO
+    const data = { ...formData.value } as unknown as WmBarcodeVO
     if (formType.value === 'create') {
       await WmBarcodeApi.createBarcode(data)
+      if (version !== openVersion) return
       message.success(t('common.createSuccess'))
     } else {
       await WmBarcodeApi.updateBarcode(data)
+      if (version !== openVersion) return
       message.success(t('common.updateSuccess'))
     }
     dialogVisible.value = false
     emit('success')
   } finally {
-    formLoading.value = false
+    if (version === openVersion) formLoading.value = false
   }
 }
+watch(dialogVisible, (value) => {
+  if (!value) {
+    openVersion++
+    selectionVersion++
+    contentLoading.value = false
+  }
+})
+watch(
+  () => formData.value.bizId,
+  () => {
+    if (formData.value.bizType === BarcodeBizTypeEnum.SN && !isLoadingData.value) {
+      selectionVersion++
+      contentLoading.value = false
+      formData.value.bizCode = undefined
+      formData.value.bizName = undefined
+      formData.value.content = undefined
+    }
+  },
+  { flush: 'sync' }
+)
 
 /** 重置表单 */
 const resetForm = () => {

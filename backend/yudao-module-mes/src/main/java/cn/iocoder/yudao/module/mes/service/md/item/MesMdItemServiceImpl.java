@@ -65,6 +65,7 @@ public class MesMdItemServiceImpl implements MesMdItemService {
     private MesMdAutoCodeRecordService autoCodeRecordService;
 
     @Override
+    @Transactional(rollbackFor = Exception.class)
     public Long createItem(MesMdItemSaveReqVO createReqVO) {
         // 校验数据
         validateItemSaveData(createReqVO);

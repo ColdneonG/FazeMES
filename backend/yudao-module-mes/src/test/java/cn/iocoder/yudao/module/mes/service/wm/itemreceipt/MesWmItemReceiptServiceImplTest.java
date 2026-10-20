@@ -41,6 +41,7 @@ import static org.mockito.Mockito.*;
  */
 @Import(MesWmItemReceiptServiceImpl.class)
 public class MesWmItemReceiptServiceImplTest extends BaseDbUnitTest {
+    @MockitoBean private cn.iocoder.yudao.module.mes.service.wm.warehouse.MesWmWarehouseService warehouseService;
 
     @Resource
     private MesWmItemReceiptServiceImpl itemReceiptService;

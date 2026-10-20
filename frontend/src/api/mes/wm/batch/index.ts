@@ -34,8 +34,18 @@ export interface BatchVO {
   createTime?: Date
 }
 
+export interface BatchTraceCoverage {
+  complete: boolean
+  legacyFeedbackIds: number[]
+  truncated: boolean
+  scope: 'BATCH_POOL'
+  notes: string[]
+}
+
 // 批次追溯 API
 export const BatchApi = {
+  getTraceCoverage: (code: string): Promise<BatchTraceCoverage> =>
+    request.get({ url: '/mes/wm/batch/trace-coverage', params: { code } }),
   // 获取批次详情
   getBatch: async (id: number) => {
     return await request.get({ url: `/mes/wm/batch/get?id=` + id })

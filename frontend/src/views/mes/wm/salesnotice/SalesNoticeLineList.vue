@@ -16,7 +16,19 @@
       <el-table-column label="物料名称" align="center" prop="itemName" min-width="140" />
       <el-table-column label="规格型号" align="center" prop="specification" min-width="120" />
       <el-table-column label="单位" align="center" prop="unitMeasureName" width="80" />
-      <el-table-column label="发货数量" align="center" prop="quantity" width="100" />
+      <el-table-column label="通知计划" align="right" prop="noticeQuantity" min-width="130" />
+      <el-table-column label="已发货" align="right" min-width="130">
+        <template #default="{ row }">{{ row.shippedQuantity ?? '待核对' }}</template>
+      </el-table-column>
+      <el-table-column label="未过账占用" align="right" min-width="130">
+        <template #default="{ row }">{{ row.reservedQuantity ?? '待核对' }}</template>
+      </el-table-column>
+      <el-table-column label="剩余可发" align="right" prop="availableQuantity" min-width="130" />
+      <el-table-column label="履约核对" min-width="160">
+        <template #default="{ row }">{{
+          row.fulfillmentReliable ? '已核对' : row.fulfillmentWarning || '待核对'
+        }}</template>
+      </el-table-column>
       <el-table-column label="批次号" align="center" prop="batchCode" min-width="120" />
       <el-table-column label="是否检验" align="center" prop="oqcCheckFlag" width="90">
         <template #default="scope">
@@ -60,11 +72,10 @@
         </el-col>
         <el-col :span="8">
           <el-form-item label="发货数量" prop="quantity">
-            <el-input-number
+            <el-input
               v-model="formData.quantity"
-              :precision="2"
-              :min="0.01"
-              controls-position="right"
+              inputmode="decimal"
+              placeholder="支持 6 位小数"
               class="!w-1/1"
             />
           </el-form-item>
@@ -101,6 +112,7 @@
 import { DICT_TYPE } from '@/utils/dict'
 import { WmSalesNoticeLineApi, WmSalesNoticeLineVO } from '@/api/mes/wm/salesnotice/line'
 import MdItemSelect from '@/views/mes/md/item/components/MdItemSelect.vue'
+import { quantityRule } from '@/utils/mesQuantity'
 
 defineOptions({ name: 'SalesNoticeLineList' })
 
@@ -157,13 +169,13 @@ const formData = ref({
   noticeId: undefined as number | undefined,
   itemId: undefined as number | undefined,
   batchCode: undefined as string | undefined,
-  quantity: undefined as number | undefined,
+  quantity: '',
   oqcCheckFlag: true,
   remark: undefined
 })
 const formRules = reactive({
   itemId: [{ required: true, message: '物料不能为空', trigger: 'change' }],
-  quantity: [{ required: true, message: '发货数量不能为空', trigger: 'blur' }]
+  quantity: [quantityRule(true)]
 })
 const formRef = ref()
 
@@ -176,7 +188,8 @@ const openForm = async (type: string, id?: number) => {
   if (id) {
     formLoading.value = true
     try {
-      formData.value = await WmSalesNoticeLineApi.getSalesNoticeLine(id)
+      const data = await WmSalesNoticeLineApi.getSalesNoticeLine(id)
+      formData.value = { ...data, quantity: data.noticeQuantity ?? String(data.quantity) }
     } finally {
       formLoading.value = false
     }
@@ -188,7 +201,16 @@ const submitForm = async () => {
   await formRef.value.validate()
   formLoading.value = true
   try {
-    const data = { ...formData.value, noticeId: props.noticeId } as unknown as WmSalesNoticeLineVO
+    const { id, itemId, batchCode, quantity, oqcCheckFlag, remark } = formData.value
+    const data = {
+      id,
+      itemId,
+      batchCode,
+      quantity,
+      oqcCheckFlag,
+      remark,
+      noticeId: props.noticeId
+    } as unknown as WmSalesNoticeLineVO
     if (lineFormType.value === 'create') {
       await WmSalesNoticeLineApi.createSalesNoticeLine(data)
       message.success(t('common.createSuccess'))
@@ -210,7 +232,7 @@ const resetForm = () => {
     noticeId: undefined,
     itemId: undefined,
     batchCode: undefined,
-    quantity: undefined,
+    quantity: '',
     oqcCheckFlag: true,
     remark: undefined
   }

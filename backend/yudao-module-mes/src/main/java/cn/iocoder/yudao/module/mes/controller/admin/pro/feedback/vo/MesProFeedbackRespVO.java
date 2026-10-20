@@ -115,31 +115,39 @@ public class MesProFeedbackRespVO {
 
     @Schema(description = "排产数量", example = "5000.00")
     @ExcelProperty("排产数量")
+    @com.fasterxml.jackson.annotation.JsonFormat(shape=com.fasterxml.jackson.annotation.JsonFormat.Shape.STRING)
     private BigDecimal scheduledQuantity;
 
     @Schema(description = "本次报工数量", example = "500.00")
     @ExcelProperty("报工数量")
+    @com.fasterxml.jackson.annotation.JsonFormat(shape=com.fasterxml.jackson.annotation.JsonFormat.Shape.STRING)
     private BigDecimal feedbackQuantity;
 
     @Schema(description = "合格品数量", example = "490.00")
     @ExcelProperty("合格品数量")
+    @com.fasterxml.jackson.annotation.JsonFormat(shape=com.fasterxml.jackson.annotation.JsonFormat.Shape.STRING)
     private BigDecimal qualifiedQuantity;
 
     @Schema(description = "不良品数量", example = "10.00")
     @ExcelProperty("不良品数量")
+    @com.fasterxml.jackson.annotation.JsonFormat(shape=com.fasterxml.jackson.annotation.JsonFormat.Shape.STRING)
     private BigDecimal unqualifiedQuantity;
 
     @Schema(description = "待检测数量", example = "0")
     @ExcelProperty("待检测数量")
+    @com.fasterxml.jackson.annotation.JsonFormat(shape=com.fasterxml.jackson.annotation.JsonFormat.Shape.STRING)
     private BigDecimal uncheckQuantity;
 
     @Schema(description = "工废数量", example = "6.00")
+    @com.fasterxml.jackson.annotation.JsonFormat(shape=com.fasterxml.jackson.annotation.JsonFormat.Shape.STRING)
     private BigDecimal laborScrapQuantity;
 
     @Schema(description = "料废数量", example = "4.00")
+    @com.fasterxml.jackson.annotation.JsonFormat(shape=com.fasterxml.jackson.annotation.JsonFormat.Shape.STRING)
     private BigDecimal materialScrapQuantity;
 
     @Schema(description = "其他废品数量", example = "0")
+    @com.fasterxml.jackson.annotation.JsonFormat(shape=com.fasterxml.jackson.annotation.JsonFormat.Shape.STRING)
     private BigDecimal otherScrapQuantity;
 
     @Schema(description = "报工用户编号", example = "1")
@@ -164,6 +172,9 @@ public class MesProFeedbackRespVO {
     @Schema(description = "备注", example = "备注")
     @ExcelProperty("备注")
     private String remark;
+
+    private Boolean flowRequired;
+    private Boolean flowComplete;
 
     @Schema(description = "创建时间", requiredMode = Schema.RequiredMode.REQUIRED)
     @ExcelProperty("创建时间")

@@ -12,8 +12,8 @@ public interface MesProKittingMapper extends BaseMapperX<MesProMaterialReservati
     String STOCK_COLUMNS = """
         SELECT s.id,s.item_id,s.area_id,s.warehouse_id,s.location_id,s.batch_id,s.batch_code,
           s.quantity,s.receipt_time,w.name warehouse_name,l.name location_name,a.name area_name,
-          (s.work_order_id IS NULL AND w.code &lt;&gt; 'WIP_VIRTUAL_WAREHOUSE'
-           AND s.frozen=FALSE AND w.frozen=FALSE AND l.frozen=FALSE AND a.frozen=FALSE
+          (s.work_order_id IS NULL AND w.code NOT IN ('WIP_VIRTUAL_WAREHOUSE','QUALITY_QUARANTINE_WAREHOUSE')
+           AND s.frozen=FALSE AND COALESCE(s.quality_hold,FALSE)=FALSE AND w.frozen=FALSE AND l.frozen=FALSE AND a.frozen=FALSE
            AND a.status=0 AND s.quantity &gt; 0) AS eligible
         FROM mes_wm_material_stock s
         JOIN mes_wm_warehouse w ON w.id=s.warehouse_id AND w.tenant_id=s.tenant_id AND w.deleted=FALSE
@@ -33,7 +33,7 @@ public interface MesProKittingMapper extends BaseMapperX<MesProMaterialReservati
     List<KittingMaterialVO> selectRequirements(@Param("workOrderId") Long workOrderId, @Param("tenantId") Long tenantId);
 
     @Select("<script>" + STOCK_COLUMNS + """
-        AND s.work_order_id IS NULL AND w.code &lt;&gt; 'WIP_VIRTUAL_WAREHOUSE'
+        AND s.work_order_id IS NULL AND w.code NOT IN ('WIP_VIRTUAL_WAREHOUSE','QUALITY_QUARANTINE_WAREHOUSE')
         AND s.item_id IN <foreach collection='itemIds' item='item' open='(' close=')' separator=','>#{item}</foreach>
         AND s.quantity &gt; 0 ORDER BY s.receipt_time,s.id
         </script>
@@ -52,9 +52,9 @@ public interface MesProKittingMapper extends BaseMapperX<MesProMaterialReservati
           (SELECT w.name FROM mes_wm_warehouse w WHERE w.id=s.warehouse_id AND w.tenant_id=s.tenant_id AND w.deleted=FALSE) warehouse_name,
           (SELECT l.name FROM mes_wm_warehouse_location l WHERE l.id=s.location_id AND l.tenant_id=s.tenant_id AND l.deleted=FALSE) location_name,
           (SELECT a.name FROM mes_wm_warehouse_area a WHERE a.id=s.area_id AND a.tenant_id=s.tenant_id AND a.deleted=FALSE) area_name,
-          (s.work_order_id IS NULL AND s.frozen=FALSE AND s.quantity > 0
+          (s.work_order_id IS NULL AND s.frozen=FALSE AND COALESCE(s.quality_hold,FALSE)=FALSE AND s.quantity > 0
             AND EXISTS (SELECT 1 FROM mes_wm_warehouse w WHERE w.id=s.warehouse_id AND w.tenant_id=s.tenant_id
-              AND w.deleted=FALSE AND w.frozen=FALSE AND w.code <> 'WIP_VIRTUAL_WAREHOUSE')
+              AND w.deleted=FALSE AND w.frozen=FALSE AND w.code NOT IN ('WIP_VIRTUAL_WAREHOUSE','QUALITY_QUARANTINE_WAREHOUSE'))
             AND EXISTS (SELECT 1 FROM mes_wm_warehouse_location l WHERE l.id=s.location_id AND l.tenant_id=s.tenant_id
               AND l.deleted=FALSE AND l.frozen=FALSE)
             AND EXISTS (SELECT 1 FROM mes_wm_warehouse_area a WHERE a.id=s.area_id AND a.tenant_id=s.tenant_id

@@ -75,6 +75,11 @@ export interface WorkorderCost {
   actualUnitCost: CostDecimal
   issues: string[]
   efforts: CostEffort[]
+  lossQuantity?: CostDecimal
+  lossAllocationMethod?: string
+  lossAllocationReason?: string
+  lossAllocatedBy?: string | number
+  lossAllocatedAt?: string | number
 }
 export interface LinePrice {
   lineId: number
@@ -109,8 +114,58 @@ export interface SalesCost {
   lines: SalesCostLine[]
   issues: string[]
 }
+export interface ReturnCostLine {
+  lineId: number
+  itemId: number
+  itemCode: string
+  itemName: string
+  quantity: CostDecimal
+  postedQuantity: CostDecimal
+  originTransactionId: number | null
+  originSalesId: number | null
+  originSalesCode: string | null
+  originSalesLineId: number | null
+  materialAmount: CostDecimal
+  laborAmount: CostDecimal
+  overheadAmount: CostDecimal
+  costAmount: CostDecimal
+  status: string
+  issues: string[]
+}
+export interface ReturnCostOriginal {
+  originTransactionId: number
+  salesId: number
+  salesCode: string
+  salesLineId: number
+  itemId: number
+  itemCode: string
+  itemName: string
+  outboundQuantity: CostDecimal
+  returnedQuantity: CostDecimal
+  remainingQuantity: CostDecimal
+  originalCostAmount: CostDecimal
+  returnedCostAmount: CostDecimal
+  remainingCostAmount: CostDecimal
+  status: string
+  issues: string[]
+}
+export interface ReturnSalesCost {
+  returnId: number
+  returnCode: string
+  status: string
+  posted: boolean
+  materialAmount: CostDecimal
+  laborAmount: CostDecimal
+  overheadAmount: CostDecimal
+  costAmount: CostDecimal
+  lines: ReturnCostLine[]
+  originals: ReturnCostOriginal[]
+  issues: string[]
+}
 
 export const CostApi = {
+  getReturnSales: (id: number): Promise<ReturnSalesCost> =>
+    request.get({ url: '/mes/cost/return-sales', params: { id } }),
   getProduct: (itemId: number): Promise<ProductCost> =>
     request.get({ url: '/mes/cost/product', params: { itemId } }),
   getProfile: (itemId: number): Promise<CostProfile | null> =>
@@ -127,6 +182,8 @@ export const CostApi = {
     request.post({ url: '/mes/cost/workorder/effort/void', data }),
   settleWorkorder: (workorderId: number) =>
     request.post({ url: '/mes/cost/workorder/settle', params: { workorderId } }),
+  allocateWorkorderLoss: (data: { workorderId: number; reason: string }) =>
+    request.post({ url: '/mes/cost/workorder/loss-allocation', data }),
   getReceiptLinePrice: (lineId: number): Promise<LinePrice | null> =>
     request.get({ url: '/mes/cost/receipt-line-price', params: { lineId } }),
   saveReceiptLinePrice: (data: LinePrice) =>

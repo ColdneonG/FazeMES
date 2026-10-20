@@ -1,6 +1,13 @@
 <!-- MES 生产退料上架明细表单弹窗 -->
 <template>
   <Dialog :title="dialogTitle" v-model="dialogVisible" width="960px">
+    <el-alert
+      :title="returnQualityGuidance(qualityStatus)"
+      type="warning"
+      :closable="false"
+      show-icon
+      class="!mb-16px"
+    />
     <el-form
       ref="formRef"
       :model="formData"
@@ -39,7 +46,11 @@
       <el-row>
         <el-col :span="8">
           <el-form-item label="入库仓库" prop="warehouseId">
-            <WmWarehouseSelect v-model="formData.warehouseId" />
+            <WmWarehouseSelect
+              v-model="formData.warehouseId"
+              :quarantine-filter="qualityStatus === 2 ? 'only' : 'all'"
+              @change="handleWarehouseChange"
+            />
           </el-form-item>
         </el-col>
         <el-col :span="8">
@@ -47,6 +58,7 @@
             <WmWarehouseLocationSelect
               v-model="formData.locationId"
               :warehouse-id="formData.warehouseId"
+              @change="formData.areaId = undefined"
             />
           </el-form-item>
         </el-col>
@@ -65,7 +77,12 @@
       </el-row>
     </el-form>
     <template #footer>
-      <el-button @click="submitForm" type="primary" :disabled="formLoading">确 定</el-button>
+      <el-button
+        @click="submitForm"
+        type="primary"
+        :disabled="formLoading || qualityStatus == null || qualityStatus === 0"
+        >确 定</el-button
+      >
       <el-button @click="dialogVisible = false">取 消</el-button>
     </template>
   </Dialog>
@@ -75,6 +92,7 @@
 import { WmReturnIssueDetailApi, WmReturnIssueDetailVO } from '@/api/mes/wm/returnissue/detail'
 import { WmMaterialStockApi } from '@/api/mes/wm/materialstock'
 import { WmReturnIssueLineApi } from '@/api/mes/wm/returnissue/line'
+import { returnQualityGuidance } from '../qualityPolicy'
 import MdItemSelect from '@/views/mes/md/item/components/MdItemSelect.vue'
 import WmMaterialStockSelect from '@/views/mes/wm/materialstock/components/WmMaterialStockSelect.vue'
 import WmWarehouseSelect from '@/views/mes/wm/warehouse/components/WmWarehouseSelect.vue'
@@ -97,6 +115,7 @@ const dialogTitle = ref('') // 弹窗的标题
 const formLoading = ref(false) // 表单的加载中
 const formType = ref('') // 表单的类型：create / update
 const currentLineId = ref<number>() // 当前操作的行 ID
+const qualityStatus = ref<number>()
 const quantityMax = ref<number | undefined>(undefined) // 数量上限（在库数量）
 const formRef = ref() // 表单 Ref
 const formData = ref({
@@ -121,21 +140,10 @@ const formRules = reactive({
   quantity: [{ required: true, message: '数量不能为空', trigger: 'blur' }]
 })
 
-watch(
-  () => formData.value.warehouseId,
-  () => {
-    formData.value.locationId = undefined
-    formData.value.areaId = undefined
-  },
-  { flush: 'sync' }
-)
-watch(
-  () => formData.value.locationId,
-  () => {
-    formData.value.areaId = undefined
-  },
-  { flush: 'sync' }
-)
+const handleWarehouseChange = () => {
+  formData.value.locationId = undefined
+  formData.value.areaId = undefined
+}
 
 /** 打开弹窗 */
 const open = async (type: string, lineId: number, _itemId?: number, detailId?: number) => {
@@ -144,29 +152,33 @@ const open = async (type: string, lineId: number, _itemId?: number, detailId?: n
   formType.value = type
   currentLineId.value = lineId
   resetForm()
-  // 修改时，设置数据
-  if (detailId) {
-    formLoading.value = true
-    try {
-      formData.value = await WmReturnIssueDetailApi.getReturnIssueDetail(detailId)
-    } finally {
-      formLoading.value = false
-    }
-  } else {
+  formLoading.value = true
+  try {
     const line = await WmReturnIssueLineApi.getReturnIssueLine(lineId)
-    formData.value.itemId = line.itemId
-    formData.value.materialStockId = line.materialStockId
-    formData.value.batchId = line.batchId
-    formData.value.batchCode = line.batchCode
-    const stock = await WmMaterialStockApi.getMaterialStock(line.materialStockId)
-    quantityMax.value = Math.min(line.quantity, stock.quantity)
-    formData.value.quantity = quantityMax.value
+    qualityStatus.value = line.qualityStatus
+    if (detailId) {
+      formData.value = await WmReturnIssueDetailApi.getReturnIssueDetail(detailId)
+    } else {
+      formData.value.itemId = line.itemId
+      formData.value.materialStockId = line.materialStockId
+      formData.value.batchId = line.batchId
+      formData.value.batchCode = line.batchCode
+      const stock = await WmMaterialStockApi.getMaterialStock(line.materialStockId)
+      quantityMax.value = Math.min(line.quantity, stock.quantity)
+      formData.value.quantity = quantityMax.value
+    }
+  } finally {
+    formLoading.value = false
   }
 }
 defineExpose({ open })
 
 /** 提交表单 */
 const submitForm = async () => {
+  if (qualityStatus.value == null || qualityStatus.value === 0) {
+    message.warning(returnQualityGuidance(qualityStatus.value))
+    return
+  }
   // 校验表单
   await formRef.value.validate()
   // 提交请求
@@ -194,6 +206,7 @@ const submitForm = async () => {
 
 /** 重置表单 */
 const resetForm = () => {
+  qualityStatus.value = undefined
   formData.value = {
     id: undefined,
     lineId: undefined,

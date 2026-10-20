@@ -54,4 +54,11 @@ public class MesWmMaterialStockPageReqVO extends PageParam {
     @Schema(description = "是否冻结", example = "false")
     private Boolean frozen;
 
+    @Schema(description = "是否历史质量待核对")
+    private Boolean qualityHold;
+
+    @Schema(description = "不良品隔离仓过滤：exclude/only；不传则全部")
+    @jakarta.validation.constraints.Pattern(regexp = "exclude|only|all")
+    private String quarantineFilter;
+
 }

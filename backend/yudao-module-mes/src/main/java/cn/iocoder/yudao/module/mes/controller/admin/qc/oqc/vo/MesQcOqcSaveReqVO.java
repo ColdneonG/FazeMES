@@ -55,21 +55,29 @@ public class MesQcOqcSaveReqVO {
     @Schema(description = "本次出货数量", requiredMode = Schema.RequiredMode.REQUIRED, example = "100")
     @NotNull(message = "本次出货数量不能为空")
     @DecimalMin(value = "0", message = "本次出货数量不能小于 0")
+    @Digits(integer = 14, fraction = 6)
+    @com.fasterxml.jackson.annotation.JsonFormat(shape = com.fasterxml.jackson.annotation.JsonFormat.Shape.STRING)
     private BigDecimal outQuantity;
 
     @Schema(description = "本次检测数量", requiredMode = Schema.RequiredMode.REQUIRED, example = "10")
     @NotNull(message = "本次检测数量不能为空")
     @DecimalMin(value = "0", message = "本次检测数量不能小于 0")
+    @Digits(integer = 14, fraction = 6)
+    @com.fasterxml.jackson.annotation.JsonFormat(shape = com.fasterxml.jackson.annotation.JsonFormat.Shape.STRING)
     private BigDecimal checkQuantity;
 
     @Schema(description = "合格品数量", requiredMode = Schema.RequiredMode.REQUIRED, example = "9")
     @NotNull(message = "合格品数量不能为空")
     @DecimalMin(value = "0", message = "合格品数量不能小于 0")
+    @Digits(integer = 14, fraction = 6)
+    @com.fasterxml.jackson.annotation.JsonFormat(shape = com.fasterxml.jackson.annotation.JsonFormat.Shape.STRING)
     private BigDecimal qualifiedQuantity;
 
     @Schema(description = "不合格品数量", requiredMode = Schema.RequiredMode.REQUIRED, example = "1")
     @NotNull(message = "不合格品数量不能为空")
     @DecimalMin(value = "0", message = "不合格品数量不能小于 0")
+    @Digits(integer = 14, fraction = 6)
+    @com.fasterxml.jackson.annotation.JsonFormat(shape = com.fasterxml.jackson.annotation.JsonFormat.Shape.STRING)
     private BigDecimal unqualifiedQuantity;
 
     // ========== 检验 ==========

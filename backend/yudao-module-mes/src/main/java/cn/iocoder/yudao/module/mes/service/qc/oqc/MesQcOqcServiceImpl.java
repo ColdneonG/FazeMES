@@ -5,6 +5,7 @@ import cn.iocoder.yudao.framework.common.pojo.PageResult;
 import cn.iocoder.yudao.framework.common.util.object.BeanUtils;
 import cn.iocoder.yudao.module.mes.controller.admin.qc.oqc.vo.MesQcOqcPageReqVO;
 import cn.iocoder.yudao.module.mes.controller.admin.qc.oqc.vo.MesQcOqcSaveReqVO;
+import cn.iocoder.yudao.module.mes.controller.admin.qc.oqc.vo.MesQcOqcSourceContextRespVO;
 import cn.iocoder.yudao.module.mes.dal.dataobject.qc.defectrecord.MesQcDefectRecordDO;
 import cn.iocoder.yudao.module.mes.dal.dataobject.qc.oqc.MesQcOqcDO;
 import cn.iocoder.yudao.module.mes.dal.dataobject.qc.template.MesQcTemplateItemDO;
@@ -22,6 +23,10 @@ import cn.iocoder.yudao.module.mes.service.wm.productsales.MesWmProductSalesLine
 import cn.iocoder.yudao.module.mes.service.wm.productsales.MesWmProductSalesService;
 import cn.iocoder.yudao.module.mes.dal.dataobject.wm.productsales.MesWmProductSalesDO;
 import cn.iocoder.yudao.module.mes.dal.dataobject.wm.productsales.MesWmProductSalesLineDO;
+import cn.iocoder.yudao.module.mes.dal.mysql.wm.productsales.MesWmProductSalesLineMapper;
+import cn.iocoder.yudao.module.mes.service.wm.salesnotice.MesWmSalesNoticeFulfillmentService;
+import cn.iocoder.yudao.framework.common.exception.ServiceException;
+import cn.iocoder.yudao.framework.mybatis.core.query.LambdaQueryWrapperX;
 import cn.iocoder.yudao.module.system.api.user.AdminUserApi;
 import jakarta.annotation.Resource;
 import org.springframework.context.annotation.Lazy;
@@ -68,6 +73,8 @@ public class MesQcOqcServiceImpl implements MesQcOqcService {
     @Resource
     @Lazy
     private MesWmProductSalesService productSalesService;
+    @Resource private MesWmSalesNoticeFulfillmentService fulfillmentService;
+    @Resource private MesWmProductSalesLineMapper productSalesLineMapper;
     @Resource
     @Lazy
     private MesQcIndicatorResultService indicatorResultService;
@@ -76,13 +83,26 @@ public class MesQcOqcServiceImpl implements MesQcOqcService {
     private AdminUserApi adminUserApi;
 
     @Override
+    @Transactional(rollbackFor=Exception.class)
+    public MesQcOqcSourceContextRespVO getSourceContext(Long sourceDocId,Long sourceLineId) {
+        MesQcOqcDO source=new MesQcOqcDO().setSourceDocType(MesBizTypeConstants.WM_PRODUCT_SALES).setSourceDocId(sourceDocId).setSourceLineId(sourceLineId);
+        MesWmProductSalesDO parent=lockSource(source);
+        MesWmProductSalesLineDO line=sourceLine(parent,sourceLineId);
+        if(line==null)throw sourceInvalid("OQC来源销售行不存在或归属已变化");
+        source.setItemId(line.getItemId()).setClientId(parent.getClientId()).setOutQuantity(line.getQuantity()).setBatchCode(line.getBatchCode());
+        String code=validateSource(source,parent,line);
+        var context=new MesQcOqcSourceContextRespVO();context.setSourceDocType(MesBizTypeConstants.WM_PRODUCT_SALES);context.setSourceDocId(parent.getId());context.setSourceLineId(line.getId());
+        context.setSourceDocCode(code);context.setClientId(parent.getClientId());context.setItemId(line.getItemId());context.setBatchCode(line.getBatchCode());context.setOutQuantity(line.getQuantity());return context;
+    }
+
+    @Override
     @Transactional(rollbackFor = Exception.class)
     public Long createOqc(MesQcOqcSaveReqVO createReqVO) {
+        MesQcOqcDO source=BeanUtils.toBean(createReqVO,MesQcOqcDO.class);
+        MesWmProductSalesDO parent=lockSource(source);
+        String sourceDocCode=validateSource(source,parent);
         // 1.1 校验数据
         validateOqcSaveData(createReqVO);
-        // 1.2 校验来源单据参数，并验证数据存在
-        String sourceDocCode = validateAndGetSourceDocCode(
-                createReqVO.getSourceDocType(), createReqVO.getSourceLineId());
         // 1.3 根据产品 + 检验类型自动匹配模板
         MesQcTemplateItemDO templateItem = templateItemService.getRequiredTemplateByItemIdAndType(
                 createReqVO.getItemId(), MesQcTypeEnum.OQC.getType());
@@ -101,9 +121,15 @@ public class MesQcOqcServiceImpl implements MesQcOqcService {
     }
 
     @Override
+    @Transactional(rollbackFor = Exception.class)
     public void updateOqc(MesQcOqcSaveReqVO updateReqVO) {
-        // 1.1 校验存在 + 草稿状态
-        validateOqcStatusPrepare(updateReqVO.getId());
+        LockedInspection locked=lockInspection(updateReqVO.getId());
+        MesQcOqcDO current=locked.oqc();
+        requireDraft(current);
+        MesQcOqcDO requested=BeanUtils.toBean(updateReqVO,MesQcOqcDO.class);
+        if(!sameSource(current,requested) || !Objects.equals(current.getItemId(),requested.getItemId())
+                || !manual(current) && !Objects.equals(current.getClientId(),requested.getClientId()))throw sourceInvalid("已创建OQC不能更换来源单据、来源行、物料或来源客户");
+        String sourceCode=validateSource(requested,locked.parent());
         // 1.2 校验数据
         validateOqcSaveData(updateReqVO);
 
@@ -112,6 +138,7 @@ public class MesQcOqcServiceImpl implements MesQcOqcService {
         updateObj.setSourceDocType(null).setSourceDocId(null).setSourceLineId(null); // 不允许修改来源单据
         updateObj.setTemplateId(null); // 不允许修改模板
         updateObj.setItemId(null); // 不允许修改物料
+        updateObj.setSourceDocCode(sourceCode);
         oqcMapper.updateById(updateObj);
     }
 
@@ -127,18 +154,21 @@ public class MesQcOqcServiceImpl implements MesQcOqcService {
     @Override
     @Transactional(rollbackFor = Exception.class)
     public void finishOqc(Long id) {
-        // 1.1 校验存在 + 草稿状态
-        MesQcOqcDO oqc = validateOqcStatusPrepare(id);
+        // Notice -> sales -> QC -> source line. Never lock QC and then enter a sales callback.
+        LockedInspection locked=lockInspection(id);
+        MesQcOqcDO oqc=locked.oqc();requireDraft(oqc);
+        String sourceCode=validateSource(oqc,locked.parent());
         // 1.2 校验检测结论必填
         if (oqc.getCheckResult() == null) {
             throw exception(QC_OQC_CHECK_RESULT_EMPTY);
         }
+        if(!Objects.equals(oqc.getCheckResult(),1) && !Objects.equals(oqc.getCheckResult(),2))throw sourceInvalid("检测结论只能为合格或不合格");
         // 1.3 校验至少存在一条检测结果
         indicatorResultService.validateIndicatorResultExistsByQcIdAndType(id, MesQcTypeEnum.OQC.getType());
 
         // 2. 更新状态为已完成
         MesQcOqcDO updateObj = new MesQcOqcDO()
-                .setId(id).setStatus(MesQcStatusEnum.FINISHED.getStatus());
+                .setId(id).setStatus(MesQcStatusEnum.FINISHED.getStatus()).setSourceDocCode(sourceCode);
         oqcMapper.updateById(updateObj);
 
         // 3. 回写来源单据
@@ -177,8 +207,8 @@ public class MesQcOqcServiceImpl implements MesQcOqcService {
     @Override
     @Transactional(rollbackFor = Exception.class)
     public void deleteOqc(Long id) {
-        // 1. 校验存在 + 草稿状态
-        validateOqcStatusPrepare(id);
+        // Cleanup has no sales callback and takes no later source locks. Invalid/expired drafts remain removable.
+        requireDraft(currentInspection(id));
 
         // 2.1 删除主表
         oqcMapper.deleteById(id);
@@ -200,12 +230,10 @@ public class MesQcOqcServiceImpl implements MesQcOqcService {
     /**
      * 校验出货检验单存在且为草稿状态
      */
-    private MesQcOqcDO validateOqcStatusPrepare(Long id) {
-        MesQcOqcDO oqc = validateOqcExists(id);
+    private void requireDraft(MesQcOqcDO oqc) {
         if (ObjUtil.notEqual(oqc.getStatus(), MesQcStatusEnum.DRAFT.getStatus())) {
             throw exception(QC_OQC_NOT_PREPARE);
         }
-        return oqc;
     }
 
     private void validateOqcCodeUnique(Long id, String code) {
@@ -225,20 +253,56 @@ public class MesQcOqcServiceImpl implements MesQcOqcService {
      * @param sourceLineId  来源单据行 ID
      * @return 来源单据编号
      */
-    private String validateAndGetSourceDocCode(Integer sourceDocType, Long sourceLineId) {
-        if (sourceDocType == null || sourceLineId == null) {
-            return null;
-        }
-        if (Objects.equals(sourceDocType, MesBizTypeConstants.WM_PRODUCT_SALES)) {
-            MesWmProductSalesLineDO salesLine = productSalesLineService.validateProductSalesLineExists(sourceLineId);
-            if (salesLine.getSalesId() != null) {
-                MesWmProductSalesDO sales = productSalesService.getProductSales(salesLine.getSalesId());
-                return sales != null ? sales.getCode() : null;
-            }
-            return null;
-        }
-        // 未知来源类型应报错，而不是静默忽略
-        throw exception(QC_OQC_SOURCE_DOC_TYPE_UNKNOWN);
+    private ServiceException sourceInvalid(String message) { return new ServiceException(1_040_607_008,message); }
+    private boolean manual(MesQcOqcDO qc) {
+        return (qc.getSourceDocType()==null || Objects.equals(qc.getSourceDocType(),0)) && qc.getSourceDocId()==null && qc.getSourceLineId()==null;
+    }
+    private boolean sameSource(MesQcOqcDO a,MesQcOqcDO b) {
+        return (manual(a)&&manual(b)) || Objects.equals(a.getSourceDocType(),b.getSourceDocType())
+                && Objects.equals(a.getSourceDocId(),b.getSourceDocId()) && Objects.equals(a.getSourceLineId(),b.getSourceLineId());
+    }
+    private MesWmProductSalesDO lockSource(MesQcOqcDO qc) {
+        if(manual(qc))return null;
+        if(!Objects.equals(qc.getSourceDocType(),MesBizTypeConstants.WM_PRODUCT_SALES))throw exception(QC_OQC_SOURCE_DOC_TYPE_UNKNOWN);
+        if(qc.getSourceDocId()==null || qc.getSourceLineId()==null)throw sourceInvalid("销售来源OQC必须同时提供来源单据及来源行");
+        MesWmProductSalesLineDO located=productSalesLineMapper.selectById(qc.getSourceLineId());
+        if(located==null || !Objects.equals(located.getSalesId(),qc.getSourceDocId()))throw sourceInvalid("OQC来源行不属于指定销售单");
+        return fulfillmentService.lockSales(located.getSalesId());
+    }
+    private record LockedInspection(MesQcOqcDO oqc,MesWmProductSalesDO parent) {}
+    private MesQcOqcDO currentInspection(Long id) {
+        MesQcOqcDO current=oqcMapper.selectOne(new LambdaQueryWrapperX<MesQcOqcDO>().eq(MesQcOqcDO::getId,id).last("FOR UPDATE"));
+        if(current==null)throw exception(QC_OQC_NOT_EXISTS);
+        return current;
+    }
+    private LockedInspection lockInspection(Long id) {
+        MesQcOqcDO located=validateOqcExists(id);
+        MesWmProductSalesDO parent=lockSource(located);
+        MesQcOqcDO current=currentInspection(id);
+        if(!sameSource(located,current))throw sourceInvalid("OQC来源在等待期间变化，请刷新后重试");
+        return new LockedInspection(current,parent);
+    }
+    private String batch(String value) { return value==null || value.isBlank()?null:value; }
+    private String validateSource(MesQcOqcDO qc,MesWmProductSalesDO parent) {
+        if(manual(qc))return null;
+        if(parent==null || !Objects.equals(parent.getId(),qc.getSourceDocId()))throw sourceInvalid("OQC来源销售单不存在或归属不匹配");
+        return validateSource(qc,parent,sourceLine(parent,qc.getSourceLineId()));
+    }
+    private MesWmProductSalesLineDO sourceLine(MesWmProductSalesDO parent,Long sourceLineId) {
+        // Lock only this parent's current set. A moved/corrupt row cannot make us lock another parent's line.
+        return productSalesLineMapper.selectListBySalesIdForUpdate(parent.getId()).stream()
+                .filter(row->Objects.equals(row.getId(),sourceLineId)).findFirst().orElse(null);
+    }
+    private String validateSource(MesQcOqcDO qc,MesWmProductSalesDO parent,MesWmProductSalesLineDO line) {
+        if(line==null || !Objects.equals(line.getSalesId(),parent.getId()) || !Objects.equals(line.getItemId(),qc.getItemId())
+                || !Objects.equals(parent.getClientId(),qc.getClientId()))throw sourceInvalid("OQC来源单据、行、物料或客户与真实销售记录不一致");
+        if(!Objects.equals(parent.getStatus(),1) || !Boolean.TRUE.equals(line.getOqcCheckFlag())
+                || !Objects.equals(line.getQualityStatus(),0) || line.getOqcId()!=null)throw sourceInvalid("销售行不处于待检状态，不能建立或完成来源OQC");
+        if(qc.getOutQuantity()==null || qc.getOutQuantity().signum()<=0 || qc.getOutQuantity().scale()>6 || qc.getOutQuantity().precision()-qc.getOutQuantity().scale()>14
+                || line.getQuantity()==null || qc.getOutQuantity().compareTo(line.getQuantity())!=0
+                || !Objects.equals(batch(qc.getBatchCode()),batch(line.getBatchCode())))throw sourceInvalid("OQC出货数量或批次与来源销售行不一致");
+        fulfillmentService.requireNoPosting(parent.getId());
+        return parent.getCode();
     }
 
     @Override

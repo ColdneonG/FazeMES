@@ -14,6 +14,8 @@ import java.util.List;
  */
 @Mapper
 public interface MesWmSalesNoticeLineMapper extends BaseMapperX<MesWmSalesNoticeLineDO> {
+    default MesWmSalesNoticeLineDO selectByIdForUpdate(Long id){return selectOne(new cn.iocoder.yudao.framework.mybatis.core.query.LambdaQueryWrapperX<MesWmSalesNoticeLineDO>().eq(MesWmSalesNoticeLineDO::getId,id).last("FOR UPDATE"));}
+    default java.util.List<MesWmSalesNoticeLineDO> selectListByNoticeIdForUpdate(Long id){return selectList(new cn.iocoder.yudao.framework.mybatis.core.query.LambdaQueryWrapperX<MesWmSalesNoticeLineDO>().eq(MesWmSalesNoticeLineDO::getNoticeId,id).orderByAsc(MesWmSalesNoticeLineDO::getId).last("FOR UPDATE"));}
 
     default PageResult<MesWmSalesNoticeLineDO> selectPage(MesWmSalesNoticeLinePageReqVO reqVO) {
         return selectPage(reqVO, new LambdaQueryWrapperX<MesWmSalesNoticeLineDO>()

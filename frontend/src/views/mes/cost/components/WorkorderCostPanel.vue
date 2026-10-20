@@ -38,6 +38,14 @@
           <el-button
             v-if="cost.status !== 'SETTLED'"
             v-hasPermi="['mes:cost:settle']"
+            :disabled="acting"
+            @click="allocateLoss"
+            v-show="Number(cost.lossQuantity || 0) > 0 && !cost.lossAllocationMethod"
+            >核定前序损耗分摊</el-button
+          >
+          <el-button
+            v-if="cost.status !== 'SETTLED'"
+            v-hasPermi="['mes:cost:settle']"
             type="primary"
             :loading="acting"
             @click="settle"
@@ -63,6 +71,25 @@
         class="mb-16px"
         title="这张工单的历史计划快照存在缺价或缺失定额。计划成本与差异保留待核定；实际成本按其自身完整证据独立核算，不回填或覆盖原计划。"
       />
+      <el-descriptions v-if="Number(cost.lossQuantity || 0) > 0" :column="1" border class="mb-16px">
+        <el-descriptions-item label="前序损耗数量">{{
+          costNumber(cost.lossQuantity)
+        }}</el-descriptions-item>
+        <el-descriptions-item label="损耗分摊规则">{{
+          cost.lossAllocationMethod === 'ABSORB_IN_GOOD_OUTPUT'
+            ? '全部实际投入成本由合格产出吸收'
+            : '待核定'
+        }}</el-descriptions-item>
+        <el-descriptions-item v-if="cost.lossAllocationMethod" label="核定依据">{{
+          cost.lossAllocationReason
+        }}</el-descriptions-item>
+        <el-descriptions-item v-if="cost.lossAllocationMethod" label="核定人编号">{{
+          cost.lossAllocatedBy
+        }}</el-descriptions-item>
+        <el-descriptions-item v-if="cost.lossAllocationMethod" label="核定时间">{{
+          formatDate(cost.lossAllocatedAt)
+        }}</el-descriptions-item>
+      </el-descriptions>
       <el-alert
         v-for="issue in cost.issues"
         :key="issue"
@@ -239,7 +266,7 @@
 import { CostApi, type WorkorderCost, type CostEffort } from '@/api/mes/cost'
 import { ElMessageBox } from 'element-plus'
 import { checkPermi } from '@/utils/permission'
-import { dateFormatter } from '@/utils/formatTime'
+import { dateFormatter, formatDate } from '@/utils/formatTime'
 import { generateUUID } from '@/utils'
 import ProWorkOrderSelect from '@/views/mes/pro/workorder/components/ProWorkOrderSelect.vue'
 import ProProcessSelect from '@/views/mes/pro/process/components/ProProcessSelect.vue'
@@ -335,6 +362,35 @@ const settle = async () => {
     await load()
   } catch {
     // No local status change is made when the server refuses settlement.
+  } finally {
+    acting.value = false
+  }
+}
+const allocateLoss = async () => {
+  if (!cost.value || acting.value) return
+  const workorderId = cost.value.workorderId
+  let reason: string
+  try {
+    const result = await ElMessageBox.prompt(
+      '本次核定规则：全部已核实的实际投入成本由合格产出吸收，前序损耗不产生虚构产出。仅支持末序无不良且成本证据完整的工单。请填写认可该分摊规则的依据；保存后仍需另行结算。',
+      '核定前序损耗分摊',
+      {
+        confirmButtonText: '认可规则并保存依据',
+        cancelButtonText: '取消',
+        inputType: 'textarea',
+        inputValidator: (value) =>
+          value && value.trim() && value.trim().length <= 500 ? true : '请填写 1～500 字的核定依据'
+      }
+    )
+    reason = result.value.trim()
+  } catch {
+    return
+  }
+  acting.value = true
+  try {
+    await CostApi.allocateWorkorderLoss({ workorderId, reason })
+    message.success('损耗分摊依据已保存，请核对后另行结算')
+    await load()
   } finally {
     acting.value = false
   }

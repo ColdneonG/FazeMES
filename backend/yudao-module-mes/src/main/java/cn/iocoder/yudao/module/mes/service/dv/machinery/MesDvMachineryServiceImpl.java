@@ -69,6 +69,7 @@ public class MesDvMachineryServiceImpl implements MesDvMachineryService {
     private MesDvRepairService repairService;
 
     @Override
+    @Transactional(rollbackFor = Exception.class)
     public Long createMachinery(MesDvMachinerySaveReqVO createReqVO) {
         // 校验设备类型存在
         machineryTypeService.getMachineryType(createReqVO.getMachineryTypeId());

@@ -141,8 +141,8 @@ public interface MesWmBatchMapper extends BaseMapperX<MesWmBatchDO> {
     /**
      * 查询向前追溯批次列表
      * <p>
-     * 只返回同次已完成报工的产出，或已完成 SN 过站报工的实际产出批次。
-     * 未绑定 SN 的跨工序消耗不能仅凭工单推断归属。
+     * 沿同次报工、已冻结工序来源闭包或已完成 SN 分配，返回实际产出批次。
+     * 没有流转或SN证据的历史消耗不能仅凭工单推断归属。
      */
     List<MesWmBatchDO> selectListByForward(@Param("batchCode") String batchCode,
                                          @Param("tenantId") Long tenantId);
@@ -150,8 +150,8 @@ public interface MesWmBatchMapper extends BaseMapperX<MesWmBatchDO> {
     /**
      * 查询向后追溯批次列表
      * <p>
-     * 只返回同次已完成报工的消耗，或已完成 SN 明确分配的原料批次。
-     * 返回结果表示已记录的关系，不能视为未登记 SN 产品的完整多工序谱系。
+     * 沿同次报工、已冻结工序来源闭包或已完成 SN 分配，返回实际消耗批次。
+     * 结果为共享批次池的已记录关系；完整性由独立覆盖接口核验，不表示单件SN。
      */
     List<MesWmBatchDO> selectListByBackward(@Param("batchCode") String batchCode,
                                           @Param("tenantId") Long tenantId);

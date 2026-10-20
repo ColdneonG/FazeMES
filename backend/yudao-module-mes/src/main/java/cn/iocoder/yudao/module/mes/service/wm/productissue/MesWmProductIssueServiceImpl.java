@@ -3,7 +3,6 @@ package cn.iocoder.yudao.module.mes.service.wm.productissue;
 import cn.hutool.core.collection.CollUtil;
 import cn.hutool.core.util.ObjUtil;
 import cn.iocoder.yudao.framework.common.pojo.PageResult;
-import cn.iocoder.yudao.framework.common.util.collection.CollectionUtils;
 import cn.iocoder.yudao.framework.common.util.object.BeanUtils;
 import cn.iocoder.yudao.framework.common.util.object.ObjectUtils;
 import cn.iocoder.yudao.module.mes.controller.admin.wm.productissue.vo.MesWmProductIssuePageReqVO;
@@ -34,6 +33,11 @@ import org.springframework.validation.annotation.Validated;
 import java.math.BigDecimal;
 import java.time.LocalDateTime;
 import java.util.List;
+import java.util.Map;
+import java.util.LinkedHashMap;
+import java.util.Objects;
+import java.util.function.Function;
+import java.util.stream.Collectors;
 
 import static cn.iocoder.yudao.framework.common.exception.util.ServiceExceptionUtil.exception;
 import static cn.iocoder.yudao.module.mes.enums.ErrorCodeConstants.*;
@@ -85,7 +89,11 @@ public class MesWmProductIssueServiceImpl implements MesWmProductIssueService {
     @Transactional(rollbackFor = Exception.class)
     public void updateProductIssue(MesWmProductIssueSaveReqVO updateReqVO) {
         // 1.1 校验存在 + 准备中状态
-        validateProductIssueExistsAndPrepare(updateReqVO.getId());
+        MesWmProductIssueDO current=validateProductIssueExistsAndPrepare(updateReqVO.getId());
+        if(!Objects.equals(current.getWorkOrderId(),updateReqVO.getWorkOrderId())
+                && !issueLineService.getProductIssueLineListByIssueIdForUpdate(current.getId()).isEmpty()) {
+            throw exception(WM_PRODUCT_ISSUE_HAS_LINES);
+        }
         // 1.2 校验关联数据
         validateProductIssueSaveData(updateReqVO);
 
@@ -100,9 +108,7 @@ public class MesWmProductIssueServiceImpl implements MesWmProductIssueService {
         // 1. 校验存在 + 准备中状态
         validateProductIssueExistsAndPrepare(id);
 
-        // 2.1 级联删除明细
-        issueDetailService.deleteProductIssueDetailByIssueId(id);
-        // 2.2 级联删除行
+        // The cascade independently locks, validates and removes details before lines.
         issueLineService.deleteProductIssueLineByIssueId(id);
         // 2.3 删除主表
         issueMapper.deleteById(id);
@@ -124,7 +130,7 @@ public class MesWmProductIssueServiceImpl implements MesWmProductIssueService {
         // 校验存在 + 草稿状态
         validateProductIssueExistsAndPrepare(id);
         // 校验至少有一条行
-        List<MesWmProductIssueLineDO> lines = issueLineService.getProductIssueLineListByIssueId(id);
+        List<MesWmProductIssueLineDO> lines = issueLineService.getProductIssueLineListByIssueIdForUpdate(id);
         if (CollUtil.isEmpty(lines)) {
             throw exception(WM_PRODUCT_ISSUE_NO_LINE);
         }
@@ -143,9 +149,7 @@ public class MesWmProductIssueServiceImpl implements MesWmProductIssueService {
             throw exception(WM_PRODUCT_ISSUE_STATUS_INVALID);
         }
         // 校验拣货明细闭环：行数量 = 明细数量
-        if (!checkProductIssueQuantity(id)) {
-            throw exception(WM_PRODUCT_ISSUE_DETAIL_QUANTITY_MISMATCH);
-        }
+        lockAndValidateDetails(id);
 
         // 执行拣货（待拣货 → 待执行领出）
         issueMapper.updateById(new MesWmProductIssueDO()
@@ -168,18 +172,10 @@ public class MesWmProductIssueServiceImpl implements MesWmProductIssueService {
         if (ObjUtil.notEqual(MesWmProductIssueStatusEnum.APPROVED.getStatus(), issue.getStatus())) {
             throw exception(WM_PRODUCT_ISSUE_STATUS_INVALID);
         }
-        // 校验至少有一条明细
-        List<MesWmProductIssueDetailDO> details = issueDetailService.getProductIssueDetailListByIssueId(id);
-        if (CollUtil.isEmpty(details)) {
-            throw exception(WM_PRODUCT_ISSUE_NO_DETAIL);
-        }
-        // 校验行数量 = 明细数量
-        if (!checkProductIssueQuantity(id)) {
-            throw exception(WM_PRODUCT_ISSUE_DETAIL_QUANTITY_MISMATCH);
-        }
+        List<MesWmProductIssueDetailDO> details=lockAndValidateDetails(id);
 
         // 2. 遍历所有明细，创建库存事务（扣减库存 + 记录流水）
-        createTransactionList(issue);
+        createTransactionList(issue,details);
         kittingService.releaseExcessAfterIssue(issue.getWorkOrderId());
 
         // 3. 更新出库单状态 + 领料日期
@@ -188,14 +184,13 @@ public class MesWmProductIssueServiceImpl implements MesWmProductIssueService {
                 .setIssueDate(LocalDateTime.now()));
     }
 
-    private void createTransactionList(MesWmProductIssueDO issue) {
+    private void createTransactionList(MesWmProductIssueDO issue,List<MesWmProductIssueDetailDO> details) {
         // 1. 查询虚拟线边库
         MesWmWarehouseDO virtualWarehouse = warehouseService.getWarehouseByCode(MesWmWarehouseDO.WIP_VIRTUAL_WAREHOUSE);
         MesWmWarehouseLocationDO virtualLocation = locationService.getWarehouseLocationByCode(MesWmWarehouseLocationDO.WIP_VIRTUAL_LOCATION);
         MesWmWarehouseAreaDO virtualArea = areaService.getWarehouseAreaByCode(MesWmWarehouseAreaDO.WIP_VIRTUAL_AREA);
 
         // 2. 遍历明细，每条明细产生 OUT（实际仓库扣减）+ IN（虚拟线边库增加）
-        List<MesWmProductIssueDetailDO> details = issueDetailService.getProductIssueDetailListByIssueId(issue.getId());
         List<Long> areas = new java.util.ArrayList<>();
         areas.add(virtualArea.getId());
         details.stream().map(MesWmProductIssueDetailDO::getAreaId).forEach(areas::add);
@@ -243,16 +238,48 @@ public class MesWmProductIssueServiceImpl implements MesWmProductIssueService {
 
     @Override
     public Boolean checkProductIssueQuantity(Long id) {
-        List<MesWmProductIssueLineDO> lines = issueLineService.getProductIssueLineListByIssueId(id);
-        for (MesWmProductIssueLineDO line : lines) {
-            List<MesWmProductIssueDetailDO> details = issueDetailService.getProductIssueDetailListByLineId(line.getId());
-            BigDecimal totalDetailQty = CollectionUtils.getSumValue(details,
-                    MesWmProductIssueDetailDO::getQuantity, BigDecimal::add, BigDecimal.ZERO);
-            if (line.getQuantity() != null && totalDetailQty.compareTo(line.getQuantity()) != 0) {
-                return false;
-            }
+        validateProductIssueExists(id);
+        try {lockAndValidateDetails(id);return true;}
+        catch(cn.iocoder.yudao.framework.common.exception.ServiceException error) {
+            if(Objects.equals(error.getCode(),WM_PRODUCT_ISSUE_DETAIL_QUANTITY_MISMATCH.getCode())
+                    || Objects.equals(error.getCode(),WM_PRODUCT_ISSUE_NO_DETAIL.getCode())
+                    || Objects.equals(error.getCode(),WM_PRODUCT_ISSUE_NO_LINE.getCode()))return false;
+            throw error;
         }
-        return true;
+    }
+
+    /** Caller holds issue (and order for posting). All validation and posting use these current rows. */
+    private List<MesWmProductIssueDetailDO> lockAndValidateDetails(Long issueId) {
+        List<MesWmProductIssueLineDO> lines=issueLineService.getProductIssueLineListByIssueIdForUpdate(issueId);
+        if(lines.isEmpty())throw exception(WM_PRODUCT_ISSUE_NO_LINE);
+        Map<Long,MesWmProductIssueLineDO> byId=lines.stream().collect(Collectors.toMap(MesWmProductIssueLineDO::getId,Function.identity()));
+        Map<Long,MesWmProductIssueDetailDO> details=new LinkedHashMap<>();
+        for(var row:issueDetailService.getProductIssueDetailListByIssueIdForUpdate(issueId)) {
+            // Reject our own cross-parent references before looking at another line's details.
+            // Otherwise two corrupt parents could each hold one detail and wait on the other's.
+            if(!Objects.equals(row.getIssueId(),issueId) || !byId.containsKey(row.getLineId()))throw exception(WM_PRODUCT_ISSUE_DETAIL_LINE_NOT_MATCH);
+            details.put(row.getId(),row);
+        }
+        for(var line:lines) {
+            if(!Objects.equals(line.getIssueId(),issueId))throw exception(WM_PRODUCT_ISSUE_DETAIL_LINE_NOT_MATCH);
+            // Include a legacy wrong-issue detail referencing one of our real lines, then reject it.
+            issueDetailService.getProductIssueDetailListByLineIdForUpdate(line.getId()).forEach(row->details.put(row.getId(),row));
+        }
+        if(details.isEmpty())throw exception(WM_PRODUCT_ISSUE_NO_DETAIL);
+        Map<Long,BigDecimal> quantities=new LinkedHashMap<>();
+        for(var detail:details.values()) {
+            MesWmProductIssueLineDO line=byId.get(detail.getLineId());
+            if(line==null || !Objects.equals(detail.getIssueId(),issueId))throw exception(WM_PRODUCT_ISSUE_DETAIL_LINE_NOT_MATCH);
+            if(!Objects.equals(detail.getItemId(),line.getItemId()))throw exception(WM_PRODUCT_ISSUE_DETAIL_ITEM_MISMATCH);
+            if(line.getBatchId()!=null && !Objects.equals(detail.getBatchId(),line.getBatchId()))throw exception(WM_MATERIAL_STOCK_SELECTION_MISMATCH);
+            if(!validQuantity(detail.getQuantity()))throw exception(WM_PRODUCT_ISSUE_DETAIL_QUANTITY_MISMATCH);
+            quantities.merge(line.getId(),detail.getQuantity(),BigDecimal::add);
+        }
+        for(var line:lines)if(!validQuantity(line.getQuantity()) || line.getQuantity().compareTo(quantities.getOrDefault(line.getId(),BigDecimal.ZERO))!=0)throw exception(WM_PRODUCT_ISSUE_DETAIL_QUANTITY_MISMATCH);
+        return List.copyOf(details.values());
+    }
+    private boolean validQuantity(BigDecimal quantity) {
+        return quantity!=null && quantity.signum()>0 && quantity.scale()<=6 && quantity.precision()-quantity.scale()<=14;
     }
 
     @Override

@@ -32,6 +32,18 @@
       <el-table-column label="规格型号" align="center" prop="specification" min-width="120" />
       <el-table-column label="单位" align="center" prop="unitMeasureName" width="80" />
       <el-table-column label="退货数量" align="center" prop="quantity" width="100" />
+      <el-table-column label="原销售出库" prop="originSalesCode" min-width="150" />
+      <el-table-column label="原流水ID" prop="originTransactionId" width="110" />
+      <el-table-column label="本行可退额度" min-width="130"
+        ><template #default="{ row }">{{
+          returnBalanceText(row.editableAvailableQuantity)
+        }}</template></el-table-column
+      >
+      <el-table-column label="来源核验" min-width="200"
+        ><template #default="{ row }">{{
+          row.sourceWarning || (row.sourceReliable ? '凭据已核对' : '历史来源待核对')
+        }}</template></el-table-column
+      >
       <el-table-column label="批次号" align="center" prop="batchCode" min-width="120" />
       <el-table-column label="是否需要质检" align="center" prop="rqcCheckFlag">
         <template #default="scope">
@@ -62,9 +74,9 @@
           </el-button>
           <PrinterLabel
             v-if="isStock"
-            :bizId="scope.row.batchId"
+            :bizId="scope.row.batchId || scope.row.itemId"
             :bizCode="scope.row.batchCode"
-            bizType="BATCH"
+            :bizType="scope.row.batchId ? 'BATCH' : 'ITEM'"
           />
         </template>
       </el-table-column>
@@ -87,35 +99,54 @@
       v-loading="formLoading"
     >
       <el-row>
+        <el-col :span="24">
+          <el-form-item label="原出库流水" prop="originTransactionId">
+            <ReturnSalesSourceSelect
+              v-model="formData.originTransactionId"
+              :return-id="props.returnId"
+              :line-id="formData.id"
+              :disabled="formLoading"
+              @change="handleSourceChange"
+            />
+          </el-form-item>
+        </el-col>
         <el-col :span="8">
-          <el-form-item label="物料" prop="itemId">
-            <MdItemSelect v-model="formData.itemId" placeholder="请选择物料" class="!w-1/1" />
+          <el-form-item label="物料">
+            <el-input
+              :model-value="source ? `${source.itemCode} · ${source.itemName}` : ''"
+              readonly
+            />
           </el-form-item>
         </el-col>
         <el-col :span="8">
           <el-form-item label="退货数量" prop="quantity">
-            <el-input-number
+            <el-input
               v-model="formData.quantity"
-              :precision="2"
-              :min="0"
-              controls-position="right"
+              inputmode="decimal"
+              maxlength="21"
               class="!w-1/1"
             />
           </el-form-item>
         </el-col>
         <el-col :span="8">
-          <el-form-item label="批次" prop="batchId">
-            <WmBatchSelect
-              v-model="formData.batchId"
-              :item-id="formData.itemId"
-              :client-id="props.clientId"
-              :sales-order-code="props.salesOrderCode"
-              placeholder="请选择批次"
-              class="!w-1/1"
-            />
+          <el-form-item label="批次">
+            <el-input :model-value="source?.batchCode || '无批次'" readonly />
           </el-form-item>
         </el-col>
       </el-row>
+      <el-alert v-if="sourceError" :title="sourceError" type="error" :closable="false" />
+      <p v-if="source">
+        原出库 {{ returnBalanceText(source.outboundQuantity) }}；累计已退
+        {{ returnBalanceText(source.returnedQuantity) }}； 未入库预留
+        {{ returnBalanceText(source.reservedQuantity) }}；本行可用
+        {{ returnBalanceText(source.editableAvailableQuantity) }} {{ source.unitMeasureName }}
+      </p>
+      <el-alert
+        v-if="source?.sourceWarning"
+        :title="source.sourceWarning"
+        type="warning"
+        :closable="false"
+      />
       <el-row>
         <el-col :span="8">
           <el-form-item label="需要质检" prop="rqcCheckFlag">
@@ -145,9 +176,14 @@
 
 <script setup lang="ts">
 import { DICT_TYPE } from '@/utils/dict'
-import { WmReturnSalesLineApi, WmReturnSalesLineVO } from '@/api/mes/wm/returnsales/line'
-import MdItemSelect from '@/views/mes/md/item/components/MdItemSelect.vue'
-import WmBatchSelect from '@/views/mes/wm/batch/components/WmBatchSelect.vue'
+import {
+  WmReturnSalesLineApi,
+  type WmReturnSalesLineVO,
+  type ReturnSalesSource
+} from '@/api/mes/wm/returnsales/line'
+import { quantityRule } from '@/utils/mesQuantity'
+import ReturnSalesSourceSelect from './ReturnSalesSourceSelect.vue'
+import { returnQuantityError, returnBalanceText } from './sourceQuantity'
 import ReturnSalesDetailList from './ReturnSalesDetailList.vue'
 import ReturnSalesDetailForm from './ReturnSalesDetailForm.vue'
 import { PrinterLabel } from '@/views/mes/wm/barcode/components'
@@ -176,17 +212,26 @@ const queryParams = reactive({
   pageSize: 10,
   returnId: undefined as number | undefined
 })
+let listVersion = 0
 
 /** 查询行列表 */
 const getList = async () => {
+  const version = ++listVersion,
+    returnId = props.returnId
+  if (!returnId) {
+    list.value = []
+    total.value = 0
+    return
+  }
   loading.value = true
   try {
-    queryParams.returnId = props.returnId
-    const data = await WmReturnSalesLineApi.getReturnSalesLinePage(queryParams)
+    queryParams.returnId = returnId
+    const data = await WmReturnSalesLineApi.getReturnSalesLinePage({ ...queryParams })
+    if (version !== listVersion || returnId !== props.returnId) return
     list.value = data.list
     total.value = data.total
   } finally {
-    loading.value = false
+    if (version === listVersion) loading.value = false
   }
 }
 
@@ -205,47 +250,120 @@ const dialogVisible = ref(false) // 弹窗的是否展示
 const dialogTitle = ref('') // 弹窗的标题
 const formLoading = ref(false) // 表单的加载中
 const lineFormType = ref('') // 行表单的类型
+const source = ref<ReturnSalesSource>()
+const sourceError = ref('')
+let formVersion = 0
 const formData = ref({
-  id: undefined,
+  id: undefined as number | undefined,
   returnId: undefined as number | undefined,
-  itemId: undefined,
-  quantity: undefined,
-  batchId: undefined as number | undefined,
+  itemId: undefined as number | undefined,
+  originTransactionId: undefined as number | undefined,
+  quantity: '',
+  batchId: undefined as number | null | undefined,
   rqcCheckFlag: true,
-  remark: undefined
+  remark: undefined as string | undefined
 })
 const formRules = reactive({
-  itemId: [{ required: true, message: '物料不能为空', trigger: 'change' }],
-  quantity: [{ required: true, message: '退货数量不能为空', trigger: 'blur' }],
+  originTransactionId: [{ required: true, message: '请选择原销售出库流水', trigger: 'change' }],
+  quantity: [quantityRule(true)],
   rqcCheckFlag: [{ required: true, message: '需要质检不能为空', trigger: 'change' }]
 })
 const formRef = ref() // 表单 Ref
 
 /** 打开表单弹窗 */
 const openForm = async (type: string, id?: number) => {
+  const version = ++formVersion
   dialogVisible.value = true
   dialogTitle.value = type === 'create' ? '添加销售退货单行' : '修改销售退货单行'
   lineFormType.value = type
   resetForm()
-  if (id) {
-    formLoading.value = true
-    try {
-      formData.value = await WmReturnSalesLineApi.getReturnSalesLine(id)
-    } finally {
-      formLoading.value = false
+  formLoading.value = true
+  try {
+    if (id) {
+      const saved = await WmReturnSalesLineApi.getReturnSalesLine(id)
+      if (version !== formVersion) return
+      formData.value = {
+        id: saved.id,
+        returnId: props.returnId,
+        originTransactionId: saved.originTransactionId ?? undefined,
+        itemId: saved.itemId,
+        batchId: saved.batchId,
+        quantity: String(saved.quantity),
+        rqcCheckFlag: saved.rqcCheckFlag,
+        remark: saved.remark
+      }
+      if (saved.originTransactionId) {
+        const data = await WmReturnSalesLineApi.getSourceOptions({
+          returnId: props.returnId,
+          lineId: id,
+          originTransactionId: saved.originTransactionId,
+          pageNo: 1,
+          pageSize: 1
+        })
+        if (version !== formVersion) return
+        source.value = data.list.find(
+          (row) => row.originTransactionId === saved.originTransactionId
+        )
+      }
+      if (!source.value)
+        sourceError.value = saved.sourceWarning || '此行缺少可核对的原出库凭据，请重新选择来源'
     }
+  } catch {
+    if (version === formVersion) sourceError.value = '原出库来源无法核对，请重新打开后选择'
+  } finally {
+    if (version === formVersion) formLoading.value = false
   }
+}
+
+const handleSourceChange = (fresh: ReturnSalesSource | undefined) => {
+  sourceError.value = ''
+  if (!fresh) {
+    source.value = undefined
+    formData.value.originTransactionId = undefined
+    formData.value.itemId = undefined
+    formData.value.batchId = undefined
+    formData.value.quantity = ''
+    return
+  }
+  const previous = source.value?.originTransactionId ?? formData.value.originTransactionId
+  if (previous !== fresh.originTransactionId || !formData.value.quantity)
+    formData.value.quantity = fresh.editableAvailableQuantity ?? ''
+  source.value = fresh
+  formData.value.originTransactionId = fresh.originTransactionId
+  formData.value.itemId = fresh.itemId
+  formData.value.batchId = fresh.batchId
 }
 
 /** 提交表单 */
 const submitForm = async () => {
+  if (formLoading.value || !isUpdate.value) return
   await formRef.value.validate()
+  const validationError = returnQuantityError(formData.value.quantity, source.value)
+  if (!formData.value.originTransactionId || validationError) {
+    message.warning(validationError || '请选择原出库流水')
+    return
+  }
+  const version = formVersion,
+    returnId = props.returnId
+  const { id, originTransactionId, quantity, rqcCheckFlag, remark } = formData.value
   formLoading.value = true
   try {
-    const data = {
-      ...formData.value,
-      returnId: props.returnId
-    } as unknown as WmReturnSalesLineVO
+    const options = await WmReturnSalesLineApi.getSourceOptions({
+      returnId,
+      lineId: id,
+      originTransactionId,
+      pageNo: 1,
+      pageSize: 1
+    })
+    if (version !== formVersion || returnId !== props.returnId) return
+    const fresh = options.list.find((row) => row.originTransactionId === originTransactionId)
+    source.value = fresh
+    const error = returnQuantityError(quantity, fresh)
+    if (error) {
+      message.warning(error)
+      return
+    }
+    const data = { id, originTransactionId, quantity, rqcCheckFlag, remark, returnId }
     if (lineFormType.value === 'create') {
       await WmReturnSalesLineApi.createReturnSalesLine(data)
       message.success(t('common.createSuccess'))
@@ -253,22 +371,26 @@ const submitForm = async () => {
       await WmReturnSalesLineApi.updateReturnSalesLine(data)
       message.success(t('common.updateSuccess'))
     }
+    if (version !== formVersion) return
     dialogVisible.value = false
     await getList()
   } finally {
-    formLoading.value = false
+    if (version === formVersion) formLoading.value = false
   }
 }
 
 /** 重置表单 */
 const resetForm = () => {
+  source.value = undefined
+  sourceError.value = ''
   formData.value = {
     id: undefined,
     returnId: undefined,
     itemId: undefined,
-    quantity: undefined,
+    originTransactionId: undefined,
+    quantity: '',
     batchId: undefined,
-    rqcCheckFlag: false,
+    rqcCheckFlag: true,
     remark: undefined
   }
   formRef.value?.resetFields()
@@ -304,7 +426,19 @@ const onDetailFormSuccess = (lineId: number) => {
 }
 
 /** 初始化 */
-onMounted(async () => {
-  await getList()
+watch(
+  () => [props.returnId, props.formType],
+  () => {
+    formVersion++
+    dialogVisible.value = false
+    formLoading.value = false
+    resetForm()
+    void getList()
+  },
+  { immediate: true }
+)
+onBeforeUnmount(() => {
+  formVersion++
+  listVersion++
 })
 </script>

@@ -73,5 +73,8 @@ public interface MesWmProductIssueLineService {
      * @return 领料出库单行
      */
     MesWmProductIssueLineDO validateProductIssueLineExists(Long id);
+    /** Caller holds the original issue lock before invoking this current read. */
+    MesWmProductIssueLineDO validateProductIssueLineExistsForUpdate(Long id);
+    List<MesWmProductIssueLineDO> getProductIssueLineListByIssueIdForUpdate(Long issueId);
 
 }

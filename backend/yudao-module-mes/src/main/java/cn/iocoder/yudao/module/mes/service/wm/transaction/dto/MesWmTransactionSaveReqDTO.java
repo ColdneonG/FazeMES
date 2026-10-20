@@ -110,6 +110,10 @@ public class MesWmTransactionSaveReqDTO {
      * 关联事务 ID（成对事务中，入库事务关联出库事务）
      */
     private Long relatedTransactionId;
+    /** Partial sales-return origin; deliberately distinct from equal-quantity paired movements. */
+    private Long returnSourceTransactionId;
+    /** Server-owned putaway row for 119, never an original sales detail guess. */
+    private Long returnDetailId;
 
     // ===== 可选控制（非存储字段） =====
 

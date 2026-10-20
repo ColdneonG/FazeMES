@@ -30,7 +30,8 @@ public class MesWmSalesNoticeLineSaveReqVO {
 
     @Schema(description = "发货数量", requiredMode = Schema.RequiredMode.REQUIRED, example = "100.00")
     @NotNull(message = "发货数量不能为空")
-    @DecimalMin(value = "0.01", message = "发货数量必须大于 0")
+    @DecimalMin(value = "0", inclusive=false, message = "发货数量必须大于 0")
+    @jakarta.validation.constraints.Digits(integer=14,fraction=6)
     private BigDecimal quantity;
 
     @Schema(description = "是否检验", requiredMode = Schema.RequiredMode.REQUIRED, example = "true")

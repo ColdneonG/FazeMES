@@ -47,6 +47,8 @@ public class MesWmReturnIssueDetailServiceImpl implements MesWmReturnIssueDetail
     @Resource
     @Lazy
     private MesWmReturnIssueService issueService;
+    @Resource
+    private cn.iocoder.yudao.module.mes.dal.mysql.wm.returnissue.MesWmReturnIssueMapper issueMapper;
 
     @Override
     public Long createReturnIssueDetail(MesWmReturnIssueDetailSaveReqVO createReqVO) {
@@ -62,6 +64,14 @@ public class MesWmReturnIssueDetailServiceImpl implements MesWmReturnIssueDetail
     public void updateReturnIssueDetail(MesWmReturnIssueDetailSaveReqVO updateReqVO) {
         // 校验存在
         validateReturnIssueDetailExists(updateReqVO.getId());
+        var persisted = issueDetailMapper.selectById(updateReqVO.getId());
+        var parent = issueMapper.selectByIdForUpdate(persisted.getIssueId());
+        if (parent == null || !java.util.Objects.equals(parent.getStatus(),
+                cn.iocoder.yudao.module.mes.enums.wm.MesWmReturnIssueStatusEnum.APPROVING.getStatus())
+                || !java.util.Objects.equals(persisted.getIssueId(), updateReqVO.getIssueId())
+                || !java.util.Objects.equals(persisted.getLineId(), updateReqVO.getLineId())) {
+            throw exception(WM_MATERIAL_STOCK_SELECTION_MISMATCH);
+        }
         validateReturnIssueDetailSaveData(updateReqVO);
 
         // 更新
@@ -74,7 +84,7 @@ public class MesWmReturnIssueDetailServiceImpl implements MesWmReturnIssueDetail
         // 校验存在
         validateReturnIssueDetailExists(id);
         var detail = issueDetailMapper.selectById(id);
-        var issue = issueService.getReturnIssue(detail.getIssueId());
+        var issue = issueMapper.selectByIdForUpdate(detail.getIssueId());
         if (issue == null || !java.util.Objects.equals(issue.getStatus(),
                 cn.iocoder.yudao.module.mes.enums.wm.MesWmReturnIssueStatusEnum.APPROVING.getStatus())) {
             throw exception(WM_RETURN_ISSUE_NOT_APPROVING);
@@ -126,7 +136,7 @@ public class MesWmReturnIssueDetailServiceImpl implements MesWmReturnIssueDetail
         if (ObjUtil.notEqual(line.getItemId(), reqVO.getItemId())) {
             throw exception(WM_RETURN_ISSUE_DETAIL_ITEM_MISMATCH);
         }
-        var issue = issueService.getReturnIssue(reqVO.getIssueId());
+        var issue = issueMapper.selectByIdForUpdate(reqVO.getIssueId());
         if (issue == null || !java.util.Objects.equals(issue.getStatus(),
                 cn.iocoder.yudao.module.mes.enums.wm.MesWmReturnIssueStatusEnum.APPROVING.getStatus())
                 || ObjUtil.notEqual(line.getMaterialStockId(), reqVO.getMaterialStockId())
@@ -135,6 +145,8 @@ public class MesWmReturnIssueDetailServiceImpl implements MesWmReturnIssueDetail
         }
         materialStockService.validateWorkOrderStock(line.getMaterialStockId(), issue.getWorkOrderId(),
                 line.getItemId(), line.getBatchId(), reqVO.getQuantity());
+        cn.iocoder.yudao.module.mes.service.wm.quality.MesWmQualityPolicy.validateInbound(
+                line.getQualityStatus(), warehouseService.validateWarehouseExists(reqVO.getWarehouseId()));
         if (MesWmWarehouseDO.WIP_VIRTUAL_WAREHOUSE.equals(
                 warehouseService.validateWarehouseExists(reqVO.getWarehouseId()).getCode())) {
             throw exception(WM_MATERIAL_STOCK_SELECTION_MISMATCH);

@@ -23,9 +23,13 @@ import java.nio.charset.StandardCharsets;
 import java.nio.file.Files;
 import java.nio.file.Path;
 import java.util.UUID;
+import java.util.List;
 import java.util.concurrent.*;
 import static org.junit.jupiter.api.Assertions.*;
 import javax.sql.DataSource;
+import cn.iocoder.yudao.framework.security.core.LoginUser;
+import org.springframework.security.authentication.UsernamePasswordAuthenticationToken;
+import org.springframework.security.core.context.SecurityContextHolder;
 
 /** Real H2 rows and transaction proxies; no deployed services or database is touched. */
 class MesCostServiceTest {
@@ -41,6 +45,11 @@ class MesCostServiceTest {
         String migration=Files.readString(Path.of("../../database/migrations/20261018_broky_cost.sql"));
         migration=migration.substring(0,migration.indexOf("-- Cost permissions")).replace("b'0'","0");
         try(var conn=ds.getConnection()){ScriptUtils.executeSqlScript(conn,new ByteArrayResource(migration.getBytes(StandardCharsets.UTF_8)));}
+        jdbc.execute("ALTER TABLE mes_cost_stock_layer ADD COLUMN return_basis_required BOOLEAN NOT NULL DEFAULT FALSE");
+        String returns=Files.readString(Path.of("../../database/migrations/20261020_return_sales_cost.sql"));
+        returns=returns.substring(0,returns.indexOf("-- Quantity widening:"));
+        try(var conn=ds.getConnection()){ScriptUtils.executeSqlScript(conn,new ByteArrayResource(returns.getBytes(StandardCharsets.UTF_8)));}
+        try(var conn=ds.getConnection()){ScriptUtils.executeSqlScript(conn,new org.springframework.core.io.FileSystemResource("../../database/migrations/20261019_workorder_loss_closure.sql"));}
         jdbc.execute("CREATE TABLE mes_md_item(id BIGINT PRIMARY KEY,tenant_id BIGINT,code VARCHAR(64),name VARCHAR(100),item_type_id BIGINT,deleted INT DEFAULT 0)");
         jdbc.execute("CREATE TABLE mes_md_item_type(id BIGINT PRIMARY KEY,tenant_id BIGINT,item_or_product VARCHAR(20),deleted INT DEFAULT 0)");
         jdbc.execute("CREATE TABLE mes_md_product_bom(id BIGINT AUTO_INCREMENT PRIMARY KEY,tenant_id BIGINT,item_id BIGINT,bom_item_id BIGINT,quantity DECIMAL(18,6),status INT DEFAULT 0,deleted INT DEFAULT 0)");
@@ -65,7 +74,7 @@ class MesCostServiceTest {
         jdbc.update("INSERT INTO mes_md_product_bom(tenant_id,item_id,bom_item_id,quantity) VALUES(1,1,2,2),(1,1,4,1),(1,2,3,3)");
         profile(1,null,"299","4","2");profile(2,null,null,"2","1");profile(3,"10",null,null,null);profile(4,"5",null,null,null);
     }
-    @AfterEach void clear(){TenantContextHolder.clear();}
+    @AfterEach void clear(){TenantContextHolder.clear();SecurityContextHolder.clearContext();}
     private void profile(long item,String purchase,String sale,String labor,String overhead) {
         Profile p=new Profile();p.setItemId(item);p.setPurchasePrice(purchase==null?null:b(purchase));p.setSalePrice(sale==null?null:b(sale));p.setLaborCost(labor==null?null:b(labor));p.setOverheadCost(overhead==null?null:b(overhead));service.saveProfile(p);
     }
@@ -172,6 +181,49 @@ class MesCostServiceTest {
         jdbc.update("UPDATE mes_pro_work_order SET status=2 WHERE id=10");
         WorkorderCost c=service.workorderCost(10L);equal("1",c.getProducedQuantity());assertNull(c.getActualUnitCost());assertTrue(c.getIssues().stream().anyMatch(s->s.contains("不良产出")));assertThrows(ServiceException.class,()->service.settle(10L));
         assertEquals("PROVISIONAL",jdbc.queryForObject("SELECT status FROM mes_cost_workorder WHERE workorder_id=10",String.class));
+    }
+    private void completeCostEvidenceForLossOrder() {
+        jdbc.update("INSERT INTO mes_pro_work_order(id,tenant_id,product_id,quantity,status) VALUES(10,1,2,100,1)");
+        jdbc.update("INSERT INTO mes_pro_work_order_bom(tenant_id,work_order_id,item_id,quantity) VALUES(1,10,3,300)");
+        jdbc.update("INSERT INTO mes_pro_task(id,tenant_id,work_order_id,process_id,status) VALUES(20,1,10,30,4)");service.capturePlan(10L);
+        jdbc.update("INSERT INTO mes_cost_line_price(tenant_id,kind,line_id,unit_price) VALUES(1,'RECEIPT',91,10)");
+        service.recordTransaction(tx(1,50,3,"300",110,null,null,91),stock(50,"0"));service.recordTransaction(tx(2,50,3,"-300",122,10L,null,92),stock(50,"300"));
+        service.recordTransaction(tx(3,60,2,"90",123,10L,null,93),stock(60,"0"));
+        Effort e=new Effort();e.setWorkorderId(10L);e.setProcessId(30L);e.setHours(b("2"));e.setHourlyRate(b("2"));e.setOverheadAmount(b("1"));e.setRemark("实际工时");e.setRequestId("loss-order-cost");service.addEffort(e);
+        jdbc.update("UPDATE mes_pro_work_order SET status=2 WHERE id=10");
+        jdbc.update("INSERT INTO mes_pro_work_order_loss(tenant_id,work_order_id,planned_quantity,produced_quantity,qualified_quantity,loss_quantity,reason,closed_by,closed_at,process_evidence) VALUES(1,10,100,90,90,10,'upstream rejects',42,NOW(),'[]')");
+    }
+    @Test void upstreamLossNeedsExplicitCostAllocationBeforeSettlement() {
+        completeCostEvidenceForLossOrder();
+        WorkorderCost cost=service.workorderCost(10L);assertEquals("INCOMPLETE",cost.getStatus());assertNull(cost.getActualUnitCost());
+        assertThrows(ServiceException.class,()->service.settle(10L));
+    }
+    private LossAllocation allocationRequest() {
+        SecurityContextHolder.getContext().setAuthentication(new UsernamePasswordAuthenticationToken(new LoginUser().setId(42L),null,List.of()));
+        LossAllocation request=new LossAllocation();request.setWorkorderId(10L);request.setReason("确认前序损耗10件，由90件合格产出吸收本工单完整实际投入成本");return request;
+    }
+    @Test void explicitLossAllocationIsAuditedThenAllowsRealCostSettlement() {
+        completeCostEvidenceForLossOrder();LossAllocation request=allocationRequest();service.allocateLoss(request);service.allocateLoss(request);
+        WorkorderCost cost=service.workorderCost(10L);assertEquals(MesCostService.LOSS_ABSORB_IN_GOOD_OUTPUT,cost.getLossAllocationMethod());equal("10",cost.getLossQuantity());assertEquals(42L,cost.getLossAllocatedBy());assertNotNull(cost.getLossAllocatedAt());assertEquals(request.getReason(),cost.getLossAllocationReason());
+        equal("3005",cost.getActualTotalCost());equal("33.38888889",cost.getActualUnitCost());
+        request.setReason("cannot replace prior evidence");assertThrows(ServiceException.class,()->service.allocateLoss(request));
+        service.settle(10L);assertEquals("SETTLED",service.workorderCost(10L).getStatus());equal("33.38888889",jdbc.queryForObject("SELECT unit_cost FROM mes_cost_stock_layer WHERE origin_workorder_id=10",BigDecimal.class));
+        assertThrows(ServiceException.class,()->service.allocateLoss(allocationRequest()));
+    }
+    @Test void lossAllocationRejectsMissingCostEvidenceFinalRejectsAndZeroOutput() {
+        completeCostEvidenceForLossOrder();LossAllocation request=allocationRequest();
+        jdbc.update("UPDATE mes_cost_allocation SET status='INCOMPLETE' WHERE transaction_id=2");assertThrows(ServiceException.class,()->service.allocateLoss(request));
+        jdbc.update("UPDATE mes_cost_allocation SET status='FINAL' WHERE transaction_id=2");
+        jdbc.update("UPDATE mes_wm_product_produce_line SET quality_status=2 WHERE id=93");assertThrows(ServiceException.class,()->service.allocateLoss(request));
+        jdbc.update("DELETE FROM mes_wm_transaction WHERE biz_type=123");assertThrows(ServiceException.class,()->service.allocateLoss(request));
+        assertNull(jdbc.queryForObject("SELECT allocation_method FROM mes_pro_work_order_loss WHERE work_order_id=10",String.class));
+    }
+    @Test void lossAllocationRequiresReasonLoginTenantAndSettlementPermission() throws Exception {
+        completeCostEvidenceForLossOrder();LossAllocation request=allocationRequest();
+        request.setReason(" ");assertThrows(ServiceException.class,()->service.allocateLoss(request));request.setReason("confirmed");
+        SecurityContextHolder.clearContext();assertThrows(ServiceException.class,()->service.allocateLoss(request));
+        LossAllocation valid=allocationRequest();TenantContextHolder.setTenantId(2L);assertThrows(ServiceException.class,()->service.allocateLoss(valid));TenantContextHolder.setTenantId(1L);
+        assertTrue(cn.iocoder.yudao.module.mes.controller.admin.cost.MesCostController.class.getMethod("allocateLoss",LossAllocation.class).getAnnotation(org.springframework.security.access.prepost.PreAuthorize.class).value().contains("mes:cost:settle"));
     }
     private TransactionTemplate repeatableRead() {
         TransactionTemplate tx=new TransactionTemplate(new DataSourceTransactionManager(jdbc.getDataSource()));tx.setIsolationLevel(TransactionDefinition.ISOLATION_REPEATABLE_READ);return tx;

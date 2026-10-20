@@ -205,32 +205,23 @@
                       label="本次报工数量"
                       prop="feedbackQuantity"
                     >
-                      <el-input-number
-                        v-model="form.feedbackQuantity"
-                        :min="0"
-                        :precision="2"
-                        controls-position="right"
-                      />
+                      <el-input v-model="form.feedbackQuantity" inputmode="decimal" />
                     </el-form-item>
                     <template v-else>
                       <el-form-item label="合格品数量" prop="qualifiedQuantity">
-                        <el-input-number
-                          v-model="form.qualifiedQuantity"
-                          :min="0"
-                          :precision="2"
-                          controls-position="right"
-                        />
+                        <el-input v-model="form.qualifiedQuantity" inputmode="decimal" />
                       </el-form-item>
                       <el-form-item label="不良品数量" prop="unqualifiedQuantity">
-                        <el-input-number
-                          v-model="form.unqualifiedQuantity"
-                          :min="0"
-                          :precision="2"
-                          controls-position="right"
-                        />
+                        <el-input v-model="form.unqualifiedQuantity" inputmode="decimal" />
                       </el-form-item>
                     </template>
                   </div>
+                  <FeedbackSources
+                    ref="sourcesRef"
+                    v-model="form.sources"
+                    :task-id="context.task.id"
+                    :quantity="reportedQuantity"
+                  />
                   <el-form-item label="指定审核人" prop="approveUserId">
                     <el-select v-model="form.approveUserId" placeholder="选择审核人" filterable>
                       <el-option
@@ -291,6 +282,13 @@ import { checkPermi } from '@/utils/permission'
 import WorkbenchEquipment from './WorkbenchEquipment.vue'
 import TaskExecution from '@/views/mes/pro/sop/TaskExecution.vue'
 import type { FormInstance, FormRules } from 'element-plus'
+import FeedbackSources from '@/views/mes/pro/feedback/FeedbackSources.vue'
+import {
+  sumQuantities,
+  quantityRule,
+  quantityUnits
+} from '@/views/mes/pro/feedback/sourceQuantities'
+import type { FeedbackSource } from '@/api/mes/pro/feedback'
 
 defineOptions({ name: 'MesProWorkbench' })
 const message = useMessage()
@@ -328,14 +326,24 @@ const submitting = ref(false)
 const loadError = ref('')
 const submitError = ref('')
 const formRef = ref<FormInstance>()
+const sourcesRef = ref<InstanceType<typeof FeedbackSources>>()
 const form = reactive({
   approveUserId: undefined as number | undefined,
-  feedbackQuantity: 0,
-  qualifiedQuantity: 0,
-  unqualifiedQuantity: 0,
-  remark: ''
+  feedbackQuantity: '0',
+  qualifiedQuantity: '0',
+  unqualifiedQuantity: '0',
+  remark: '',
+  sources: [] as FeedbackSource[]
 })
+const reportedQuantity = computed(() =>
+  context.value?.task.checkFlag
+    ? String(form.feedbackQuantity)
+    : (sumQuantities(form.qualifiedQuantity, form.unqualifiedQuantity) ?? '')
+)
 const rules: FormRules = {
+  feedbackQuantity: [quantityRule()],
+  qualifiedQuantity: [quantityRule()],
+  unqualifiedQuantity: [quantityRule()],
   approveUserId: [{ required: true, message: '请选择审核人', trigger: 'change' }]
 }
 const sopImages = computed(
@@ -380,10 +388,11 @@ const selectTask = async (id: number) => {
     const data = await WorkbenchApi.getContext(id)
     if (sequence !== selectionSequence) return
     context.value = data
-    form.feedbackQuantity = 0
-    form.qualifiedQuantity = 0
-    form.unqualifiedQuantity = 0
+    form.feedbackQuantity = '0'
+    form.qualifiedQuantity = '0'
+    form.unqualifiedQuantity = '0'
     form.remark = ''
+    form.sources = []
     formRef.value?.clearValidate()
   } catch (error) {
     if (sequence === selectionSequence)
@@ -429,13 +438,12 @@ const submit = async () => {
   await formRef.value?.validate()
   if (!context.value || !form.approveUserId) return
   const task = context.value.task
-  const quantity = context.value.task.checkFlag
-    ? form.feedbackQuantity
-    : form.qualifiedQuantity + form.unqualifiedQuantity
-  if (quantity <= 0) {
-    submitError.value = '本次报工数量须大于0'
+  const quantity = quantityUnits(reportedQuantity.value)
+  if (quantity === undefined || quantity <= 0n) {
+    submitError.value = '本次报工数量须大于0，最多 14 位整数和 6 位小数'
     return
   }
+  if (!sourcesRef.value?.validate()) return
   submitting.value = true
   submitError.value = ''
   try {
@@ -451,10 +459,11 @@ const submit = async () => {
     const id = await WorkbenchApi.submitFeedback({
       taskId: task.id,
       approveUserId: form.approveUserId,
-      feedbackQuantity: form.feedbackQuantity,
+      feedbackQuantity: reportedQuantity.value,
       qualifiedQuantity: form.qualifiedQuantity,
       unqualifiedQuantity: form.unqualifiedQuantity,
-      remark: form.remark
+      remark: form.remark,
+      sources: form.sources
     })
     message.success(`报工 #${id} 已提交，等待指定审核人审批`)
     await loadTasks()
@@ -617,7 +626,7 @@ h1 {
   gap: 16px;
 }
 
-.el-input-number {
+.el-input {
   width: 100%;
 }
 

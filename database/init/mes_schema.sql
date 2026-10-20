@@ -3460,3 +3460,7 @@ CREATE TABLE IF NOT EXISTS `mes_wm_warehouse_location` (
   KEY `idx_warehouse_id` (`warehouse_id`),
   KEY `idx_tenant_deleted` (`tenant_id`, `deleted`)
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_0900_ai_ci ROW_FORMAT=DYNAMIC;
+
+-- Technical registry/config write mutex; printing reads never lock or mutate this table.
+CREATE TABLE IF NOT EXISTS `mes_wm_barcode_mutex` (`tenant_id` BIGINT NOT NULL, PRIMARY KEY (`tenant_id`)) ENGINE=InnoDB;
+INSERT IGNORE INTO `mes_wm_barcode_mutex` (`tenant_id`) VALUES(-1);

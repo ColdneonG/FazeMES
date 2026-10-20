@@ -70,5 +70,8 @@ public interface MesWmProductIssueDetailService {
      * @param lineId 行ID
      */
     void deleteProductIssueDetailByLineId(Long lineId);
+    /** Caller holds the issue lock before locking the execution set. */
+    List<MesWmProductIssueDetailDO> getProductIssueDetailListByIssueIdForUpdate(Long issueId);
+    List<MesWmProductIssueDetailDO> getProductIssueDetailListByLineIdForUpdate(Long lineId);
 
 }

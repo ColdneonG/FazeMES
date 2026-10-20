@@ -127,7 +127,7 @@ public class MesProWorkbenchServiceImpl implements MesProWorkbenchService {
                 .setQualifiedQuantity(task.getCheckFlag() ? BigDecimal.ZERO : qualified)
                 .setUnqualifiedQuantity(task.getCheckFlag() ? BigDecimal.ZERO : unqualified)
                 .setUncheckQuantity(task.getCheckFlag() ? quantity : BigDecimal.ZERO)
-                .setFeedbackTime(LocalDateTime.now()).setRemark(reqVO.getRemark());
+                .setFeedbackTime(LocalDateTime.now()).setRemark(reqVO.getRemark()).setSources(reqVO.getSources());
         Long id = feedbackService.createFeedback(feedback);
         feedbackService.submitFeedback(id);
         return id;

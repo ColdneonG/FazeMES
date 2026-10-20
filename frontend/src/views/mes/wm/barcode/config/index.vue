@@ -1,5 +1,4 @@
 <template>
-
   <ContentWrap>
     <!-- 搜索工作栏 -->
     <el-form
@@ -85,7 +84,12 @@
         align="center"
         prop="defaultTemplate"
         :show-overflow-tooltip="true"
-      />
+      >
+        <template #default="{ row }">{{
+          LABEL_TEMPLATES.find((preset) => preset.key === (row.defaultTemplate || 'LABEL_50X30'))
+            ?.name ?? '旧模板待修正'
+        }}</template>
+      </el-table-column>
       <el-table-column
         label="自动生成"
         align="center"
@@ -151,6 +155,7 @@ import { getIntDictOptions, DICT_TYPE } from '@/utils/dict'
 import { dateFormatter } from '@/utils/formatTime'
 import { WmBarcodeConfigApi as BarcodeConfigApi } from '@/api/mes/wm/barcode/config'
 import BarcodeConfigForm from './BarcodeConfigForm.vue'
+import { LABEL_TEMPLATES } from '../labelPrint'
 
 defineOptions({ name: 'MesWmBarcodeConfig' })
 

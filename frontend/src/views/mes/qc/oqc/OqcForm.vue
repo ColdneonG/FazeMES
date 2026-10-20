@@ -1,7 +1,14 @@
 <!-- MES 出货检验单表单 -->
 <template>
-  <Dialog :title="dialogTitle" v-model="dialogVisible" :default-fullscreen="props.terminal" class="mes-qc-responsive" width="1080px">
+  <Dialog
+    :title="dialogTitle"
+    v-model="dialogVisible"
+    :default-fullscreen="props.terminal"
+    class="mes-qc-responsive"
+    width="1080px"
+  >
     <!-- 基本信息表单 -->
+    <el-alert v-if="sourceError" :title="sourceError" type="error" :closable="false" class="mb-4" />
     <el-form
       ref="formRef"
       :model="formData"
@@ -71,7 +78,11 @@
         </el-col>
         <el-col :span="8">
           <el-form-item label="批次号" prop="batchCode">
-            <el-input v-model="formData.batchCode" placeholder="请输入批次号" />
+            <el-input
+              v-model="formData.batchCode"
+              placeholder="请输入批次号"
+              :disabled="isFromPendingTask"
+            />
           </el-form-item>
         </el-col>
       </el-row>
@@ -80,10 +91,9 @@
       <el-row :gutter="16">
         <el-col :span="8">
           <el-form-item label="发货数量" prop="outQuantity">
-            <el-input-number
+            <el-input
               v-model="formData.outQuantity"
-              :min="0"
-              :precision="2"
+              inputmode="decimal"
               placeholder="请输入发货数量"
               class="!w-1/1"
               :disabled="isFromPendingTask"
@@ -92,9 +102,9 @@
         </el-col>
         <el-col :span="8">
           <el-form-item label="检测数量" prop="checkQuantity">
-            <el-input-number
+            <el-input
               v-model="formData.checkQuantity"
-              :min="0"
+              inputmode="decimal"
               placeholder="请输入检测数量"
               class="!w-1/1"
             />
@@ -102,9 +112,9 @@
         </el-col>
         <el-col :span="8">
           <el-form-item label="合格品数量" prop="qualifiedQuantity">
-            <el-input-number
+            <el-input
               v-model="formData.qualifiedQuantity"
-              :min="0"
+              inputmode="decimal"
               placeholder="请输入合格品数量"
               class="!w-1/1"
             />
@@ -114,9 +124,9 @@
       <el-row :gutter="16">
         <el-col :span="8">
           <el-form-item label="不合格品数量" prop="unqualifiedQuantity">
-            <el-input-number
+            <el-input
               v-model="formData.unqualifiedQuantity"
-              :min="0"
+              inputmode="decimal"
               placeholder="请输入不合格品数量"
               class="!w-1/1"
             />
@@ -258,6 +268,7 @@ import UserSelectV2 from '@/views/system/user/components/UserSelectV2.vue'
 import OqcLineList from './OqcLineList.vue'
 import QcIndicatorResultList from '@/views/mes/qc/indicatorresult/components/QcIndicatorResultList.vue'
 import { MesQcTypeEnum, MesQcStatusEnum, MesAutoCodeRuleCode } from '@/views/mes/utils/constants'
+import { quantityRule, quantityUnits } from '@/utils/mesQuantity'
 
 const props = withDefaults(defineProps<{ terminal?: boolean }>(), { terminal: false })
 
@@ -276,11 +287,11 @@ const dialogTitle = computed(() => {
   return titles[formType.value] || formType.value
 }) // 弹窗标题，根据 formType 自动显示
 const formLoading = ref(false) // 表单的加载中：1）修改时的数据加载；2）提交的按钮禁用
+const sourceError = ref('')
+let openVersion = 0
 const formType = ref('') // 表单的类型：create - 新增；update - 修改
 const activeTab = ref('line') // 当前激活的标签页
-const isFromPendingTask = computed(
-  () => formType.value === 'create' && formData.value.sourceDocId != null
-) // 是否来自待检任务（有预填的来源单据信息）
+const isFromPendingTask = computed(() => formData.value.sourceDocId != null) // 是否来自待检任务（有预填的来源单据信息）
 
 const formData = ref({
   id: undefined as number | undefined,
@@ -290,14 +301,14 @@ const formData = ref({
   sourceDocType: undefined,
   sourceDocId: undefined,
   sourceLineId: undefined,
-  sourceDocCode: undefined,
-  clientId: undefined,
-  batchCode: undefined,
-  itemId: undefined,
-  outQuantity: undefined,
-  checkQuantity: undefined,
-  qualifiedQuantity: undefined,
-  unqualifiedQuantity: undefined,
+  sourceDocCode: undefined as string | undefined,
+  clientId: undefined as number | undefined,
+  batchCode: undefined as string | undefined,
+  itemId: undefined as number | undefined,
+  outQuantity: '',
+  checkQuantity: '',
+  qualifiedQuantity: '',
+  unqualifiedQuantity: '',
   checkResult: undefined,
   outDate: undefined,
   inspectDate: undefined,
@@ -316,10 +327,10 @@ const formRules = reactive({
   name: [{ required: true, message: '检验单名称不能为空', trigger: 'blur' }],
   clientId: [{ required: true, message: '客户不能为空', trigger: 'change' }],
   itemId: [{ required: true, message: '产品物料不能为空', trigger: 'change' }],
-  outQuantity: [{ required: true, message: '发货数量不能为空', trigger: 'blur' }],
-  checkQuantity: [{ required: true, message: '检测数量不能为空', trigger: 'blur' }],
-  qualifiedQuantity: [{ required: true, message: '合格品数量不能为空', trigger: 'blur' }],
-  unqualifiedQuantity: [{ required: true, message: '不合格品数量不能为空', trigger: 'blur' }],
+  outQuantity: [quantityRule(true)],
+  checkQuantity: [quantityRule(true)],
+  qualifiedQuantity: [quantityRule(false)],
+  unqualifiedQuantity: [quantityRule(false)],
   inspectorUserId: [{ required: true, message: '检测人员不能为空', trigger: 'change' }],
   outDate: [{ required: true, message: '出货日期不能为空', trigger: 'change' }],
   inspectDate: [{ required: true, message: '检测日期不能为空', trigger: 'change' }]
@@ -330,48 +341,105 @@ const isDetail = computed(() => formType.value === 'detail') // 表单是否为�
 
 /** 生成检验单编号 */
 const generateCode = async () => {
-  formData.value.code = await AutoCodeRecordApi.generateAutoCode(MesAutoCodeRuleCode.QC_OQC_CODE)
+  const version = openVersion
+  const code = await AutoCodeRecordApi.generateAutoCode(MesAutoCodeRuleCode.QC_OQC_CODE)
+  if (version === openVersion) formData.value.code = code
 }
 
 /** 打开弹窗 */
 const open = async (type: string, id?: number, data?: QcOqcVO) => {
+  const version = ++openVersion
   dialogVisible.value = true
   formType.value = type
   activeTab.value = 'line'
   resetForm()
-  // 修改时，设置数据
-  if (id) {
-    formLoading.value = true
-    try {
-      formData.value = await QcOqcApi.getOqc(id)
-    } finally {
-      formLoading.value = false
+  sourceError.value = ''
+  formLoading.value = true
+  try {
+    if (id) {
+      const saved = await QcOqcApi.getOqc(id)
+      if (version !== openVersion) return
+      formData.value = saved
+    } else if (data) {
+      Object.assign(formData.value, data)
+      if (Number(data.sourceDocType) === 118 && data.sourceLineId != null) {
+        // Pending-task rows retain their old numeric API. Fetch the exact current sales quantity
+        // and required batch before creating its inspection on either desktop or mobile.
+        formData.value.outQuantity = ''
+        formData.value.checkQuantity = ''
+        const source = await QcOqcApi.getSourceContext(data.sourceDocId, data.sourceLineId)
+        if (version !== openVersion) return
+        if (source.sourceDocId !== data.sourceDocId || source.sourceLineId !== data.sourceLineId)
+          throw new Error('source changed')
+        formData.value.sourceDocCode = source.sourceDocCode
+        formData.value.clientId = source.clientId
+        formData.value.itemId = source.itemId
+        formData.value.batchCode = source.batchCode ?? undefined
+        formData.value.outQuantity = source.outQuantity
+      }
     }
-  } else if (data) {
-    // 预填模式：来自待检任务（pending inspect）
-    Object.assign(formData.value, data)
+    normalizeQuantities()
+    if (props.terminal && type === 'create') await generateCode()
+    if (version === openVersion) originalFormData.value = JSON.stringify(formData.value)
+  } catch {
+    if (version === openVersion)
+      sourceError.value = '无法核对当前检验单或原销售行，请重新打开后重试'
+  } finally {
+    if (version === openVersion) formLoading.value = false
   }
-  if (props.terminal && type === 'create') await generateCode()
-  // 保存原始数据快照
-  originalFormData.value = JSON.stringify(formData.value)
 }
 defineExpose({ open }) // 提供 open 方法，用于打开弹窗
+
+const normalizeQuantities = () => {
+  for (const key of [
+    'outQuantity',
+    'checkQuantity',
+    'qualifiedQuantity',
+    'unqualifiedQuantity'
+  ] as const) {
+    formData.value[key] = formData.value[key] == null ? '' : String(formData.value[key])
+  }
+}
+const validQuantities = () => {
+  const out = quantityUnits(formData.value.outQuantity)
+  const check = quantityUnits(formData.value.checkQuantity)
+  const good = quantityUnits(formData.value.qualifiedQuantity)
+  const bad = quantityUnits(formData.value.unqualifiedQuantity)
+  if (
+    out === undefined ||
+    check === undefined ||
+    good === undefined ||
+    bad === undefined ||
+    out <= 0n ||
+    check <= 0n ||
+    check > out ||
+    good + bad !== check
+  ) {
+    message.warning(
+      '数量最多支持 14 位整数和 6 位小数；检测数量须大于零且不超过发货量，合格与不合格合计须等于检测量'
+    )
+    return false
+  }
+  return true
+}
 
 /** 提交表单 */
 const emit = defineEmits(['success']) // 定义 success 事件，用于操作成功后的回调
 const submitForm = async () => {
+  if (formLoading.value || sourceError.value) return
   // 校验表单
   if (!formRef) return
   const valid = await formRef.value.validate()
-  if (!valid) return
+  if (!valid || !validQuantities()) return
   // 提交请求
   formLoading.value = true
   try {
-    const data = formData.value as unknown as QcOqcVO
+    const data = { ...formData.value } as unknown as QcOqcVO
     if (formType.value === 'create') {
       const createdId = await QcOqcApi.createOqc(data)
       if (props.terminal) {
         formData.value = await QcOqcApi.getOqc(createdId)
+        normalizeQuantities()
         formType.value = 'update'
         activeTab.value = 'line'
         originalFormData.value = JSON.stringify(formData.value)
@@ -394,14 +462,15 @@ const submitForm = async () => {
 
 /** 完成操作：表单修改过则先保存，再完成 */
 const handleFinish = async () => {
+  if (formLoading.value || sourceError.value) return
   if (!formRef) return
   const valid = await formRef.value.validate()
-  if (!valid) return
+  if (!valid || !validQuantities()) return
   try {
     await message.confirm('是否完成出货检验单编制？【完成后将不能更改】')
     formLoading.value = true
     if (JSON.stringify(formData.value) !== originalFormData.value) {
-      const data = formData.value as unknown as QcOqcVO
+      const data = { ...formData.value } as unknown as QcOqcVO
       await QcOqcApi.updateOqc(data)
     }
     await QcOqcApi.finishOqc(formData.value.id!)
@@ -428,10 +497,10 @@ const resetForm = () => {
     clientId: undefined,
     batchCode: undefined,
     itemId: undefined,
-    outQuantity: undefined,
-    checkQuantity: undefined,
-    qualifiedQuantity: undefined,
-    unqualifiedQuantity: undefined,
+    outQuantity: '',
+    checkQuantity: '',
+    qualifiedQuantity: '',
+    unqualifiedQuantity: '',
     checkResult: undefined,
     outDate: undefined,
     inspectDate: undefined,
@@ -451,7 +520,7 @@ const resetForm = () => {
 watch(
   () => formData.value.outQuantity,
   (val) => {
-    if (formType.value === 'create' && val != null && formData.value.checkQuantity == null) {
+    if (formType.value === 'create' && val !== '' && formData.value.checkQuantity === '') {
       formData.value.checkQuantity = val
     }
   }
@@ -459,7 +528,7 @@ watch(
 watch(
   () => formData.value.checkQuantity,
   (val) => {
-    if (formType.value === 'create' && val != null && formData.value.outQuantity == null) {
+    if (formType.value === 'create' && val !== '' && formData.value.outQuantity === '') {
       formData.value.outQuantity = val
     }
   }

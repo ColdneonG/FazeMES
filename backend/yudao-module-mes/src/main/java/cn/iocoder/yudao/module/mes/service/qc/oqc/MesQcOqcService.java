@@ -3,6 +3,7 @@ package cn.iocoder.yudao.module.mes.service.qc.oqc;
 import cn.iocoder.yudao.framework.common.pojo.PageResult;
 import cn.iocoder.yudao.module.mes.controller.admin.qc.oqc.vo.MesQcOqcPageReqVO;
 import cn.iocoder.yudao.module.mes.controller.admin.qc.oqc.vo.MesQcOqcSaveReqVO;
+import cn.iocoder.yudao.module.mes.controller.admin.qc.oqc.vo.MesQcOqcSourceContextRespVO;
 import cn.iocoder.yudao.module.mes.dal.dataobject.qc.defectrecord.MesQcDefectRecordDO;
 import cn.iocoder.yudao.module.mes.dal.dataobject.qc.oqc.MesQcOqcDO;
 import jakarta.validation.Valid;
@@ -15,6 +16,7 @@ import java.util.List;
  * @author 芋道源码
  */
 public interface MesQcOqcService {
+    MesQcOqcSourceContextRespVO getSourceContext(Long sourceDocId,Long sourceLineId);
 
     /**
      * 创建出货检验单

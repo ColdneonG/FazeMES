@@ -108,4 +108,8 @@ public class MesWmMaterialStockDO extends BaseDO {
      */
     private Boolean frozen;
 
+    /** Historical FAIL receipts were merged before quarantine existed. Ordinary unfreeze cannot release this hold. */
+    private Boolean qualityHold;
+    private String qualityHoldReason;
+
 }

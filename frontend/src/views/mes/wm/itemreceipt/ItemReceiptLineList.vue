@@ -52,9 +52,9 @@
           </el-button>
           <PrinterLabel
             v-if="isStock"
-            :bizId="scope.row.batchId"
+            :bizId="scope.row.batchId || scope.row.itemId"
             :bizCode="scope.row.batchCode"
-            bizType="ITEM_BATCH"
+            :bizType="scope.row.batchId ? 'BATCH' : 'ITEM'"
           />
         </template>
       </el-table-column>

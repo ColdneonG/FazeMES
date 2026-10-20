@@ -61,6 +61,8 @@ public class MesWmTransactionServiceImpl implements MesWmTransactionService {
     @Resource
     @org.springframework.context.annotation.Lazy
     private cn.iocoder.yudao.module.mes.service.cost.MesCostService costService;
+    @Resource @org.springframework.context.annotation.Lazy
+    private cn.iocoder.yudao.module.mes.service.wm.returnsales.MesWmReturnSalesSourceService returnSourceService;
 
     @Override
     @Transactional(rollbackFor = Exception.class)
@@ -75,6 +77,7 @@ public class MesWmTransactionServiceImpl implements MesWmTransactionService {
         checkQuantity(reqDTO, inbound);
         // 1.3 入库事务：批次号校验 + batchId/batchCode 互补
         checkBatch(reqDTO, inbound);
+        returnSourceService.preflight(java.util.List.of(reqDTO));
         lockCostWorkOrder(reqDTO);
         areaService.validateWarehouseAreaExists(reqDTO.getWarehouseId(), reqDTO.getLocationId(), reqDTO.getAreaId());
         materialStockService.lockStockArea(reqDTO.getAreaId());
@@ -85,6 +88,7 @@ public class MesWmTransactionServiceImpl implements MesWmTransactionService {
         // 1.5 关联事务校验
         checkRelatedTransaction(reqDTO);
         MesWmWarehouseDO warehouse = warehouseService.validateWarehouseExists(reqDTO.getWarehouseId());
+        returnSourceService.validateWarehouse(reqDTO,warehouse);
         boolean workInProcess = MesWmWarehouseDO.WIP_VIRTUAL_WAREHOUSE.equals(warehouse.getCode());
         if (workInProcess && reqDTO.getWorkOrderId() == null) {
             throw exception(WM_MATERIAL_STOCK_SELECTION_MISMATCH);
@@ -108,6 +112,9 @@ public class MesWmTransactionServiceImpl implements MesWmTransactionService {
                 throw exception(WM_MATERIAL_STOCK_SELECTION_MISMATCH);
             }
         }
+        if (!inbound) {
+            cn.iocoder.yudao.module.mes.service.wm.quality.MesWmQualityPolicy.validateOutbound(warehouse, materialStock);
+        }
         // 2.2 冻结校验（仓库、库区、库位、库存记录）
         checkFrozen(reqDTO, materialStock);
         if (!inbound && !workInProcess) {
@@ -126,8 +133,11 @@ public class MesWmTransactionServiceImpl implements MesWmTransactionService {
                 .bizType(reqDTO.getBizType()).bizId(reqDTO.getBizId()).bizCode(reqDTO.getBizCode()).bizLineId(reqDTO.getBizLineId())
                 .materialStockId(materialStock.getId()).workOrderId(reqDTO.getWorkOrderId())
                 .relatedTransactionId(reqDTO.getRelatedTransactionId())
+                .returnSourceTransactionId(reqDTO.getReturnSourceTransactionId())
+                .returnDetailId(reqDTO.getReturnDetailId())
                 .build();
         transactionMapper.insert(transaction);
+        returnSourceService.recordPosted(transaction);
         costService.recordTransaction(transaction, materialStock);
         return transaction.getId();
     }
@@ -138,6 +148,7 @@ public class MesWmTransactionServiceImpl implements MesWmTransactionService {
         if (CollUtil.isEmpty(reqDTOs)) {
             throw exception(WM_TRANSACTION_LIST_EMPTY);
         }
+        returnSourceService.preflight(reqDTOs);
         // Production order locks precede all inventory-area and FIFO-layer locks.
         reqDTOs.stream().filter(req -> isProductionCostEvent(req.getBizType()))
                 .map(MesWmTransactionSaveReqDTO::getWorkOrderId).filter(java.util.Objects::nonNull)

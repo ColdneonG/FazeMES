@@ -67,6 +67,7 @@ public class MesMdWorkstationServiceImpl implements MesMdWorkstationService {
     private MesProProcessService processService;
 
     @Override
+    @Transactional(rollbackFor = Exception.class)
     public Long createWorkstation(MesMdWorkstationSaveReqVO createReqVO) {
         // 校验数据
         validateWorkstationSaveData(null, createReqVO);

@@ -12,6 +12,7 @@ import org.apache.ibatis.annotations.Mapper;
  */
 @Mapper
 public interface MesWmSalesNoticeMapper extends BaseMapperX<MesWmSalesNoticeDO> {
+    default MesWmSalesNoticeDO selectForUpdate(Long id){return selectOne(new LambdaQueryWrapperX<MesWmSalesNoticeDO>().eq(MesWmSalesNoticeDO::getId,id).last("FOR UPDATE"));}
 
     default PageResult<MesWmSalesNoticeDO> selectPage(MesWmSalesNoticePageReqVO reqVO) {
         return selectPage(reqVO, new LambdaQueryWrapperX<MesWmSalesNoticeDO>()

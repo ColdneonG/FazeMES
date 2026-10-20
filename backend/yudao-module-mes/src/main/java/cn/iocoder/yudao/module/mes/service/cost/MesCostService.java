@@ -28,6 +28,7 @@ public class MesCostService {
     @Resource private cn.iocoder.yudao.module.mes.service.pro.integrity.MesProductionIntegrityService integrityService;
     private static final int MAX_NODES = 2000;
     private static final int MAX_DEPTH = 32;
+    public static final String LOSS_ABSORB_IN_GOOD_OUTPUT = "ABSORB_IN_GOOD_OUTPUT";
     private long tenant() { return TenantContextHolder.getRequiredTenantId(); }
     private static ServiceException invalid(String message) { return new ServiceException(1_023_900_001, message); }
     private static BigDecimal decimal(Object value) { return value == null ? null : new BigDecimal(value.toString()); }
@@ -179,8 +180,18 @@ public class MesCostService {
         return workorderCost(workorderId,false);
     }
     private WorkorderCost workorderCost(Long workorderId,boolean current) {
+        return workorderCost(workorderId,current,false);
+    }
+    private WorkorderCost workorderCost(Long workorderId,boolean current,boolean validatingLossAllocation) {
         workorder(workorderId,current);
         WorkorderCost result=new WorkorderCost();result.setWorkorderId(workorderId);result.setStatus("PROVISIONAL");
+        Map<String,Object> loss=one("SELECT loss_quantity,allocation_method,allocation_reason,allocation_by,allocation_at FROM mes_pro_work_order_loss WHERE tenant_id=? AND work_order_id=?"+readLock(current),tenant(),workorderId);
+        boolean lossNeedsAllocation=loss!=null && nz(decimal(loss.get("loss_quantity"))).signum()>0 && !LOSS_ABSORB_IN_GOOD_OUTPUT.equals(loss.get("allocation_method"));
+        if(loss!=null){result.setLossQuantity(decimal(loss.get("loss_quantity")));result.setLossAllocationMethod((String)loss.get("allocation_method"));result.setLossAllocationReason((String)loss.get("allocation_reason"));result.setLossAllocatedBy(id(loss.get("allocation_by")));
+            if(loss.get("allocation_at") instanceof java.sql.Timestamp timestamp)result.setLossAllocatedAt(timestamp.toLocalDateTime());
+            else if(loss.get("allocation_at") instanceof java.time.LocalDateTime time)result.setLossAllocatedAt(time);
+        }
+        if(lossNeedsAllocation && !validatingLossAllocation)result.getIssues().add("前序损耗尚未核定成本分摊，请明确确认由合格产出吸收实际投入成本");
         Map<String,Object> snapshot=one("SELECT * FROM mes_cost_workorder WHERE tenant_id=? AND workorder_id=? AND deleted=0"+readLock(current),tenant(),workorderId);
         if(snapshot!=null){result.setPlanSnapshot(JsonUtils.parseObject((String)snapshot.get("plan_snapshot"),ProductCost.class));result.setPlanQuantity(decimal(snapshot.get("plan_quantity")));
             ProductCost plan=result.getPlanSnapshot();BigDecimal qty=result.getPlanQuantity();
@@ -225,7 +236,7 @@ public class MesCostService {
         if(missingQuality)result.getIssues().add("产出缺少可核验的合格质量记录，不能结算");
         result.setProducedQuantity(produced);
         if(produced.signum()==0)result.getIssues().add("尚无合格产出");
-        if(complete && activeEfforts>0 && !badOutput && !missingQuality) {
+        if(complete && activeEfforts>0 && !badOutput && !missingQuality && (!lossNeedsAllocation || validatingLossAllocation)) {
             result.setActualTotalCost(money(material.add(labor).add(overhead)));
             if(produced.signum()>0)result.setActualUnitCost(result.getActualTotalCost().divide(produced,8,RoundingMode.HALF_UP));
         }
@@ -235,6 +246,26 @@ public class MesCostService {
         if(result.getPlanTotalCost()!=null && result.getActualTotalCost()!=null)result.setTotalVariance(money(result.getActualTotalCost().subtract(result.getPlanTotalCost())));
         if(result.getPlanSnapshot()!=null && result.getPlanSnapshot().getTotalCost()!=null && result.getActualUnitCost()!=null)result.setUnitVariance(money(result.getActualUnitCost().subtract(result.getPlanSnapshot().getTotalCost())));
         return result;
+    }
+    /** Choose an auditable loss rule. Final settlement remains a separate operation. */
+    @Transactional(rollbackFor=Exception.class, isolation=org.springframework.transaction.annotation.Isolation.READ_COMMITTED)
+    public void allocateLoss(LossAllocation request) {
+        if(request==null || request.getWorkorderId()==null || request.getReason()==null || request.getReason().isBlank() || request.getReason().trim().length()>500)throw invalid("必须填写工单及不超过500字的损耗分摊核定原因");
+        Long operator=getLoginUserId();if(operator==null)throw invalid("请登录后核定损耗成本");
+        Map<String,Object> order=workorder(request.getWorkorderId(),true);
+        if(((Number)order.get("status")).intValue()!=2)throw invalid("须先完成损耗结案后再核定成本");
+        assertWorkOrderMutable(request.getWorkorderId());
+        Map<String,Object> loss=one("SELECT loss_quantity,allocation_method,allocation_reason FROM mes_pro_work_order_loss WHERE tenant_id=? AND work_order_id=? FOR UPDATE",tenant(),request.getWorkorderId());
+        if(loss==null || nz(decimal(loss.get("loss_quantity"))).signum()<=0)throw invalid("工单没有待核定的前序损耗结案记录");
+        if(loss.get("allocation_method")!=null){
+            if(LOSS_ABSORB_IN_GOOD_OUTPUT.equals(loss.get("allocation_method")) && request.getReason().trim().equals(loss.get("allocation_reason")))return;
+            throw invalid("损耗成本已核定，原核定记录不能覆盖");
+        }
+        if(one("SELECT id FROM mes_pro_feedback WHERE tenant_id=? AND work_order_id=? AND deleted=0 AND status<>4 LIMIT 1 FOR UPDATE",tenant(),request.getWorkorderId())!=null)throw invalid("仍有未完成的报工/检验记录");
+        if(one("SELECT id FROM mes_wm_material_stock WHERE tenant_id=? AND work_order_id=? AND deleted=0 AND quantity<>0 LIMIT 1 FOR UPDATE",tenant(),request.getWorkorderId())!=null)throw invalid("工单仍有未清理的线边库存，不能核定损耗成本");
+        WorkorderCost result=workorderCost(request.getWorkorderId(),true,true);
+        if(result.getPlanSnapshot()==null || result.getActualUnitCost()==null || !result.getIssues().isEmpty())throw invalid("成本证据不完整或仍有不良产出，不能核定损耗分摊："+String.join("；",result.getIssues()));
+        jdbc.update("UPDATE mes_pro_work_order_loss SET allocation_method=?,allocation_by=?,allocation_at=NOW(),allocation_reason=? WHERE tenant_id=? AND work_order_id=? AND allocation_method IS NULL",LOSS_ABSORB_IN_GOOD_OUTPUT,operator,request.getReason().trim(),tenant(),request.getWorkorderId());
     }
     @Transactional(rollbackFor=Exception.class)
     public void settle(Long workorderId) {
@@ -284,6 +315,13 @@ public class MesCostService {
     @Transactional(rollbackFor=Exception.class)
     public void recordTransaction(MesWmTransactionDO transaction,MesWmMaterialStockDO stockBefore) {
         long t=tenant();
+        MesReturnCostLedger returnCosts=new MesReturnCostLedger(jdbc);
+        if(transaction.getReturnSourceTransactionId()!=null&&!Objects.equals(transaction.getBizType(),MesBizTypeConstants.WM_RETURN_SALES))
+            throw invalid("原销售退货流水关联不能用于其他库存业务");
+        if(Objects.equals(transaction.getBizType(),MesBizTypeConstants.WM_RETURN_SALES)) {
+            returnCosts.restore(transaction);
+            return;
+        }
         if(transaction.getQuantity().signum()<0) {
             if(Objects.equals(transaction.getBizType(),MesBizTypeConstants.WM_ITEM_CONSUME))assertWorkOrderMutable(transaction.getWorkOrderId());
             List<Map<String,Object>> layers=jdbc.queryForList("SELECT * FROM mes_cost_stock_layer WHERE tenant_id=? AND material_stock_id=? AND remaining_quantity>0 AND deleted=0 ORDER BY id FOR UPDATE",t,stockBefore.getId());
@@ -296,7 +334,12 @@ public class MesCostService {
                 BigDecimal take=remaining.min(decimal(layer.get("remaining_quantity")));
                 if(Objects.equals(transaction.getBizType(),MesBizTypeConstants.WM_ITEM_CONSUME) && layer.get("origin_workorder_id")!=null && !"FINAL".equals(layer.get("status")))throw invalid("自制半成品须先完成成本结算，才能投入下一工单");
                 BigDecimal materialAmount=null,laborAmount=null,overheadAmount=null;
-                if("FINAL".equals(layer.get("status")) && layer.get("unit_cost")!=null) {
+                String allocationStatus=(String)layer.get("status");BigDecimal allocationUnit=decimal(layer.get("unit_cost"));
+                var basis=returnCosts.allocateFromLayer(layer,take);
+                if(basis!=null) {
+                    materialAmount=basis.material();laborAmount=basis.labor();overheadAmount=basis.overhead();
+                    allocationStatus=basis.status();allocationUnit=basis.unitCost();
+                } else if("FINAL".equals(layer.get("status")) && layer.get("unit_cost")!=null) {
                     if(layer.get("origin_workorder_id")==null){materialAmount=take.multiply(decimal(layer.get("unit_cost"))).setScale(8,RoundingMode.HALF_UP);laborAmount=BigDecimal.ZERO;overheadAmount=BigDecimal.ZERO;}
                     else {
                         Map<String,Object> origin=one("SELECT actual_material_cost,actual_labor_cost,actual_overhead_cost,produced_quantity FROM mes_cost_workorder WHERE tenant_id=? AND workorder_id=? AND deleted=0 AND status='SETTLED' FOR UPDATE",t,layer.get("origin_workorder_id"));
@@ -305,15 +348,15 @@ public class MesCostService {
                         materialAmount=parts[0];laborAmount=parts[1];overheadAmount=parts[2];
                     }
                 }
-                jdbc.update("INSERT INTO mes_cost_allocation(tenant_id,transaction_id,layer_id,quantity,unit_cost,status,material_amount,labor_amount,overhead_amount) VALUES(?,?,?,?,?,?,?,?,?)",t,transaction.getId(),layer.get("id"),take,layer.get("unit_cost"),layer.get("status"),materialAmount,laborAmount,overheadAmount);
+                jdbc.update("INSERT INTO mes_cost_allocation(tenant_id,transaction_id,layer_id,quantity,unit_cost,status,material_amount,labor_amount,overhead_amount) VALUES(?,?,?,?,?,?,?,?,?)",t,transaction.getId(),layer.get("id"),take,allocationUnit,allocationStatus,materialAmount,laborAmount,overheadAmount);
                 jdbc.update("UPDATE mes_cost_stock_layer SET remaining_quantity=remaining_quantity-? WHERE id=? AND tenant_id=? AND deleted=0",take,layer.get("id"),t);
                 remaining=remaining.subtract(take);
             }
             if(remaining.signum()>0)throw invalid("库存数量与成本层不一致，事务已回滚");
         } else if(transaction.getRelatedTransactionId()!=null) {
-            List<Map<String,Object>> allocations=jdbc.queryForList("SELECT a.quantity,l.unit_cost,l.status,l.origin_workorder_id FROM mes_cost_allocation a JOIN mes_cost_stock_layer l ON l.id=a.layer_id AND l.tenant_id=a.tenant_id AND l.deleted=0 WHERE a.tenant_id=? AND a.transaction_id=? AND a.deleted=0 ORDER BY a.id FOR UPDATE",t,transaction.getRelatedTransactionId());
+            List<Map<String,Object>> allocations=jdbc.queryForList("SELECT a.id AS allocation_id,a.layer_id,a.quantity,a.unit_cost AS snapshot_unit_cost,a.status AS snapshot_status,a.material_amount,a.labor_amount,a.overhead_amount,l.unit_cost,l.status,l.origin_workorder_id,l.return_basis_required FROM mes_cost_allocation a JOIN mes_cost_stock_layer l ON l.id=a.layer_id AND l.tenant_id=a.tenant_id AND l.deleted=0 WHERE a.tenant_id=? AND a.transaction_id=? AND a.deleted=0 ORDER BY a.id FOR UPDATE",t,transaction.getRelatedTransactionId());
             BigDecimal copied=BigDecimal.ZERO;
-            for(Map<String,Object> a:allocations){BigDecimal q=decimal(a.get("quantity"));insertLayer(stockBefore.getId(),transaction.getId(),id(a.get("origin_workorder_id")),q,decimal(a.get("unit_cost")),(String)a.get("status"));copied=copied.add(q);}
+            for(Map<String,Object> a:allocations){BigDecimal q=decimal(a.get("quantity"));if(!returnCosts.transfer(a,stockBefore.getId(),transaction.getId()))insertLayer(stockBefore.getId(),transaction.getId(),id(a.get("origin_workorder_id")),q,decimal(a.get("unit_cost")),(String)a.get("status"));copied=copied.add(q);}
             if(copied.compareTo(transaction.getQuantity())!=0)throw invalid("调拨成本关联数量不一致，事务已回滚");
         } else if(Objects.equals(transaction.getBizType(),MesBizTypeConstants.WM_ITEM_RECEIPT_IN)) {
             Map<String,Object> price=one("SELECT unit_price FROM mes_cost_line_price WHERE tenant_id=? AND kind='RECEIPT' AND line_id=? AND deleted=0 FOR UPDATE",t,transaction.getBizLineId());
@@ -341,6 +384,10 @@ public class MesCostService {
             parts[largest]=parts[largest].add(residual);
         }
         return parts;
+    }
+    @Transactional(readOnly=true, isolation=org.springframework.transaction.annotation.Isolation.REPEATABLE_READ)
+    public ReturnSale returnSales(Long returnId) {
+        return new MesReturnCostLedger(jdbc).returnSales(returnId);
     }
     @Transactional(readOnly=true, isolation=org.springframework.transaction.annotation.Isolation.REPEATABLE_READ)
     public Sale sales(Long salesId) {

@@ -98,11 +98,16 @@ class MesWmItemReceiptBatchInvariantTest extends BaseDbUnitTest {
     @MockitoBean private MesWmWarehouseAreaService warehouseAreaService;
     @MockitoBean private MesWmMaterialStockService materialStockService;
     @MockitoBean private MesWmTransactionService transactionService;
+    @MockitoBean private cn.iocoder.yudao.module.mes.service.wm.warehouse.MesWmWarehouseService warehouseService;
 
     @BeforeEach
     void prepareItem() {
         when(itemService.validateItemExists(any())).thenAnswer(inv ->
                 new MesMdItemDO().setId(inv.getArgument(0)).setBatchFlag(false));
+        when(warehouseService.validateWarehouseExists(anyLong())).thenAnswer(inv ->
+                new cn.iocoder.yudao.module.mes.dal.dataobject.wm.warehouse.MesWmWarehouseDO()
+                        .setId(inv.getArgument(0)).setCode(Long.valueOf(20L).equals(inv.getArgument(0))
+                                ? "QUALITY_QUARANTINE_WAREHOUSE" : "RAW"));
     }
 
     private MesWmItemReceiptDO receipt(int status) {
@@ -137,6 +142,35 @@ class MesWmItemReceiptBatchInvariantTest extends BaseDbUnitTest {
 
     private MesWmItemReceiptSaveReqVO headerRequest(MesWmItemReceiptDO receipt) {
         return BeanUtils.toBean(receipt, MesWmItemReceiptSaveReqVO.class);
+    }
+
+    @Test void failedIqcCannotEnterNormalStockEvenWhenReceiptWasAlreadyMarkedReady() {
+        var receipt = receipt(MesWmItemReceiptStatusEnum.APPROVED.getStatus());
+        receiptMapper.updateById(new MesWmItemReceiptDO().setId(receipt.getId()).setIqcId(41L));
+        detail(line(receipt, null), null);
+        when(iqcService.validateIqcExists(41L)).thenReturn(new cn.iocoder.yudao.module.mes.dal.dataobject.qc.iqc.MesQcIqcDO()
+                .setId(41L).setVendorId(9L).setItemId(7L).setStatus(cn.iocoder.yudao.module.mes.enums.qc.MesQcStatusEnum.FINISHED.getStatus()).setCheckResult(2));
+        assertThrows(ServiceException.class, () -> receipts.finishItemReceipt(receipt.getId()));
+        verifyNoInteractions(transactionService);
+        assertEquals(MesWmItemReceiptStatusEnum.APPROVED.getStatus(), receiptMapper.selectById(receipt.getId()).getStatus());
+    }
+
+    @Test void failedIqcCanOnlyPostToQuarantineAndUnknownOrMismatchedResultIsRejected() {
+        var receipt = receipt(MesWmItemReceiptStatusEnum.APPROVED.getStatus());
+        receiptMapper.updateById(new MesWmItemReceiptDO().setId(receipt.getId()).setIqcId(41L));
+        var detail = detail(line(receipt, null), null);
+        detailMapper.updateById(new MesWmItemReceiptDetailDO().setId(detail.getId()).setWarehouseId(20L));
+        var iqc = new cn.iocoder.yudao.module.mes.dal.dataobject.qc.iqc.MesQcIqcDO().setId(41L).setVendorId(9L)
+                .setItemId(7L).setStatus(cn.iocoder.yudao.module.mes.enums.qc.MesQcStatusEnum.FINISHED.getStatus());
+        when(iqcService.validateIqcExists(41L)).thenReturn(iqc);
+        assertThrows(ServiceException.class, () -> receipts.finishItemReceipt(receipt.getId()));
+        iqc.setCheckResult(2).setItemId(8L);
+        assertThrows(ServiceException.class, () -> receipts.finishItemReceipt(receipt.getId()));
+        verifyNoInteractions(transactionService);
+        iqc.setItemId(7L);
+        receipts.finishItemReceipt(receipt.getId());
+        verify(transactionService).createTransactionList(argThat(rows -> rows.size() == 1 && rows.get(0).getWarehouseId().equals(20L)));
+        assertEquals(MesWmItemReceiptStatusEnum.FINISHED.getStatus(), receiptMapper.selectById(receipt.getId()).getStatus());
     }
 
     @Test

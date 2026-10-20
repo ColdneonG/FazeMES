@@ -6,7 +6,7 @@ export interface QcRqcVO {
   code: string // 检验单编号
   name: string // 检验单名称
   templateId: number // 检验模板 ID
-  sourceDocType: string // 来源单据类型
+  sourceDocType: number | string // 来源单据类型
   sourceDocId: number // 来源单据 ID
   sourceLineId: number // 来源单据行 ID
   type: number // 检验类型
@@ -16,9 +16,9 @@ export interface QcRqcVO {
   itemSpecification: string // 规格型号（关联查询）
   unitName: string // 单位名称（关联查询）
   batchCode: string // 批次号
-  checkQuantity: number // 检测数量
-  qualifiedQuantity: number // 合格品数量
-  unqualifiedQuantity: number // 不合格数量
+  checkQuantity: number | string // 检测数量
+  qualifiedQuantity: number | string // 合格品数量
+  unqualifiedQuantity: number | string // 不合格数量
   checkResult: number // 检测结果
   inspectDate: Date // 检测日期
   inspectorUserId: number // 检测人员用户 ID
@@ -33,9 +33,30 @@ export interface QcRqcVO {
   majorQuantity: number // 严重缺陷数量
   minorQuantity: number // 轻微缺陷数量
 }
+export interface RqcSourceContext {
+  sourceDocType: number
+  sourceDocId: number
+  sourceDocCode: string
+  sourceLineId: number
+  clientId: number | null
+  itemId: number
+  batchId: number | null
+  batchCode: string | null
+  checkQuantity: string
+  originTransactionId: number | null
+}
 
 // MES 退货检验单 API
 export const QcRqcApi = {
+  getSourceContext: (
+    sourceDocType: number,
+    sourceDocId: number,
+    sourceLineId: number
+  ): Promise<RqcSourceContext> =>
+    request.get({
+      url: '/mes/qc/rqc/source-context',
+      params: { sourceDocType, sourceDocId, sourceLineId }
+    }),
   // 查询退货检验单分页
   getRqcPage: async (params: any) => {
     return await request.get({ url: `/mes/qc/rqc/page`, params })

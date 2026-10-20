@@ -74,6 +74,8 @@ public class MesWmItemReceiptServiceImpl implements MesWmItemReceiptService {
     private MesWmBatchService batchService;
     @Resource
     private MesMdItemBatchConfigService itemBatchConfigService;
+    @Resource
+    private cn.iocoder.yudao.module.mes.service.wm.warehouse.MesWmWarehouseService warehouseService;
 
     @Override
     public Long createItemReceipt(MesWmItemReceiptSaveReqVO createReqVO) {
@@ -307,6 +309,11 @@ public class MesWmItemReceiptServiceImpl implements MesWmItemReceiptService {
         List<MesWmItemReceiptDetailDO> details = itemReceiptDetailService.getItemReceiptDetailListByReceiptIdForUpdate(id);
         Map<Long, MesWmItemReceiptLineDO> byId = new HashMap<>();
         Map<Long, BigDecimal> totals = new HashMap<>();
+        MesQcIqcDO iqc = receipt.getIqcId() == null ? null : iqcService.validateIqcExists(receipt.getIqcId());
+        if (iqc != null && (!Objects.equals(iqc.getStatus(), MesQcStatusEnum.FINISHED.getStatus())
+                || !Objects.equals(iqc.getVendorId(), receipt.getVendorId()))) {
+            throw exception(WM_ITEM_RECEIPT_IQC_NOT_FINISHED);
+        }
         for (MesWmItemReceiptLineDO line : lines) {
             byId.put(line.getId(), line);
         }
@@ -320,6 +327,14 @@ public class MesWmItemReceiptServiceImpl implements MesWmItemReceiptService {
             }
             if (!Objects.equals(line.getBatchId(), detail.getBatchId())) {
                 throw exception(WM_ITEM_RECEIPT_DETAIL_BATCH_MISMATCH);
+            }
+            if (iqc != null) {
+                if (!Objects.equals(iqc.getItemId(), detail.getItemId())) {
+                    throw exception(WM_MATERIAL_STOCK_SELECTION_MISMATCH);
+                }
+                // An IQC disposition applies to this receipt lot; FAIL never enters ordinary stock.
+                cn.iocoder.yudao.module.mes.service.wm.quality.MesWmQualityPolicy.validateInbound(
+                        iqc.getCheckResult(), warehouseService.validateWarehouseExists(detail.getWarehouseId()));
             }
             totals.merge(line.getId(), detail.getQuantity(), BigDecimal::add);
         }

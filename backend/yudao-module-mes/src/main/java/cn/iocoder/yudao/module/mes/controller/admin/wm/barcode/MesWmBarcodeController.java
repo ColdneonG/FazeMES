@@ -38,6 +38,16 @@ public class MesWmBarcodeController {
     @Resource
     private MesWmBarcodeService barcodeService;
 
+    @GetMapping("/label-context")
+    @Operation(summary = "读取真实业务标签上下文（不创建条码）")
+    @PreAuthorize("@ss.hasPermission('mes:wm-barcode:query')")
+    public CommonResult<cn.iocoder.yudao.module.mes.controller.admin.wm.barcode.vo.MesWmBarcodeLabelContextRespVO> getLabelContext(
+            @RequestParam(value="barcodeId",required=false) Long barcodeId,
+            @RequestParam(value="bizType",required=false) Integer bizType,
+            @RequestParam(value="bizId",required=false) Long bizId) {
+        return success(barcodeService.getLabelContext(barcodeId,bizType,bizId));
+    }
+
     @PostMapping("/create")
     @Operation(summary = "创建条码")
     @PreAuthorize("@ss.hasPermission('mes:wm-barcode:create')")
