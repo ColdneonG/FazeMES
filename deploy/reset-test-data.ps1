@@ -8,10 +8,14 @@ schema/migration history, administrator password, dictionaries, menus and local
 infrastructure configuration. All old MES business data and non-admin users are
 replaced. The managed backend is stopped before reset and restarted before API
 fixture generation. A failure leaves a concrete backup path and diagnostic state.
+The first original dump is permanent. Later dumps are gzip-compressed, and only
+the latest three are kept after successful validation. The double-click launcher
+defers retention until its final service readiness checks have also succeeded.
 #>
 [CmdletBinding()]
-param([switch]$VerifyOnly)
+param([switch]$VerifyOnly,[switch]$DeferBackupRetention,[switch]$FinalizeBackups)
 $ErrorActionPreference = 'Stop'
+if (($VerifyOnly -and ($DeferBackupRetention -or $FinalizeBackups)) -or ($DeferBackupRetention -and $FinalizeBackups)) { throw 'VerifyOnly, DeferBackupRetention and FinalizeBackups cannot be combined.' }
 $projectRoot = Split-Path -Parent $PSScriptRoot
 $runtimeRoot = Join-Path $projectRoot '.runtime'
 $python = (Get-Command python.exe -CommandType Application -ErrorAction Stop | Select-Object -First 1).Source
@@ -23,7 +27,7 @@ if ($VerifyOnly) {
 }
 & $python -c 'import pymysql, bcrypt'
 if ($LASTEXITCODE -ne 0) { throw 'Install deploy/requirements.txt before generating test data.' }
-foreach ($module in @('testdata_inventory.py','testdata_supporting.py','testdata_manufacturing.py','testdata_collaboration.py','testdata_production_quality.py','testdata_warehouse_ops.py','verify_test_data_api.py')) {
+foreach ($module in @('testdata_backups.py','testdata_inventory.py','testdata_supporting.py','testdata_manufacturing.py','testdata_collaboration.py','testdata_production_quality.py','testdata_warehouse_ops.py','verify_test_data_api.py')) {
     if (-not (Test-Path -LiteralPath (Join-Path $projectRoot "database\tools\$module"))) { throw "Missing fixture module $module" }
 }
 $lockName = 'Local\FazeMES-TestData-' + [Convert]::ToHexString([Security.Cryptography.SHA256]::HashData([Text.Encoding]::UTF8.GetBytes($projectRoot))).Substring(0,16)
@@ -37,6 +41,11 @@ try {
     if (-not $startupHeld) { throw 'FazeMES is already starting or resetting in another window.' }
     try { $held = $resetLock.WaitOne(0) } catch [Threading.AbandonedMutexException] { $held = $true }
     if (-not $held) { throw 'Another test-data reset is already running.' }
+    if ($FinalizeBackups) {
+        & $python -X utf8 $script retain-backups
+        if ($LASTEXITCODE -ne 0) { throw 'Backup retention failed; project data is unchanged. Check the error above.' }
+        return
+    }
     # Inspect actual listeners, including stale recorded launcher PID scenarios.
     $jar = Join-Path $projectRoot 'backend\yudao-server\target\yudao-server.jar'
     $owned = [Collections.Generic.HashSet[int]]::new()
@@ -63,6 +72,10 @@ try {
     & (Join-Path $PSScriptRoot 'restart-backend.ps1')
     & $python -X utf8 $script api
     if ($LASTEXITCODE -ne 0) { throw 'Business fixture creation or verification failed. Inspect .runtime/testdata-state.json and testdata-verification.json.' }
+    if (-not $DeferBackupRetention) {
+        & $python -X utf8 $script retain-backups
+        if ($LASTEXITCODE -ne 0) { throw 'Data is ready, but backup retention failed. Check the error above.' }
+    }
     Write-Host 'Comprehensive test data ready. Report: .runtime/testdata-verification.json'
 } finally {
     if ($held) { $resetLock.ReleaseMutex() }

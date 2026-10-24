@@ -20,6 +20,7 @@ import sys
 import uuid
 
 import pymysql
+from testdata_backups import finalize_backups, register_backup
 
 ROOT = Path(__file__).resolve().parents[2]
 RUNTIME = ROOT / '.runtime'
@@ -170,12 +171,7 @@ def backup(ctx):
     result = subprocess.run(args,capture_output=True,encoding='utf8',errors='replace')
     if result.returncode:
         raise RuntimeError('Database backup failed: '+result.stderr[-1200:])
-    raw = destination.read_bytes()
-    if b'-- Dump completed on ' not in raw[-500:] or raw.count(b'CREATE TABLE') < 200:
-        raise RuntimeError('Backup completeness verification failed; database was not cleared')
-    info = dict(path=str(destination),bytes=len(raw),sha256=hashlib.sha256(raw).hexdigest(),
-                createTables=raw.count(b'CREATE TABLE'))
-    destination.with_suffix('.json').write_text(json.dumps(info,indent=2),encoding='utf8')
+    info = register_backup(destination.parent, destination)
     print(json.dumps({'backup':info},ensure_ascii=False),flush=True)
     return info
 
@@ -623,8 +619,11 @@ def verify(ctx):
 
 def main():
     p=argparse.ArgumentParser(description=__doc__)
-    p.add_argument('phase',choices=['reset','api','verify'])
+    p.add_argument('phase',choices=['reset','api','verify','retain-backups'])
     args=p.parse_args()
+    if args.phase == 'retain-backups':
+        print(json.dumps({'backupRetention':finalize_backups(RUNTIME)}, ensure_ascii=False), flush=True)
+        return
     ctx=Context()
     try:
         {'reset':reset,'api':api_seed,'verify':verify}[args.phase](ctx)

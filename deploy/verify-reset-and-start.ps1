@@ -91,6 +91,7 @@ try {
     foreach ($directory in @($fixtureDeploy,(Join-Path $runtimeRoot 'mysql\data'),
         (Join-Path $fixtureRoot 'frontend\node_modules\vite\bin'),
         (Join-Path $fixtureRoot 'database\init'),
+        (Join-Path $fixtureRoot 'database\tools'),
         (Join-Path $fixtureRoot 'backend\yudao-server\target'))) {
         New-Item -ItemType Directory -Path $directory -Force | Out-Null
     }
@@ -137,11 +138,21 @@ $root = Split-Path -Parent $PSScriptRoot
 if ($DependenciesOnly) {
     Add-Content -LiteralPath (Join-Path $root 'events.txt') -Value 'dependencies'
     if (Test-Path -LiteralPath (Join-Path $root 'fail-preparation')) { throw 'Fixture preparation failure' }
-} elseif ($ReuseBackend) { Add-Content -LiteralPath (Join-Path $root 'events.txt') -Value 'reuse' }
+} elseif ($ReuseBackend) {
+    Add-Content -LiteralPath (Join-Path $root 'events.txt') -Value 'reuse'
+    if (Test-Path -LiteralPath (Join-Path $root 'fail-readiness')) { throw 'Fixture readiness failure' }
+}
 else { throw 'Unexpected full resume; would restart backend twice' }
 '@ | Set-Content -LiteralPath (Join-Path $fixtureDeploy 'resume-local.ps1')
     @'
+param([switch]$DeferBackupRetention,[switch]$FinalizeBackups)
 $root = Split-Path -Parent $PSScriptRoot
+if ($FinalizeBackups) {
+    Add-Content -LiteralPath (Join-Path $root 'events.txt') -Value 'retention'
+    if (Test-Path -LiteralPath (Join-Path $root 'fail-retention')) { throw 'Fixture retention failure' }
+    return
+}
+if (-not $DeferBackupRetention) { throw 'Launcher must defer pruning until every service is ready' }
 Add-Content -LiteralPath (Join-Path $root 'events.txt') -Value 'reset'
 if (Test-Path -LiteralPath (Join-Path $root 'fail-reset')) { throw 'Fixture reset failure' }
 $result = if (Test-Path -LiteralPath (Join-Path $root 'fail-report')) { 'FAIL' } else { 'PASS' }
@@ -150,6 +161,7 @@ $result = if (Test-Path -LiteralPath (Join-Path $root 'fail-report')) { 'FAIL' }
 '@ | Set-Content -LiteralPath (Join-Path $fixtureDeploy 'reset-test-data.ps1')
     'fixture' | Set-Content -LiteralPath (Join-Path $fixtureRoot 'frontend\node_modules\vite\bin\vite.js')
     '-- fixture' | Set-Content -LiteralPath (Join-Path $fixtureRoot 'database\init\mes_seed.sql')
+    '# fixture' | Set-Content -LiteralPath (Join-Path $fixtureRoot 'database\tools\testdata_backups.py')
     New-FixtureJar
     Set-FixtureInstalled
 
@@ -160,27 +172,27 @@ $result = if (Test-Path -LiteralPath (Join-Path $root 'fail-report')) { 'FAIL' }
 
     Reset-FixtureEvents
     Invoke-FixtureLauncher
-    Assert-FixtureEvents 'dependencies,reset,reuse' 'An existing installation must prepare dependencies, reset once and reuse its backend'
+    Assert-FixtureEvents 'dependencies,reset,reuse,retention' 'An existing installation must reset once, reuse its backend and then apply retention'
     Assert-ResetStartup ((Get-Location).Path -eq $savedLocation.Path) 'Success must restore the caller directory'
 
     Reset-FixtureEvents
     Invoke-FixtureLauncher -WithBrowser
-    Assert-FixtureEvents 'dependencies,reset,reuse,browser' 'Browser opening must follow successful initialization and final readiness'
+    Assert-FixtureEvents 'dependencies,reset,reuse,retention,browser' 'Retention and browser opening must follow successful initialization and final readiness'
 
     Set-FixtureInstalled $false
     Reset-FixtureEvents
     Invoke-FixtureLauncher
-    Assert-FixtureEvents 'start:False,reset,reuse' 'First installation must use the full preparation route'
+    Assert-FixtureEvents 'start:False,reset,reuse,retention' 'First installation must use the full preparation route'
     Set-FixtureInstalled
 
     Remove-Item -LiteralPath (Join-Path $fixtureRoot 'backend\yudao-server\target\yudao-server.jar')
     Reset-FixtureEvents
     Invoke-FixtureLauncher
-    Assert-FixtureEvents 'maven,start:True,reset,reuse' 'A missing JAR must require Maven and request a build before reset'
+    Assert-FixtureEvents 'maven,start:True,reset,reuse,retention' 'A missing JAR must require Maven and request a build before reset'
     New-FixtureJar
     Reset-FixtureEvents
     Invoke-FixtureLauncher -Build
-    Assert-FixtureEvents 'maven,start:True,reset,reuse' 'An explicit build must use the full preparation route'
+    Assert-FixtureEvents 'maven,start:True,reset,reuse,retention' 'An explicit build must use the full preparation route'
 
     $vite = Join-Path $fixtureRoot 'frontend\node_modules\vite\bin\vite.js'
     Remove-Item -LiteralPath $vite
@@ -201,7 +213,9 @@ $result = if (Test-Path -LiteralPath (Join-Path $root 'fail-report')) { 'FAIL' }
 
     foreach ($failure in @(@{Marker='fail-preparation';Message='Fixture preparation failure';Events='dependencies'},
                            @{Marker='fail-reset';Message='Fixture reset failure';Events='dependencies,reset'},
-                           @{Marker='fail-report';Message='测试数据验收未通过';Events='dependencies,reset,reuse'})) {
+                           @{Marker='fail-report';Message='测试数据验收未通过';Events='dependencies,reset,reuse'},
+                           @{Marker='fail-readiness';Message='Fixture readiness failure';Events='dependencies,reset,reuse'},
+                           @{Marker='fail-retention';Message='Fixture retention failure';Events='dependencies,reset,reuse,retention'})) {
         $markerPath = Join-Path $fixtureRoot $failure.Marker
         New-Item -ItemType File -Path $markerPath | Out-Null
         Reset-FixtureEvents
@@ -246,7 +260,7 @@ $result = if (Test-Path -LiteralPath (Join-Path $root 'fail-report')) { 'FAIL' }
     }
     Reset-FixtureEvents
     Invoke-FixtureLauncher
-    Assert-FixtureEvents 'dependencies,reset,reuse' 'Failure and duplicate rejection must release the startup lock for a later run'
+    Assert-FixtureEvents 'dependencies,reset,reuse,retention' 'Failure and duplicate rejection must release the startup lock for a later run'
     Write-Host "Reset/start isolated checks passed: $checks assertions; existing/new installs, builds, failures, Unicode paths, directory restoration and duplicate-launch locking."
 } finally {
     Set-Location -LiteralPath $savedLocation.Path

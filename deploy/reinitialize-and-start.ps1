@@ -66,7 +66,8 @@ function Test-LauncherPrerequisites {
                        'C:\Program Files\MySQL\MySQL Server 8.0\bin\mysqldump.exe',
                        (Join-Path $projectRoot 'frontend\node_modules\vite\bin\vite.js'),
                        (Join-Path $projectRoot 'database\init\mes_seed.sql'),
-                       (Join-Path $PSScriptRoot 'reset-test-data.ps1'))) {
+                       (Join-Path $PSScriptRoot 'reset-test-data.ps1'),
+                       (Join-Path $projectRoot 'database\tools\testdata_backups.py'))) {
         if (-not (Test-Path -LiteralPath $path -PathType Leaf)) { throw "缺少必要文件：$path" }
     }
     & $python -c 'import bcrypt, pymysql' 2>$null
@@ -117,11 +118,13 @@ try {
         & (Join-Path $PSScriptRoot 'resume-local.ps1') -DependenciesOnly
     }
     Write-Host '[3/4] 备份、重建测试数据并执行验收（需要数分钟）'
-    & (Join-Path $PSScriptRoot 'reset-test-data.ps1')
+    & (Join-Path $PSScriptRoot 'reset-test-data.ps1') -DeferBackupRetention
     Write-Host '[4/4] 启动前端、人脸服务并确认全部服务就绪'
     & (Join-Path $PSScriptRoot 'resume-local.ps1') -ReuseBackend
     $report = Get-Content -LiteralPath (Join-Path $runtimeRoot 'testdata-verification.json') -Raw | ConvertFrom-Json
     if ($report.result -ne 'PASS') { throw '测试数据验收未通过，请查看 .runtime/testdata-verification.json。' }
+    Write-Host '全部校验及服务启动成功，整理备份：永久保留首次原库备份，后续压缩保留最近 3 份。'
+    & (Join-Path $PSScriptRoot 'reset-test-data.ps1') -FinalizeBackups
     Write-Host ("完成：{0} 条 MES 数据，{1} 张数据表，{2} 项校验通过。" -f $report.totalMesRows,$report.populatedMesTables,$report.checks.Count) -ForegroundColor Green
     Write-Host '项目地址：http://127.0.0.1:5173'
     Write-Host '测试账号及密码说明：database/TEST-DATA.md'
