@@ -1,8 +1,8 @@
 <template>
   <section class="business-assistant">
     <p class="note">
-      可查询按月收发存、分类与批次、单据流水，以及交期、异常、质量、流程和成本。
-      库存数量直接取自业务数据；未给年份、同名物料等情况会先澄清。
+      可查询工单、设备、库存、单据、质量、成本与生产风险，生成工单 Excel 报表。
+      可创建和推进异常闭环：核对执行预览并确认后真实写入业务，保留操作记录。
     </p>
     <div class="conversation-controls">
       <el-select
@@ -61,7 +61,11 @@
                 : '业务规则答复'
         }}
       </el-tag>
-      <p class="answer-text">{{ turn.answer.answer }}</p>
+      <p class="answer-text">{{
+        turn.answer.executionReceipt
+          ? `业务操作已执行，异常编号 #${turn.answer.executionReceipt.businessId}。`
+          : turn.answer.answer
+      }}</p>
       <p v-if="turn.answer.modelWarning" class="note">{{ turn.answer.modelWarning }}</p>
       <small class="note">查询时间 {{ formatTime(turn.answer.generatedAt) }}</small>
       <div v-if="turn.answer.status === 'CLARIFY'" class="clarification">
@@ -81,8 +85,14 @@
           }}
         </small>
       </div>
+      <AgentResult
+        v-if="turn.answer.topic === 'agent_data' || turn.answer.topic === 'agent_action'"
+        :answer="turn.answer"
+        @failure="handleFailure"
+        @executed="turn.answer.executionReceipt = $event"
+      />
       <InventoryEvidence
-        v-if="isStockEvidence(turn.answer.evidence)"
+        v-else-if="isStockEvidence(turn.answer.evidence)"
         :turn-id="turn.id"
         :evidence="turn.answer.evidence"
         @failure="handleFailure"
@@ -112,14 +122,14 @@
       maxlength="1000"
       show-word-limit
       :disabled="!canChat || sending || historyLoading || olderLoading || !!recoverId"
-      placeholder="例如：查2026年10月原材料收发存，按批次。后续可问：那9月份呢？"
+      placeholder="例如：生成本月未完成工单报表；查询设备状态；新建异常：工单缺料，需要跟进。"
     />
     <div class="conversation-controls">
       <el-checkbox v-model="useModel" :disabled="!canModel || sending">
-        模型分析交期等业务数据（库存与单据始终按规则查询）
+        使用已配置模型理解问题（业务执行仍需确认）
       </el-checkbox>
       <el-button type="primary" :loading="sending" :disabled="!canSend" @click="send()"
-        >查询业务依据</el-button
+        >发送给业务 Agent</el-button
       >
       <el-button @click="router.push('/mes/assistant')">知识库与模型配置</el-button>
     </div>
@@ -137,6 +147,7 @@ import {
 import { checkPermi } from '@/utils/permission'
 import InventoryEvidence from './InventoryEvidence.vue'
 import LegacyBusinessEvidence from './LegacyBusinessEvidence.vue'
+import AgentResult from './AgentResult.vue'
 
 const props = defineProps<{ active: boolean }>()
 const emit = defineEmits<{ draft: [value: Draft]; navigate: [topic: string] }>()
@@ -174,6 +185,10 @@ const canSend = computed(
     !recoverId.value
 )
 const presets = computed(() => [
+  ...(checkPermi(['mes:pro-work-order:query']) ? ['查询全部工单进度'] : []),
+  ...(checkPermi(['mes:pro-work-order:export']) ? ['生成本月未完成工单报表'] : []),
+  ...(checkPermi(['mes:dv-machinery:query']) ? ['查询设备状态'] : []),
+  ...(checkPermi(['mes:insight:manage']) ? ['新建异常：物料供应需要跟进'] : []),
   ...(checkPermi(['mes:wm-material-stock:query']) ? ['查上个月原材料收发存，按批次'] : []),
   '今天哪些工单有交付风险？',
   '有哪些待处理异常？',

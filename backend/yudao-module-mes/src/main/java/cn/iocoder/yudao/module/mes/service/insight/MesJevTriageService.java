@@ -2,7 +2,7 @@ package cn.iocoder.yudao.module.mes.service.insight;
 
 import cn.iocoder.yudao.framework.tenant.core.context.TenantContextHolder;
 import cn.iocoder.yudao.module.mes.service.assistant.MesAssistantSecretStore;
-import cn.iocoder.yudao.module.mes.service.assistant.MesModelUsageService.Purpose;
+import cn.iocoder.yudao.module.mes.service.assistant.MesAssistantModelGateway.Purpose;
 import org.springframework.jdbc.core.JdbcTemplate;
 import org.springframework.jdbc.support.GeneratedKeyHolder;
 import org.springframework.stereotype.Service;
@@ -18,6 +18,7 @@ public class MesJevTriageService {
     private final JdbcTemplate jdbc;
     private final MesAssistantSecretStore secrets;
     private final MesJevClient client;
+    @org.springframework.beans.factory.annotation.Autowired private cn.iocoder.yudao.module.mes.service.assistant.MesJevProxySettings proxySettings;
     public MesJevTriageService(JdbcTemplate jdbc,MesAssistantSecretStore secrets,MesJevClient client) { this.jdbc=jdbc;this.secrets=secrets;this.client=client; }
     public record Settings(String model,String apiKey,boolean clearApiKey,boolean enabled) {
         @Override public String toString(){return "JevSettings[model="+model+",apiKey=<redacted>]";}
@@ -28,7 +29,7 @@ public class MesJevTriageService {
     private boolean configured(Map<String,Object> c){return Boolean.TRUE.equals(c.get("enabled")) && c.get("secret_ciphertext")!=null && !c.get("secret_ciphertext").toString().isBlank();}
     public Map<String,Object> settings(){
         var c=config();return map("endpoint",MesJevClient.ENDPOINT,"model",c.getOrDefault("model_name","jev-1.13.0"),
-            "enabled",Boolean.TRUE.equals(c.get("enabled")),"apiKeyConfigured",c.get("secret_ciphertext")!=null,"configured",configured(c));
+            "enabled",Boolean.TRUE.equals(c.get("enabled")),"apiKeyConfigured",c.get("secret_ciphertext")!=null,"configured",configured(c),"transport",proxySettings==null?"直连":proxySettings.describe());
     }
     @Transactional(rollbackFor=Exception.class)
     public Map<String,Object> save(Settings req){

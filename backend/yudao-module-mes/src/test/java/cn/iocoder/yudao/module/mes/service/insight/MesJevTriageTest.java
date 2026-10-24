@@ -7,7 +7,7 @@ import cn.iocoder.yudao.framework.tenant.core.context.TenantContextHolder;
 import cn.iocoder.yudao.module.mes.controller.admin.insight.MesInsightController.IncidentCreate;
 import cn.iocoder.yudao.module.mes.service.assistant.MesAssistantSecretStore;
 import cn.iocoder.yudao.module.mes.service.assistant.MesAssistantModelGateway;
-import cn.iocoder.yudao.module.mes.service.assistant.MesModelUsageService.Purpose;
+import cn.iocoder.yudao.module.mes.service.assistant.MesAssistantModelGateway.Purpose;
 import static org.mockito.Mockito.*;
 import static org.mockito.ArgumentMatchers.*;
 import com.fasterxml.jackson.databind.*;

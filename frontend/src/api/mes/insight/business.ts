@@ -1,4 +1,5 @@
 import type { Draft } from './index'
+import type { AgentOperation, AgentReceipt } from './agent'
 
 export interface BusinessEntity {
   id: number | null
@@ -139,6 +140,8 @@ export interface BusinessAskInput {
   clarification?: { token: string; choiceId: string }
 }
 export interface BusinessAnswer {
+  proposal?: AgentOperation
+  executionReceipt?: AgentReceipt
   answer: string
   mode: 'RULES' | 'MODEL'
   topic: string

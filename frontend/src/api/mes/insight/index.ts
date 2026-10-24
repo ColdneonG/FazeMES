@@ -160,6 +160,7 @@ export interface IncidentInput {
 }
 export interface JevSettings {
   endpoint: string
+  transport?: string
   model: string
   enabled: boolean
   configured: boolean

@@ -119,7 +119,8 @@ function setup(t, filename, props, api = {}, allowed) {
       },
       './businessEvidence': evidenceHelpers,
       './InventoryEvidence.vue': {},
-      './LegacyBusinessEvidence.vue': {}
+      './LegacyBusinessEvidence.vue': {},
+      './AgentResult.vue': {}
     },
     { ...vue, useRouter: () => ({ push: () => {} }), onBeforeUnmount: () => {} }
   ).default
