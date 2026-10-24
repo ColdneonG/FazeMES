@@ -107,6 +107,10 @@ pwsh -NoProfile -File deploy/start-local.ps1
 
 完整功能演示的角色准备、Broky 教学主线、90 分钟流程和专项功能清单，见[演示手册](deploy/DEMO-GUIDE.md)。
 
+**双击重建并启动：**运行仓库根目录的 [`重建数据库并启动.cmd`](重建数据库并启动.cmd)。脚本自动准备本机 MySQL 和 Redis，完整备份后重建测试数据库，生成并校验完整测试数据，再启动后端、前端和人脸服务，最后打开浏览器。每次运行都会替换旧业务数据和测试账号，保留管理员密码与系统配置；运行过程和失败原因保存在 `.runtime/logs/reset-and-start-*.log`，结束时窗口会保留结果。
+
+需要清理旧演示记录并准备完整验收场景时，使用[测试数据设计与操作说明](database/TEST-DATA.md)。`deploy/reset-test-data.ps1` 会先完整备份本机专用数据库，再替换旧业务数据和测试账号，生成生产、质量、仓储、设备、排班、门户及报表场景，并校验关系、库存流水、成本与权限；原管理员密码和系统结构保留。
+
 以下命令均在仓库根目录执行：
 
 - 启动：`pwsh -NoProfile -File deploy/start-local.ps1`

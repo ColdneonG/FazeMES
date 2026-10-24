@@ -1,7 +1,9 @@
 #requires -Version 7.0
 [CmdletBinding()]
-param([switch]$Build)
+param([switch]$Build,[switch]$DependenciesOnly,[switch]$ReuseBackend)
 $ErrorActionPreference = 'Stop'
+if ($DependenciesOnly -and ($Build -or $ReuseBackend)) { throw 'DependenciesOnly cannot be combined with Build or ReuseBackend.' }
+if ($ReuseBackend -and $Build) { throw 'ReuseBackend cannot be combined with Build.' }
 $projectRoot = Split-Path -Parent $PSScriptRoot
 $runtimeRoot = Join-Path $projectRoot '.runtime'
 . (Join-Path $PSScriptRoot 'local-tools.ps1')
@@ -80,10 +82,25 @@ try {
     if ($LASTEXITCODE -ne 0 -or ($dbProbe -join '').Trim() -ne '1') { throw 'Existing database could not be read; check the local MySQL configuration.' }
     Start-Managed 'redis' 6381 $redisExe @((Join-Path $runtimeRoot 'redis.local.conf')) $runtimeRoot
     Wait-Port 'redis' 6381
+    if ($DependenciesOnly) {
+        Write-Host 'MySQL and Redis ready; application services have not been started.'
+        return
+    }
     Start-Managed 'face-auth' 8091 $facePython @((Join-Path $projectRoot 'face-auth\app.py'),'--model-dir',(Join-Path $faceRoot 'models'),'--token-file',$faceTokenFile) $projectRoot
     # Restart owns the stop -> migration -> optional build -> start sequence, also
     # when resuming without a build. Never migrate underneath an old live writer.
-    & (Join-Path $PSScriptRoot 'restart-backend.ps1') -Build:$Build
+    if ($ReuseBackend) {
+        if (-not (Test-Port 48080)) { throw 'The initialized backend is not running; no duplicate backend was started.' }
+        foreach ($listener in @(Get-NetTCPConnection -LocalPort 48080 -State Listen -ErrorAction Stop)) {
+            $existing = Get-CimInstance Win32_Process -Filter "ProcessId=$($listener.OwningProcess)" -ErrorAction Stop
+            if (-not ($existing.Name -eq 'java.exe' -and $existing.CommandLine -and $existing.CommandLine.Contains($jarPath))) {
+                throw 'Backend port belongs to an unrelated application; it was not reused.'
+            }
+        }
+        Write-Host 'Reusing the initialized backend.'
+    } else {
+        & (Join-Path $PSScriptRoot 'restart-backend.ps1') -Build:$Build
+    }
     Start-Managed 'frontend' 5173 $nodeExe @('--max-old-space-size=4096',$vitePath,'--mode','env.local','--host','127.0.0.1','--port','5173','--strictPort') (Join-Path $projectRoot 'frontend')
     Write-Host 'Waiting for services to become ready...'
     foreach ($service in @(@{Name='backend'; Url='http://127.0.0.1:48080/admin-api/system/tenant/get-by-website?website=127.0.0.1:5173'},@{Name='frontend'; Url='http://127.0.0.1:5173/'},@{Name='face-auth'; Url='http://127.0.0.1:8091/health'; Headers=@{'X-Faze-Face-Token'=(Get-Content -LiteralPath $faceTokenFile -Raw).Trim()}})) {
