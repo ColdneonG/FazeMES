@@ -15,7 +15,7 @@ BASE = 'http://127.0.0.1:48080/admin-api'
 MYSQL = r'C:\Program Files\MySQL\MySQL Server 8.0\bin\mysql.exe'
 tag = 'INSIGHT-CHECK-' + uuid.uuid4().hex[:10]
 checks = []
-owned = {'orders': [], 'tasks': [], 'feedback': [], 'andons': [], 'cases': [], 'drafts': []}
+owned = {'orders': [], 'tasks': [], 'feedback': [], 'andons': [], 'cases': [], 'drafts': [], 'conversations': []}
 headers = {'Content-Type': 'application/json', 'tenant-id': '1'}
 
 def sql(statement):
@@ -101,10 +101,12 @@ try:
     check('foreign timeline rejected', call('GET', f'/mes/insight/timeline?workOrderId={foreign}')['code'] != 0)
     case = ok('POST', '/mes/insight/incident', {'title': tag, 'category': 'QUALITY', 'andonId': andon, 'ownerId': 1})
     owned['cases'].append(case)
-    def move(version, state, cause='', action='', evidence=''):
-        return call('PUT', '/mes/insight/incident', {'id': case, 'version': version, 'status': state, 'ownerId': 1,
+    def move(version, state, cause='', action='', evidence='', owner=1):
+        return call('PUT', '/mes/insight/incident', {'id': case, 'version': version, 'status': state, 'ownerId': owner,
             'rootCause': cause, 'correctiveAction': action, 'evidence': evidence, 'note': '验收临时状态流转'})
     check('cannot close unprocessed incident', move(0, 'CLOSED')['code'] != 0)
+    unassigned = move(0, 'IN_PROGRESS', owner=None)
+    check('unassigned handling explains the missing owner', unassigned['code'] != 0 and unassigned['msg'] == '请先指定负责人')
     check('incident can enter in-progress', move(0, 'IN_PROGRESS')['code'] == 0)
     check('stale edit rejected', move(0, 'IN_PROGRESS')['code'] != 0)
     check('verification requires confirmed cause and action', move(1, 'VERIFYING')['code'] != 0)
@@ -115,8 +117,26 @@ try:
     check('source andon closed only after verified closure', sql(f'SELECT status FROM mes_pro_andon_record WHERE id={andon}') == '1')
     check('audit trail contains accepted changes only', len(ok('GET', f'/mes/insight/incident-history?id={case}')) == 4)
     check('invalid related foreign order rejected', call('POST', '/mes/insight/incident', {'title': 'bad ref', 'category': 'OTHER', 'workOrderId': foreign})['code'] != 0)
-    answer = ok('POST', '/mes/insight/assistant', {'question': f'{tag}-A 的交期风险是什么？', 'useModel': False})
+    conversation = ok('POST', '/mes/insight/conversation/create', {'title': tag})
+    owned['conversations'].append(conversation['id'])
+    answer = ok('POST', '/mes/insight/assistant', {'question': f'{tag}-A 的交期风险是什么？', 'useModel': False,
+        'conversationId': conversation['id'], 'version': conversation['version']})
     check('business assistant uses scoped live facts without a model', answer['mode'] == 'RULES' and all(r['id'] == order_a for r in answer['evidence']['orders']) and answer['suggestions'])
+    check('business answer persists its conversation version', answer['conversationId'] == conversation['id'] and answer['version'] == 1)
+    history = ok('GET', f'/mes/insight/conversation/get?id={conversation["id"]}')
+    check('conversation reload preserves question and evidence', len(history['turns']) == 1 and history['turns'][0]['answer'] == answer)
+    evidence = ok('GET', f'/mes/insight/conversation/evidence?turnId={answer["turnId"]}')
+    check('stored evidence agrees with the response', evidence == answer['evidence'])
+    check('stale conversation version rejected', call('POST', '/mes/insight/assistant', {
+        'question': '质量情况如何？', 'useModel': False, 'conversationId': conversation['id'], 'version': 0})['code'] != 0)
+    clarification = ok('POST', '/mes/insight/assistant', {'question': '9月库存台账', 'useModel': False,
+        'conversationId': conversation['id'], 'version': 1})
+    check('missing year requests clarification instead of guessing', clarification['status'] == 'CLARIFY' and clarification['clarification']['reason'] == 'YEAR_REQUIRED')
+    inventory = ok('POST', '/mes/insight/assistant', {'question': '2026年', 'useModel': False,
+        'conversationId': conversation['id'], 'version': clarification['version']})
+    check('year clarification continues the same business conversation', inventory['status'] == 'ANSWERED' and inventory['evidence']['kind'] == 'INVENTORY_LEDGER' and inventory['evidence']['period']['year'] == 2026)
+    check('write request returns query scope without executing changes', ok('POST', '/mes/insight/assistant', {
+        'question': '帮我执行出库', 'useModel': False, 'conversationId': conversation['id'], 'version': inventory['version']})['status'] == 'OUT_OF_SCOPE')
     draft = ok('POST', '/mes/insight/draft', {'title': tag, 'content': '人工确认的测试建议', 'workOrderId': order_a})
     owned['drafts'].append(draft)
     converted = ok('POST', f'/mes/insight/draft-convert?id={draft}')
@@ -125,7 +145,12 @@ try:
     check('new overview is readable', isinstance(ok('GET', '/mes/insight/incidents')['cases'], list))
 finally:
     # Only remove exact primary keys inserted by this run, including immutable audit test fixtures.
+    for conversation_id in owned['conversations']:
+        sql(f'DELETE FROM mes_insight_evidence WHERE tenant_id=1 AND conversation_id={conversation_id}')
+        sql(f'DELETE FROM mes_insight_turn WHERE tenant_id=1 AND conversation_id={conversation_id}')
+        sql(f'DELETE FROM mes_insight_conversation WHERE tenant_id=1 AND id={conversation_id}')
     for case in owned['cases']:
+        sql(f'DELETE FROM mes_insight_incident_assignment WHERE tenant_id=1 AND incident_id={case}')
         sql(f'DELETE FROM mes_insight_incident_event WHERE tenant_id=1 AND incident_id={case}')
         sql(f'DELETE FROM mes_insight_incident WHERE tenant_id=1 AND id={case}')
     for draft in owned['drafts']:
@@ -134,6 +159,20 @@ finally:
         for row_id in owned[key]:
             sql(f'DELETE FROM {table} WHERE id={row_id}')
 
-report = {'timestamp': datetime.now().isoformat(), 'checksPassed': len(checks), 'fixturesCleaned': True, 'checks': checks}
+remaining = {}
+for key, table, column in [
+    ('orders', 'mes_pro_work_order', 'id'), ('tasks', 'mes_pro_task', 'id'),
+    ('feedback', 'mes_pro_feedback', 'id'), ('andons', 'mes_pro_andon_record', 'id'),
+    ('cases', 'mes_insight_incident', 'id'), ('cases', 'mes_insight_incident_event', 'incident_id'),
+    ('cases', 'mes_insight_incident_assignment', 'incident_id'), ('drafts', 'mes_insight_action_draft', 'id'),
+    ('conversations', 'mes_insight_conversation', 'id'), ('conversations', 'mes_insight_turn', 'conversation_id'),
+    ('conversations', 'mes_insight_evidence', 'conversation_id')
+]:
+    if owned[key]:
+        identifiers = ','.join(str(int(value)) for value in owned[key])
+        remaining[table] = int(sql(f'SELECT COUNT(*) FROM {table} WHERE {column} IN({identifiers})'))
+assert not any(remaining.values()), ('Test fixture cleanup incomplete', remaining)
+report = {'timestamp': datetime.now().isoformat(), 'testTag': tag, 'checksPassed': len(checks),
+          'fixturesCleaned': True, 'remainingFixtureRows': remaining, 'checks': checks}
 (ROOT / '.runtime/production-insight-verification.json').write_text(json.dumps(report,ensure_ascii=False,indent=2),encoding='utf-8')
 print(json.dumps(report,ensure_ascii=False,indent=2))

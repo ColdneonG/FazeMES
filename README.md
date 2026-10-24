@@ -105,6 +105,8 @@ pwsh -NoProfile -File deploy/start-local.ps1
 
 ## 日常开发
 
+完整功能演示的角色准备、Broky 教学主线、90 分钟流程和专项功能清单，见[演示手册](deploy/DEMO-GUIDE.md)。
+
 以下命令均在仓库根目录执行：
 
 - 启动：`pwsh -NoProfile -File deploy/start-local.ps1`

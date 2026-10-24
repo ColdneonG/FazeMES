@@ -207,7 +207,7 @@ service.interceptors.response.use(
       } else {
         ElNotification.error({ title: msg })
       }
-      return Promise.reject('error')
+      return Promise.reject(new Error(msg))
     } else {
       return data
     }
