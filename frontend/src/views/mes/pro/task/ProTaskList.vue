@@ -50,9 +50,19 @@
           ></div>
         </template>
       </el-table-column>
-      <el-table-column v-if="!disabled" label="操作" align="center" width="160" fixed="right">
+      <el-table-column label="操作" align="center" width="240" fixed="right">
         <template #default="scope">
           <el-button
+            v-if="scope.row.status === MesProTaskStatusEnum.PREPARE"
+            v-hasPermi="['mes:pro-task:query']"
+            link
+            type="success"
+            @click="openWorkbench(scope.row)"
+          >
+            进入作业
+          </el-button>
+          <el-button
+            v-if="!disabled"
             link
             type="primary"
             @click="openForm('update', scope.row.id)"
@@ -61,6 +71,7 @@
             编辑
           </el-button>
           <el-button
+            v-if="!disabled"
             link
             type="danger"
             @click="handleDelete(scope.row.id)"
@@ -85,7 +96,11 @@
       <el-row>
         <el-col :span="8">
           <el-form-item label="工作站" prop="workstationId">
-            <MdWorkstationSelect v-model="formData.workstationId" :disabled="isDetail" />
+            <MdWorkstationSelect
+              v-model="formData.workstationId"
+              :process-id="processId"
+              :disabled="isDetail"
+            />
           </el-form-item>
         </el-col>
         <el-col :span="8">
@@ -163,8 +178,10 @@ import { dateFormatter } from '@/utils/formatTime'
 import { ProTaskApi, ProTaskVO } from '@/api/mes/pro/task'
 import { reviewScheduleChanges } from './scheduleReview'
 import MdWorkstationSelect from '@/views/mes/md/workstation/components/MdWorkstationSelect.vue'
+import { MesProTaskStatusEnum } from '@/views/mes/utils/constants'
 
 defineOptions({ name: 'ProTaskList' })
+const emit = defineEmits<{ change: []; navigate: [] }>()
 
 const props = defineProps<{
   workOrderId: number
@@ -177,6 +194,16 @@ const props = defineProps<{
 
 const { t } = useI18n()
 const message = useMessage()
+const router = useRouter()
+
+/** 使用任务自己的工作站和工单进入作业，保留排产上下文。 */
+const openWorkbench = async (task: ProTaskVO) => {
+  const failure = await router.push({
+    path: '/mes/workbench',
+    query: { workstationId: task.workstationId, taskId: task.id, workOrderId: task.workOrderId }
+  })
+  if (!failure) emit('navigate')
+}
 
 // ==================== 列表 ====================
 const loading = ref(false)
@@ -266,6 +293,7 @@ const submitForm = async () => {
       message.success(t('common.updateSuccess'))
     }
     dialogVisible.value = false
+    emit('change')
     await getList()
   } finally {
     formLoading.value = false
@@ -278,6 +306,7 @@ const handleDelete = async (id: number) => {
     await message.delConfirm()
     await ProTaskApi.deleteTask(id)
     message.success(t('common.delSuccess'))
+    emit('change')
     await getList()
   } catch {}
 }

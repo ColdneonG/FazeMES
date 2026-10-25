@@ -1,6 +1,14 @@
 <!-- MES 生产排产 - 工单排产对话框（表单布局与 WorkOrderForm 保持一致，全部 disabled） -->
 <template>
   <Dialog :title="dialogTitle" v-model="dialogVisible" width="960px">
+    <el-alert
+      v-if="formType === 'schedule'"
+      title="按工序新增排产任务，每个任务保存后即生效。执行生产领料后，从任务行点击“进入作业”，按作业指导生产和报工。"
+      type="info"
+      show-icon
+      :closable="false"
+      class="mb-16px"
+    />
     <el-form ref="formRef" :model="formData" label-width="120px" v-loading="formLoading">
       <el-row>
         <el-col :span="12">
@@ -148,16 +156,26 @@
         :item-id="formData.productId!"
         :color-code="rp.colorCode"
         :disabled="isReadonly"
+        @change="emit('success')"
+        @navigate="dialogVisible = false"
       />
     </el-card>
     <template #footer>
       <el-button
+        v-if="formType === 'schedule' && formData.id"
+        v-hasPermi="['mes:wm-product-issue:query']"
+        @click="openMaterialIssue"
+        :disabled="formLoading"
+      >
+        去生产领料
+      </el-button>
+      <el-button
         v-if="formType === 'schedule'"
-        @click="handleFinish"
+        @click="completeScheduling"
         type="success"
         :disabled="formLoading"
       >
-        完 成
+        排产完成
       </el-button>
       <el-button @click="dialogVisible = false">关 闭</el-button>
     </template>
@@ -173,13 +191,19 @@ import { ProRouteProcessApi, ProRouteProcessVO } from '@/api/mes/pro/route/proce
 import MdItemSelect from '@/views/mes/md/item/components/MdItemSelect.vue'
 import MdClientSelect from '@/views/mes/md/client/components/MdClientSelect.vue'
 import MdVendorSelect from '@/views/mes/md/vendor/components/MdVendorSelect.vue'
-import { MesProWorkOrderSourceTypeEnum, MesProWorkOrderTypeEnum } from '@/views/mes/utils/constants'
+import {
+  MesProWorkOrderSourceTypeEnum,
+  MesProWorkOrderStatusEnum,
+  MesProWorkOrderTypeEnum
+} from '@/views/mes/utils/constants'
+import { checkPermi } from '@/utils/permission'
 import ProTaskList from './ProTaskList.vue'
 
 defineOptions({ name: 'WorkOrderForm2' })
 const emit = defineEmits(['success'])
 
 const message = useMessage() // 消息弹窗
+const router = useRouter()
 
 const dialogVisible = ref(false) // 弹窗的是否展示
 const dialogTitle = ref('') // 弹窗的标题
@@ -191,9 +215,15 @@ const formData = ref<any>({})
 const routeProcessList = ref<ProRouteProcessVO[]>([]) // 工艺路线工序列表
 const activeProcessStep = ref(0) // 当前工序步骤索引
 const currentRouteId = ref(0) // 当前工艺路线编号
+let openSequence = 0
 
 /** 打开弹窗 */
 const open = async (type: string, id: number) => {
+  if (type === 'schedule' && !checkPermi(['mes:pro-task:create'])) {
+    message.warning('当前账号没有排产权限')
+    return
+  }
+  const sequence = ++openSequence
   dialogVisible.value = true
   formType.value = type
   dialogTitle.value = { schedule: '生产排产', detail: '工单详情' }[type] || type
@@ -203,36 +233,49 @@ const open = async (type: string, id: number) => {
   activeProcessStep.value = 0
   try {
     // 加载工单详情
-    formData.value = await ProWorkOrderApi.getWorkOrder(id)
+    const order = await ProWorkOrderApi.getWorkOrder(id)
+    if (sequence !== openSequence) return
+    if (
+      type === 'schedule' &&
+      (order.status !== MesProWorkOrderStatusEnum.CONFIRMED ||
+        order.type !== MesProWorkOrderTypeEnum.SELF)
+    ) {
+      message.warning('请先确认自行生产工单，再进行排产')
+      dialogVisible.value = false
+      return
+    }
+    formData.value = order
     // 加载工艺路线工序列表
     if (formData.value.productId) {
-      await loadRouteProcesses(formData.value.productId)
+      await loadRouteProcesses(formData.value.productId, sequence)
     }
+  } catch {
+    if (sequence === openSequence) dialogVisible.value = false
   } finally {
-    formLoading.value = false
+    if (sequence === openSequence) formLoading.value = false
   }
 }
 defineExpose({ open }) // 提供 open 方法，用于打开弹窗
 
-/** 完成工单 */
-const handleFinish = async () => {
-  try {
-    await message.confirm('确认要完成该工单吗？完成后工单下所有任务将标记为已完成。')
-    formLoading.value = true
-    await ProWorkOrderApi.finishWorkOrder(formData.value.id!)
-    message.success('工单已完成')
-    dialogVisible.value = false
-    emit('success')
-  } catch {
-  } finally {
-    formLoading.value = false
-  }
+/** 任务逐条保存；结束本次排产只关闭窗口并刷新计划。 */
+const completeScheduling = () => {
+  dialogVisible.value = false
+  emit('success')
+}
+
+const openMaterialIssue = async () => {
+  const failure = await router.push({
+    path: '/mes/wm/product-issue',
+    query: { workOrderId: formData.value.id }
+  })
+  if (!failure) dialogVisible.value = false
 }
 
 /** 加载工艺路线工序列表 */
-const loadRouteProcesses = async (productId: number) => {
+const loadRouteProcesses = async (productId: number, sequence: number) => {
   try {
     const processes = await ProRouteProcessApi.getRouteProcessListByProduct(productId)
+    if (sequence !== openSequence) return
     if (!processes || processes.length === 0) {
       message.warning('当前产品未配置工艺路线，请先在工艺路线中维护')
       return

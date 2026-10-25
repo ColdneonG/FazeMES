@@ -267,6 +267,8 @@ test('workbench submits actual source allocations with the exact reported total'
     'pro/workbench/index.vue',
     {},
     {
+      '@/api/mes/pro/task': { ProTaskApi: {} },
+      '@/views/mes/utils/constants': { MesProTaskStatusEnum: { PREPARE: 0 } },
       '@/api/mes/pro/workbench': {
         WorkbenchApi: {
           getAvailability: async () => ({ available: true, reasons: [], notes: [] }),

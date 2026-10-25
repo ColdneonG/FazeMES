@@ -1,6 +1,14 @@
 <!-- MES 生产工单列表 -->
 <template>
   <ContentWrap>
+    <el-alert
+      title="自行生产流程：保存工单 → 确认工单 → 排产、领料 → 工位工作台作业与报工"
+      description="草稿工单请先点击“确认工单”；确认后可使用行内的“去排产”和“生产领料”继续操作。"
+      type="info"
+      show-icon
+      :closable="false"
+      class="mb-15px"
+    />
     <!-- 搜索工作栏 -->
     <el-form
       class="-mb-15px"
@@ -152,7 +160,7 @@
         :formatter="dateFormatter"
         width="180"
       />
-      <el-table-column label="操作" align="center" width="330" fixed="right">
+      <el-table-column label="操作" align="center" width="500" fixed="right">
         <template #default="scope">
           <el-button
             link
@@ -178,8 +186,15 @@
           >
             编辑
           </el-button>
-          <!-- DONE @AI：是不是要把【确认】融合到【编辑】里？因为【编辑】打开后，里面已经有 confirm 按钮呀？ -->
-          <!-- 已移除独立确认按钮，编辑表单中已包含确认功能 -->
+          <el-button
+            v-if="scope.row.status === MesProWorkOrderStatusEnum.PREPARE"
+            v-hasPermi="['mes:pro-work-order:update']"
+            link
+            type="warning"
+            @click="openForm('confirm', scope.row.id)"
+          >
+            确认工单
+          </el-button>
           <el-button
             link
             type="danger"
@@ -189,6 +204,31 @@
           >
             删除
           </el-button>
+          <template
+            v-if="
+              scope.row.status === MesProWorkOrderStatusEnum.CONFIRMED &&
+              scope.row.type === MesProWorkOrderTypeEnum.SELF
+            "
+          >
+            <el-button
+              v-hasPermi="['mes:pro-task:create']"
+              link
+              type="primary"
+              @click="router.push({ path: '/mes/pro/task', query: { workOrderId: scope.row.id } })"
+            >
+              去排产
+            </el-button>
+            <el-button
+              v-hasPermi="['mes:wm-product-issue:query']"
+              link
+              type="primary"
+              @click="
+                router.push({ path: '/mes/wm/product-issue', query: { workOrderId: scope.row.id } })
+              "
+            >
+              生产领料
+            </el-button>
+          </template>
           <!-- 已确认 + 自行生产：新增子工单 -->
           <el-button
             link
@@ -200,7 +240,7 @@
               scope.row.type === MesProWorkOrderTypeEnum.SELF
             "
           >
-            新增
+            子工单
           </el-button>
           <el-button
             v-if="scope.row.status === MesProWorkOrderStatusEnum.CONFIRMED"
@@ -228,7 +268,7 @@
             v-hasPermi="['mes:pro-work-order:update']"
             v-if="scope.row.status === MesProWorkOrderStatusEnum.CONFIRMED"
           >
-            完成
+            工单完工
           </el-button>
           <el-button
             link

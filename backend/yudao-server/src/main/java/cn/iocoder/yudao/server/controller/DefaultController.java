@@ -9,6 +9,7 @@ import org.springframework.web.bind.annotation.RequestMapping;
 import org.springframework.web.bind.annotation.RestController;
 
 import static cn.iocoder.yudao.framework.common.exception.enums.GlobalErrorCodeConstants.NOT_IMPLEMENTED;
+import static cn.iocoder.yudao.framework.common.exception.enums.GlobalErrorCodeConstants.NOT_FOUND;
 
 /**
  * 默认 Controller，解决部分 module 未开启时的 404 提示。
@@ -71,9 +72,10 @@ public class DefaultController {
     }
 
     @RequestMapping(value = { "/admin-api/mes/**"})
-    public CommonResult<Boolean> mes404() {
-        return CommonResult.error(NOT_IMPLEMENTED.getCode(),
-                "[MES 系统 yudao-module-mes - 已禁用][参考 https://doc.iocoder.cn/mes/build/ 开启]");
+    public CommonResult<Boolean> mes404(HttpServletRequest request) {
+        // 已启用模块中的新增接口、错误地址同样会落到这里，不能据此断言整个模块已禁用。
+        return CommonResult.error(NOT_FOUND.getCode(),
+                "请求的 MES 接口不存在：" + request.getRequestURI() + "。请核对前后端版本并更新后端服务。");
     }
 
     @RequestMapping("/admin-api/hrm/**")

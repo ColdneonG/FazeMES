@@ -28,6 +28,7 @@
         <el-form-item label="所属工序">
           <ProProcessSelect
             v-model="queryParams.processId"
+            :disabled="processId != null"
             placeholder="请选择工序"
             class="!w-240px"
           />
@@ -110,7 +111,7 @@ defineOptions({ name: 'MdWorkstationSelectDialog' })
 const props = withDefaults(
   defineProps<{
     multiple?: boolean // true 多选（checkbox），false 单选（radio）
-    processId?: number // 工序预过滤（不传则不限制）
+    processId?: number // 固定工序过滤（不传则允许自由筛选）
   }>(),
   {
     multiple: true
@@ -180,7 +181,10 @@ const queryParams = reactive({
 const getList = async () => {
   loading.value = true
   try {
-    const data = await MdWorkstationApi.getWorkstationPage(queryParams)
+    const data = await MdWorkstationApi.getWorkstationPage({
+      ...queryParams,
+      processId: props.processId ?? queryParams.processId
+    })
     list.value = data.list
     total.value = data.total
     await nextTick()
@@ -231,19 +235,20 @@ const resetQuery = () => {
 
 /** 确认选择 */
 const confirmSelect = () => {
-  if (props.multiple) {
-    if (selectedRows.value.length === 0) {
-      message.warning('请至少选择一条数据')
-      return
-    }
-    emit('selected', selectedRows.value)
-  } else {
-    if (!currentRadioRow.value) {
-      message.warning('请选择一条数据')
-      return
-    }
-    emit('selected', [currentRadioRow.value])
+  const rows = props.multiple
+    ? selectedRows.value
+    : currentRadioRow.value
+      ? [currentRadioRow.value]
+      : []
+  if (rows.length === 0) {
+    message.warning(props.multiple ? '请至少选择一条数据' : '请选择一条数据')
+    return
   }
+  if (props.processId != null && rows.some((row) => row.processId !== props.processId)) {
+    message.warning('请选择当前工序的工作站')
+    return
+  }
+  emit('selected', rows)
   dialogVisible.value = false
 }
 
@@ -254,7 +259,7 @@ const open = async (selectedIds?: number[]) => {
   dialogVisible.value = true
   // 重置查询条件 + 页码
   queryParams.code = undefined
-  queryParams.processId = props.processId // 外部传入 processId 则默认按工序过滤
+  queryParams.processId = props.processId // 外部传入 processId 时固定按该工序过滤
   queryParams.workshopId = undefined
   queryParams.status = CommonStatusEnum.ENABLE
   queryParams.pageNo = 1

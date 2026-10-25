@@ -1,6 +1,5 @@
 <!-- MES 生产排产 -->
 <template>
-
   <ContentWrap>
     <!-- 搜索工作栏 -->
     <el-form
@@ -102,6 +101,7 @@
       <el-table-column label="规格型号" align="center" prop="productSpecification" width="120" />
       <el-table-column label="单位" align="center" prop="unitMeasureName" width="80" />
       <el-table-column label="工单数量" align="center" prop="quantity" width="100" />
+      <el-table-column label="已排产数量" align="center" prop="quantityScheduled" width="100" />
       <el-table-column label="调整数量" align="center" prop="quantityChanged" width="100" />
       <el-table-column label="已生产数量" align="center" prop="quantityProduced" width="100" />
       <el-table-column label="客户编码" align="center" prop="clientCode" width="120" />
@@ -113,7 +113,7 @@
         :formatter="dateFormatter2"
         width="120"
       />
-      <el-table-column label="排产状态" align="center" prop="status" width="100">
+      <el-table-column label="工单状态" align="center" prop="status" width="100">
         <template #default="scope">
           <dict-tag :type="DICT_TYPE.MES_PRO_WORK_ORDER_STATUS" :value="scope.row.status" />
         </template>
@@ -141,7 +141,7 @@
     />
   </ContentWrap>
 
-  <WorkOrderForm2 ref="formRef" @success="getWorkOrderList" />
+  <WorkOrderForm2 ref="formRef" @success="refreshSchedule" />
 </template>
 
 <script setup lang="ts">
@@ -159,6 +159,7 @@ import WorkOrderForm2 from './WorkOrderForm2.vue'
 defineOptions({ name: 'MesProTask' })
 
 const { push } = useRouter()
+const route = useRoute()
 
 const loading = ref(true) // 列表加载状态
 const workOrderList = ref<ProWorkOrderVO[]>([]) // 工单列表数据
@@ -198,6 +199,11 @@ const loadGanttPreview = async () => {
   } catch {}
 }
 
+/** 每次任务变更都同步工单数量和甘特图。 */
+const refreshSchedule = async () => {
+  await Promise.all([getWorkOrderList(), loadGanttPreview()])
+}
+
 /** 搜索按钮操作 */
 const handleQuery = () => {
   queryParams.pageNo = 1
@@ -212,7 +218,7 @@ const resetQuery = () => {
   handleQuery()
 }
 
-/** 打开排产/详情/完成对话框 */
+/** 打开排产/详情对话框 */
 const openForm = (type: string, id: number) => {
   formRef.value.open(type, id)
 }
@@ -222,9 +228,31 @@ const openGanttEdit = () => {
   push({ name: 'MesProTaskGanttEdit' })
 }
 
+let handledWorkOrder: string | undefined
+/** 从工单页直接加载目标工单，不依赖当前列表所在的分页。 */
+const openRequestedWorkOrder = async () => {
+  if (route.path !== '/mes/pro/task') {
+    handledWorkOrder = undefined
+    return
+  }
+  const value = route.query.workOrderId
+  if (typeof value !== 'string' || !/^\d+$/.test(value)) {
+    handledWorkOrder = undefined
+    return
+  }
+  if (!formRef.value) return
+  const id = Number(value)
+  if (!Number.isSafeInteger(id) || id <= 0 || handledWorkOrder === value) return
+  handledWorkOrder = value
+  await formRef.value.open('schedule', id)
+}
+
+watch(() => [route.path, route.query.workOrderId], openRequestedWorkOrder, { flush: 'post' })
+onActivated(openRequestedWorkOrder)
+
 /** 初始化 */
 onMounted(async () => {
-  await getWorkOrderList()
-  await loadGanttPreview()
+  await refreshSchedule()
+  await openRequestedWorkOrder()
 })
 </script>

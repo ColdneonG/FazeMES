@@ -1,5 +1,21 @@
 <template>
   <Dialog :title="dialogTitle" v-model="dialogVisible" width="960px">
+    <el-alert
+      v-if="isEditable"
+      title="先保存领料单并添加物料，再提交、拣货、执行领出；领出完成后可进入工位工作台作业。"
+      type="info"
+      show-icon
+      :closable="false"
+      class="mb-16px"
+    />
+    <el-alert
+      v-if="formData.status === MesWmProductIssueStatusEnum.FINISHED"
+      title="领料已完成，请进入工位工作台选择本工单的生产任务，按作业指导生产并报工。"
+      type="success"
+      show-icon
+      :closable="false"
+      class="mb-16px"
+    />
     <el-form
       ref="formRef"
       :model="formData"
@@ -90,7 +106,15 @@
         执行拣货
       </el-button>
       <el-button v-if="isFinish" @click="handleFinish" type="success" :disabled="formLoading">
-        完 成
+        执行领出
+      </el-button>
+      <el-button
+        v-if="formData.status === MesWmProductIssueStatusEnum.FINISHED && formData.workOrderId"
+        v-hasPermi="['mes:pro-task:query']"
+        type="primary"
+        @click="openWorkbench"
+      >
+        进入作业
       </el-button>
       <el-button @click="dialogVisible = false">关 闭</el-button>
     </template>
@@ -113,6 +137,7 @@ defineOptions({ name: 'ProductIssueForm' })
 const emit = defineEmits(['success'])
 
 const message = useMessage() // 消息弹窗
+const router = useRouter()
 
 const dialogVisible = ref(false) // 弹窗的是否展示
 const formLoading = ref(false) // 表单的加载中
@@ -137,8 +162,8 @@ const formData = ref({
   code: undefined,
   name: undefined,
   status: undefined as number | undefined,
-  workOrderId: undefined,
-  workstationId: undefined,
+  workOrderId: undefined as number | undefined,
+  workstationId: undefined as number | undefined,
   requiredTime: undefined,
   remark: undefined
 })
@@ -159,10 +184,18 @@ const generateCode = async () => {
 }
 
 /** 打开弹窗 */
-const open = async (type: string, id?: number) => {
+const open = async (
+  type: string,
+  id?: number,
+  context?: { workOrderId?: number; workstationId?: number }
+) => {
   dialogVisible.value = true
   formType.value = type
   resetForm()
+  if (type === 'create' && context) {
+    formData.value.workOrderId = context.workOrderId
+    formData.value.workstationId = context.workstationId
+  }
   // 修改/拣货/完成/详情时，加载数据
   if (id) {
     formLoading.value = true
@@ -252,13 +285,22 @@ const handleFinish = async () => {
     await message.confirm('确认完成该领料单并执行出库吗？')
     formLoading.value = true
     await WmProductIssueApi.finishProductIssue(formData.value.id!)
-    message.success('完成成功')
-    dialogVisible.value = false
+    message.success('领料已完成，可进入工位工作台作业')
+    formData.value.status = MesWmProductIssueStatusEnum.FINISHED
+    formType.value = 'detail'
     emit('success')
   } catch {
   } finally {
     formLoading.value = false
   }
+}
+
+const openWorkbench = async () => {
+  const failure = await router.push({
+    path: '/mes/workbench',
+    query: { workOrderId: formData.value.workOrderId, workstationId: formData.value.workstationId }
+  })
+  if (!failure) dialogVisible.value = false
 }
 
 /** 重置表单 */

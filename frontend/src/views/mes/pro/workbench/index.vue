@@ -13,7 +13,7 @@
             size="large"
             filterable
             aria-label="选择工作站"
-            @change="loadTasks"
+            @change="changeStation"
           >
             <el-option
               v-for="station in stations"
@@ -22,10 +22,33 @@
               :label="`${station.name} · ${station.code}`"
             />
           </el-select>
-          <el-button size="large" :loading="loading" @click="loadTasks">刷新任务</el-button>
+          <el-button size="large" :loading="loading" @click="refreshTasks">刷新任务</el-button>
         </div>
       </div>
     </el-card>
+
+    <el-alert
+      title="选择生产任务，完成必做作业指导步骤并进行实际生产后，再填写数量、选择审核人提交报工。领料需先完成执行领出。"
+      type="info"
+      show-icon
+      :closable="false"
+      class="mt-16px"
+    />
+    <el-alert
+      v-if="requestedOrderId"
+      title="当前仅显示指定工单的待执行任务。"
+      type="info"
+      :closable="false"
+      class="mt-16px"
+    >
+      <el-button
+        v-hasPermi="['mes:pro-task:create']"
+        link
+        type="primary"
+        @click="router.push({ path: '/mes/pro/task', query: { workOrderId: requestedOrderId } })"
+        >查看本工单排产</el-button
+      >
+    </el-alert>
 
     <el-card v-if="stationId" shadow="never" class="mt-16px">
       <template #header>
@@ -126,6 +149,21 @@
                     {{ context.task.quantity }}</el-descriptions-item
                   >
                 </el-descriptions>
+                <el-button
+                  v-hasPermi="['mes:wm-product-issue:query']"
+                  size="large"
+                  class="mt-16px"
+                  @click="
+                    router.push({
+                      path: '/mes/wm/product-issue',
+                      query: {
+                        workOrderId: context.task.workOrderId,
+                        workstationId: context.task.workstationId
+                      }
+                    })
+                  "
+                  >生产领料</el-button
+                >
                 <el-button
                   v-hasPermi="['mes:qc-ipqc:query']"
                   size="large"
@@ -281,6 +319,8 @@ import { formatDate } from '@/utils/formatTime'
 import { checkPermi } from '@/utils/permission'
 import WorkbenchEquipment from './WorkbenchEquipment.vue'
 import TaskExecution from '@/views/mes/pro/sop/TaskExecution.vue'
+import { ProTaskApi, type ProTaskVO } from '@/api/mes/pro/task'
+import { MesProTaskStatusEnum } from '@/views/mes/utils/constants'
 import type { FormInstance, FormRules } from 'element-plus'
 import FeedbackSources from '@/views/mes/pro/feedback/FeedbackSources.vue'
 import {
@@ -294,6 +334,10 @@ defineOptions({ name: 'MesProWorkbench' })
 const message = useMessage()
 const router = useRouter()
 const route = useRoute()
+const requestedOrderId = computed(() => {
+  const value = Number(route.query.workOrderId)
+  return Number.isSafeInteger(value) && value > 0 ? value : undefined
+})
 const activeTab = ref('production')
 const canQueryEquipment = computed(() => checkPermi(['mes:dv-check-plan:query']))
 const openQuality = () => {
@@ -380,6 +424,7 @@ const refreshAvailability = async () => {
 
 const selectTask = async (id: number) => {
   const sequence = ++selectionSequence
+  loadError.value = ''
   selectedTaskId.value = id
   context.value = undefined
   contextLoading.value = true
@@ -418,11 +463,20 @@ const loadTasks = async () => {
     ])
     if (requestedStation !== stationId.value || loadSequence !== taskLoadSequence) return
     if (taskResult.status === 'rejected') throw taskResult.reason
-    const list = taskResult.value
+    const list = requestedOrderId.value
+      ? taskResult.value.filter((task) => task.workOrderId === requestedOrderId.value)
+      : taskResult.value
     tasks.value = list
-    const selected = list.find((task) => task.id === selectedTaskId.value) || list[0]
+    const selected = selectedTaskId.value
+      ? list.find((task) => task.id === selectedTaskId.value)
+      : list[0]
     if (selected) await selectTask(selected.id)
-    else selectedTaskId.value = undefined
+    else {
+      if (selectedTaskId.value) {
+        loadError.value = '指定任务不在当前工位的待执行任务中，可能已完成或取消，请重新选择任务。'
+      }
+      selectedTaskId.value = undefined
+    }
   } catch (error) {
     if (loadSequence === taskLoadSequence) {
       tasks.value = []
@@ -474,16 +528,106 @@ const submit = async () => {
   }
 }
 
+const changeStation = async () => {
+  await router.replace({
+    path: '/mes/workbench',
+    query: { ...route.query, workstationId: stationId.value, taskId: undefined }
+  })
+}
+
+let routeTaskSequence = 0
+const applyRouteTask = async () => {
+  const sequence = ++routeTaskSequence
+  ++taskLoadSequence
+  ++selectionSequence
+  ++availabilitySequence
+  context.value = undefined
+  tasks.value = []
+  availability.value = undefined
+  loadError.value = ''
+  const station = Number(route.query.workstationId)
+  const explicitStation = route.query.workstationId !== undefined
+  stationId.value = explicitStation
+    ? stations.value.find((item) => item.id === station)?.id
+    : stationId.value || stations.value[0]?.id
+  const task = Number(route.query.taskId)
+  selectedTaskId.value = Number.isSafeInteger(task) && task > 0 ? task : undefined
+  if (!explicitStation && requestedOrderId.value) {
+    // 领料单允许不指定工作站，按工单的已排产任务定位作业入口。
+    stationId.value = undefined
+    loading.value = true
+    contextLoading.value = false
+    availabilityLoading.value = false
+    try {
+      const candidates: ProTaskVO[] = []
+      let pageNo = 1
+      let total = 0
+      do {
+        const pending = await ProTaskApi.getTaskPage({
+          workOrderId: requestedOrderId.value,
+          status: MesProTaskStatusEnum.PREPARE,
+          pageNo,
+          pageSize: 100
+        })
+        if (sequence !== routeTaskSequence) return
+        candidates.push(
+          ...pending.list.filter(
+            (item) =>
+              (!selectedTaskId.value || item.id === selectedTaskId.value) &&
+              stations.value.some((station) => station.id === item.workstationId)
+          )
+        )
+        total = pending.total ?? pending.list.length
+        pageNo++
+      } while ((pageNo - 1) * 100 < total)
+      const plannedStart = (item: ProTaskVO) => {
+        const value = item.startTime
+        const time =
+          typeof value === 'number' || (typeof value === 'string' && /^\d+$/.test(value))
+            ? Number(value)
+            : new Date(String(value)).getTime()
+        return Number.isFinite(time) ? time : Number.MAX_SAFE_INTEGER
+      }
+      const target = candidates.sort((a, b) => plannedStart(a) - plannedStart(b) || a.id - b.id)[0]
+      if (!target) {
+        selectedTaskId.value = undefined
+        loading.value = false
+        loadError.value = '本工单没有可作业的排产任务，请先在生产排产中检查任务和工作站。'
+        return
+      }
+      stationId.value = target.workstationId
+      selectedTaskId.value = target.id
+    } catch (error) {
+      if (sequence !== routeTaskSequence) return
+      loading.value = false
+      loadError.value = errorText(error, '工单任务加载失败，请刷新重试或选择工作站。')
+      return
+    }
+  }
+  if (explicitStation && !stationId.value) {
+    loading.value = false
+    contextLoading.value = false
+    availabilityLoading.value = false
+    loadError.value = '指定工作站不存在或已停用，请重新选择工作站。'
+    return
+  }
+  await loadTasks()
+}
+
+let workbenchReady = false
+const refreshTasks = () => (stationId.value ? loadTasks() : applyRouteTask())
+watch(
+  () => [route.path, route.query.workstationId, route.query.taskId, route.query.workOrderId],
+  async () => {
+    if (workbenchReady && route.path === '/mes/workbench') await applyRouteTask()
+  }
+)
+
 onMounted(async () => {
   try {
     stations.value = await WorkbenchApi.getWorkstations()
-    const requestedStation = Number(route.query.workstationId)
-    stationId.value =
-      stations.value.find((station) => station.id === requestedStation)?.id || stations.value[0]?.id
-    const requestedTask = Number(route.query.taskId)
-    if (Number.isSafeInteger(requestedTask) && requestedTask > 0)
-      selectedTaskId.value = requestedTask
-    await loadTasks()
+    workbenchReady = true
+    await applyRouteTask()
   } catch (error) {
     loadError.value = errorText(error, '工作站列表加载失败')
   }

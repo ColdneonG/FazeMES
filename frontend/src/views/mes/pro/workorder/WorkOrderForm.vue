@@ -1,6 +1,14 @@
 <!-- MES 生产工单表单 -->
 <template>
   <Dialog :title="dialogTitle" v-model="dialogVisible" width="960px">
+    <el-alert
+      v-if="productionHint"
+      :title="productionHint"
+      type="info"
+      show-icon
+      :closable="false"
+      class="mb-15px"
+    />
     <el-form
       ref="formRef"
       :model="formData"
@@ -173,18 +181,42 @@
       </el-button>
       <el-button
         v-if="isEditable && formData.status === MesProWorkOrderStatusEnum.PREPARE"
+        v-hasPermi="['mes:pro-work-order:update']"
         @click="handleConfirm"
         type="warning"
         :disabled="formLoading"
       >
-        确 认
+        确认工单
       </el-button>
-      <el-button v-if="isConfirm" @click="handleConfirm" type="warning" :disabled="formLoading">
-        确 认
+      <el-button
+        v-if="isConfirm"
+        v-hasPermi="['mes:pro-work-order:update']"
+        @click="handleConfirm"
+        type="warning"
+        :disabled="formLoading"
+      >
+        确认工单
       </el-button>
       <el-button v-if="isFinish" @click="handleFinish" type="success" :disabled="formLoading">
-        完 成
+        工单完工
       </el-button>
+      <template v-if="canContinueProduction && !isFinish">
+        <el-button
+          v-hasPermi="['mes:pro-task:create']"
+          type="primary"
+          :disabled="formLoading"
+          @click="openProductionPage('/mes/pro/task')"
+        >
+          去排产
+        </el-button>
+        <el-button
+          v-hasPermi="['mes:wm-product-issue:query']"
+          :disabled="formLoading"
+          @click="openProductionPage('/mes/wm/product-issue')"
+        >
+          生产领料
+        </el-button>
+      </template>
       <el-button
         v-if="formType === 'detail' && formData.id"
         type="primary"
@@ -224,6 +256,7 @@ defineOptions({ name: 'WorkOrderForm' })
 const emit = defineEmits(['success'])
 
 const message = useMessage() // 消息弹窗
+const router = useRouter()
 
 const dialogVisible = ref(false) // 弹窗的是否展示
 const formLoading = ref(false) // 表单的加载中
@@ -276,6 +309,28 @@ const formRules = reactive({
 const formRef = ref() // 表单 Ref
 const barcodeDetailRef = ref() // 条码详情弹窗 Ref
 const originalFormData = ref<string>('') // 原始表单数据快照，用于脏检查
+const canContinueProduction = computed(
+  () =>
+    formData.value.status === MesProWorkOrderStatusEnum.CONFIRMED &&
+    formData.value.type === MesProWorkOrderTypeEnum.SELF
+)
+const productionHint = computed(() => {
+  if (!formData.value.id) return ''
+  if (formData.value.status === MesProWorkOrderStatusEnum.PREPARE) {
+    return '工单已保存为草稿。检查工单 BOM 和物料需求后，点击“确认工单”进入后续生产流程。'
+  }
+  if (canContinueProduction.value) {
+    return '工单已确认。请继续排产、执行生产领料，再到工位工作台选择对应工作站和任务，按作业指导生产并报工。'
+  }
+  return ''
+})
+
+/** 带当前工单进入后续生产页面 */
+const openProductionPage = async (path: string) => {
+  if (!formData.value.id || !canContinueProduction.value) return
+  const failure = await router.push({ path, query: { workOrderId: formData.value.id } })
+  if (!failure) dialogVisible.value = false
+}
 
 /** 查看条码 */
 const handleBarcode = () => {
@@ -372,7 +427,7 @@ const submitForm = async () => {
     const data = formData.value as unknown as ProWorkOrderVO
     if (formType.value === 'create') {
       const res = await ProWorkOrderApi.createWorkOrder(data)
-      message.success('新增成功')
+      message.success('工单已保存为草稿，请检查后确认工单')
       // 创建成功后，更新表单数据和状态为编辑模式
       formData.value.id = res
       formData.value.status = MesProWorkOrderStatusEnum.PREPARE
@@ -404,8 +459,9 @@ const handleConfirm = async () => {
     }
     // 2. 确认工单
     await ProWorkOrderApi.confirmWorkOrder(formData.value.id!)
+    formData.value.status = MesProWorkOrderStatusEnum.CONFIRMED
+    formType.value = 'detail'
     message.success('工单已确认')
-    dialogVisible.value = false
     emit('success')
   } catch {
   } finally {

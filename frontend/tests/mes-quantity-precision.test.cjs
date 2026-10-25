@@ -48,6 +48,7 @@ function setup(t, relative, props = {}, dependencies = {}) {
     {
       ...vue,
       onMounted: () => {},
+      useRouter: () => ({ push: async () => {} }),
       useI18n: () => ({ t: (value) => value }),
       useMessage: () => ({ success: () => {}, info: () => {}, warning: () => {} })
     }

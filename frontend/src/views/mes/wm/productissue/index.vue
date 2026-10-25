@@ -1,5 +1,4 @@
 <template>
-
   <ContentWrap>
     <el-form
       class="-mb-15px"
@@ -25,6 +24,12 @@
           @keyup.enter="handleQuery"
           class="!w-240px"
         />
+      </el-form-item>
+      <el-form-item label="生产工单" prop="workOrderId">
+        <ProWorkOrderSelect v-model="queryParams.workOrderId" class="!w-240px" />
+      </el-form-item>
+      <el-form-item label="工作站" prop="workstationId">
+        <MdWorkstationSelect v-model="queryParams.workstationId" class="!w-240px" />
       </el-form-item>
       <el-form-item label="领料日期" prop="issueDate">
         <el-date-picker
@@ -75,6 +80,15 @@
       </el-form-item>
     </el-form>
   </ContentWrap>
+
+  <el-alert
+    v-if="queryParams.workOrderId"
+    title="已筛选当前工单的领料单；新增时会自动带入工单。保存并添加物料后，依次提交、拣货和执行领出。"
+    type="info"
+    show-icon
+    :closable="false"
+    class="mb-16px"
+  />
 
   <ContentWrap>
     <el-table v-loading="loading" :data="list" :stripe="true" :show-overflow-tooltip="true">
@@ -187,12 +201,15 @@ import { DICT_TYPE, getIntDictOptions } from '@/utils/dict'
 import download from '@/utils/download'
 import { WmProductIssueApi, WmProductIssueVO } from '@/api/mes/wm/productissue'
 import ProductIssueForm from './ProductIssueForm.vue'
+import ProWorkOrderSelect from '@/views/mes/pro/workorder/components/ProWorkOrderSelect.vue'
+import MdWorkstationSelect from '@/views/mes/md/workstation/components/MdWorkstationSelect.vue'
 import { MesWmProductIssueStatusEnum } from '@/views/mes/utils/constants'
 
 defineOptions({ name: 'MesWmProductIssue' })
 
 const message = useMessage() // 消息弹窗
 const { t } = useI18n() // 国际化
+const route = useRoute()
 
 const loading = ref(true) // 列表的加载中
 const list = ref<WmProductIssueVO[]>([]) // 列表的数据
@@ -203,21 +220,26 @@ const queryParams = reactive({
   pageSize: 10,
   code: undefined,
   name: undefined,
+  workOrderId: undefined as number | undefined,
+  workstationId: undefined as number | undefined,
   status: undefined,
   issueDate: undefined
 })
 const queryFormRef = ref() // 搜索的表单
 const formRef = ref() // 表单弹窗
+let listSequence = 0
 
 /** 查询列表 */
 const getList = async () => {
+  const sequence = ++listSequence
   loading.value = true
   try {
-    const data = await WmProductIssueApi.getProductIssuePage(queryParams)
+    const data = await WmProductIssueApi.getProductIssuePage({ ...queryParams })
+    if (sequence !== listSequence) return
     list.value = data.list
     total.value = data.total
   } finally {
-    loading.value = false
+    if (sequence === listSequence) loading.value = false
   }
 }
 
@@ -235,7 +257,16 @@ const resetQuery = () => {
 
 /** 添加/修改操作 */
 const openForm = (type: string, id?: number) => {
-  formRef.value.open(type, id)
+  formRef.value.open(
+    type,
+    id,
+    type === 'create'
+      ? {
+          workOrderId: queryParams.workOrderId,
+          workstationId: queryParams.workstationId
+        }
+      : undefined
+  )
 }
 
 /** 取消按钮操作 */
@@ -281,8 +312,20 @@ const handleExport = async () => {
   }
 }
 
-/** 初始化 */
-onMounted(() => {
-  getList()
-})
+/** 从工单或任务进入时保留领料上下文，也支持已打开页面之间切换。 */
+watch(
+  () => [route.path, route.query.workOrderId, route.query.workstationId],
+  () => {
+    if (route.path !== '/mes/wm/product-issue') return
+    const orderId = Number(route.query.workOrderId)
+    const stationId = Number(route.query.workstationId)
+    queryParams.workOrderId = Number.isSafeInteger(orderId) && orderId > 0 ? orderId : undefined
+    queryParams.workstationId =
+      Number.isSafeInteger(stationId) && stationId > 0 ? stationId : undefined
+    list.value = []
+    total.value = 0
+    handleQuery()
+  },
+  { immediate: true }
+)
 </script>
