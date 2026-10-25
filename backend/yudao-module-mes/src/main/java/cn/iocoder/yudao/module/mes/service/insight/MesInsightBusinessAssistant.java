@@ -26,6 +26,8 @@ public class MesInsightBusinessAssistant {
     private final MesInsightConversationStore store;
     private final MesInsightInventoryQuery inventory;
     private final MesInsightService legacy;
+    @org.springframework.beans.factory.annotation.Autowired
+    private MesAgentBusinessTools tools;
     public MesInsightBusinessAssistant(JdbcTemplate jdbc,SecurityFrameworkService security,MesInsightConversationStore store,
                                       MesInsightInventoryQuery inventory,MesInsightService legacy){this.jdbc=jdbc;this.security=security;this.store=store;this.inventory=inventory;this.legacy=legacy;}
     private static String text(Object value){return value==null?"":value.toString();}
@@ -50,7 +52,9 @@ public class MesInsightBusinessAssistant {
             String intent=isWrite(q)?"scope":selected?text(slots.get("intent")):intent(q,follow?slots:null);
             if(!selected&&!follow)slots.clear();
             Set<String> required=new LinkedHashSet<>();Map<String,Object> answer;
-            if(intent.equals("inventory")||intent.equals("document")){
+            var toolAnswer=tools==null?null:tools.answer(q,req.useModel()&&intent.equals("scope"),required);
+            if(toolAnswer!=null){answer=toolAnswer;context=new LinkedHashMap<>();context.put("intent","agent");}
+            else if(intent.equals("inventory")||intent.equals("document")){
                 required.add(MesInsightInventoryQuery.STOCK_PERMISSION);store.require(required);
                 slots.put("intent",intent);
                 if(q.matches("(?s).*(修改|改成|删除|新增|执行|帮我.*(入库|出库)|提交|扣减|增加[0-9]|转移库存).*")){

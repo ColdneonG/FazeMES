@@ -214,7 +214,7 @@ public class MesAssistantService {
                 prompt.add(Map.of("role", item.get("role").toString(), "content", item.get("content").toString()));
             }
             prompt.add(Map.of("role", "user", "content", question));
-            answer = models.complete(MesModelUsageService.Purpose.KNOWLEDGE_CHAT,prompt); status = "ANSWERED"; message = "模型已返回响应，引用为本次真实检索片段。";
+            answer = models.complete(MesAssistantModelGateway.Purpose.KNOWLEDGE_CHAT,prompt); status = "ANSWERED"; message = "模型已返回响应，引用为本次真实检索片段。";
             }
             catch (cn.iocoder.yudao.framework.common.exception.ServiceException exception) { status = "MODEL_ERROR"; message = exception.getMessage(); }
         }

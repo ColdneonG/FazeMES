@@ -51,8 +51,8 @@ class MesAssistantControllerPolicyTest extends MesAssistantTestDatabase {
             permissions.add("mes:assistant:query");
             var status = controller.status().getData();
             assertNotNull(status);
-            assertEquals(true, ((Map<?, ?>) status).get("budgetReady"),
-                    "The fixture explicitly seeds an enabled test policy; querying it does not grant config permission");
+            assertFalse(((Map<?, ?>) status).containsKey("budgetReady"),
+                    "No quota configuration is needed to read model status");
             assertThrows(AccessDeniedException.class, controller::modelConfig);
             permissions.add("mes:assistant:config");
             assertNotNull(controller.modelConfig().getData());

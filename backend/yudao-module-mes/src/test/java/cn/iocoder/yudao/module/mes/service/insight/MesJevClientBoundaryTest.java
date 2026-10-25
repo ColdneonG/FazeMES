@@ -2,7 +2,7 @@ package cn.iocoder.yudao.module.mes.service.insight;
 
 import cn.iocoder.yudao.framework.common.exception.ServiceException;
 import cn.iocoder.yudao.module.mes.service.assistant.MesAssistantModelGateway;
-import cn.iocoder.yudao.module.mes.service.assistant.MesModelUsageService.Purpose;
+import cn.iocoder.yudao.module.mes.service.assistant.MesAssistantModelGateway.Purpose;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import org.junit.jupiter.api.Test;
 import java.lang.reflect.Modifier;

@@ -1,7 +1,7 @@
 package cn.iocoder.yudao.module.mes.service.insight;
 
 import cn.iocoder.yudao.module.mes.service.assistant.MesAssistantModelGateway;
-import cn.iocoder.yudao.module.mes.service.assistant.MesModelUsageService.Purpose;
+import cn.iocoder.yudao.module.mes.service.assistant.MesAssistantModelGateway.Purpose;
 import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import org.springframework.stereotype.Component;
@@ -15,7 +15,7 @@ public class MesJevClient {
     public static final String ENDPOINT = "https://api.typesafe.ai/v1/systemone";
     private final ObjectMapper json;
     private final MesAssistantModelGateway gateway;
-    /** Source compatibility only: no unmetered transport is available through this constructor. */
+    /** Source compatibility only; production uses the configured secure gateway. */
     public MesJevClient(ObjectMapper json) { this(json,null); }
     @Autowired
     public MesJevClient(ObjectMapper json,MesAssistantModelGateway gateway) {
@@ -26,7 +26,7 @@ public class MesJevClient {
         return evaluate(Purpose.JEV_TRIAGE,model,title,description,departments);
     }
     public Decision evaluate(Purpose purpose,String model,String title,String description,Map<String,String> departments) {
-        if(gateway==null)throw invalid("Jev用量网关尚未配置，不能发起未计量的请求");
+        if(gateway==null)throw invalid("Jev模型连接尚未配置");
         if(purpose!=Purpose.JEV_TRIAGE&&purpose!=Purpose.JEV_CONNECTION_TEST)throw invalid("Jev调用用途无效");
         var categories=new LinkedHashMap<String,String>();
         categories.put("DELIVERY","交期、交付计划或生产进度问题");

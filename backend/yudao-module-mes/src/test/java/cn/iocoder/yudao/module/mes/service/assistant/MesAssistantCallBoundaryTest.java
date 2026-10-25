@@ -13,7 +13,7 @@ import org.springframework.transaction.interceptor.TransactionInterceptor;
 import org.springframework.transaction.support.TransactionSynchronizationManager;
 import org.springframework.transaction.support.TransactionTemplate;
 import cn.iocoder.yudao.framework.common.exception.ServiceException;
-import cn.iocoder.yudao.module.mes.service.assistant.MesModelUsageService.Purpose;
+import cn.iocoder.yudao.module.mes.service.assistant.MesAssistantModelGateway.Purpose;
 import java.nio.charset.StandardCharsets;
 import java.util.concurrent.*;
 import java.util.*;

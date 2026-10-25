@@ -1,11 +1,14 @@
 <template>
   <el-dialog v-model="visible" title="Jev 异常分流配置" width="min(640px,95vw)">
     <el-alert
-      title="Jev负责分类和部门建议，使用独立TypeSafe API Key。调用与连接测试均计入共享预算；请在“AI助手与知识库 → 用量与预算”设置配额。Jev未返回Token时用量显示待核定。"
+      title="Jev使用独立TypeSafe API Key。后端自动读取Windows系统HTTP代理；Clash开启系统代理后，无需开启虚拟网卡。修改系统代理后约3秒生效，无需重启项目。"
       type="info"
       :closable="false"
     />
     <el-form label-position="top" class="mt-4" @submit.prevent>
+      <el-form-item label="当前连接方式"
+        ><span>{{ settings.transport || '正在读取' }}</span></el-form-item
+      >
       <el-form-item label="官方决策接口"
         ><el-input :model-value="settings.endpoint" disabled
       /></el-form-item>

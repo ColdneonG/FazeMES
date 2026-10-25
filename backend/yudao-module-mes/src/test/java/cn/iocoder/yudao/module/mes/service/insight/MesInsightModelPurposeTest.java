@@ -3,7 +3,7 @@ package cn.iocoder.yudao.module.mes.service.insight;
 import cn.iocoder.yudao.framework.security.core.service.SecurityFrameworkService;
 import cn.iocoder.yudao.module.mes.controller.admin.insight.MesInsightController.Question;
 import cn.iocoder.yudao.module.mes.service.assistant.MesAssistantModelGateway;
-import cn.iocoder.yudao.module.mes.service.assistant.MesModelUsageService.Purpose;
+import cn.iocoder.yudao.module.mes.service.assistant.MesAssistantModelGateway.Purpose;
 import cn.iocoder.yudao.module.mes.service.pro.kitting.MesProKittingService;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import org.junit.jupiter.api.*;

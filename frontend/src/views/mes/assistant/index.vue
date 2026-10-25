@@ -1,7 +1,10 @@
 <template>
   <ContentWrap>
     <div class="assistant-heading">
-      <div><h2>AI助手与知识库</h2><p>基于已发布文档回答，让每条依据都能回到原文</p></div>
+      <div
+        ><h2>AI助手与知识库</h2
+        ><p>查询真实业务、生成报表、确认执行业务操作，也可基于已发布文档问答</p></div
+      >
       <el-tag :type="modelStatus?.configured ? 'success' : 'info'">
         {{
           modelStatus?.configured
@@ -25,6 +28,9 @@
       class="assistant-alert"
     />
     <el-tabs v-model="tab">
+      <el-tab-pane v-if="canBusiness" label="业务 Agent" name="business">
+        <BusinessAssistant :active="tab === 'business'" @navigate="openBusinessAnalysis" />
+      </el-tab-pane>
       <el-tab-pane v-if="canChat || canKnowledge" label="知识助手" name="chat">
         <div class="assistant-layout" :class="{ 'assistant-without-sidebar': !canChat }">
           <aside class="assistant-sidebar" v-if="canChat">
@@ -77,16 +83,6 @@
               >
             </div>
             <el-alert
-              v-if="modelStatus?.configured && modelStatus.budgetReady === false"
-              :title="
-                modelStatus.blockReason ||
-                '模型预算尚未配置或暂不可用，文档检索仍可使用。管理员可在“用量与预算”核查。'
-              "
-              type="warning"
-              :closable="false"
-              show-icon
-            />
-            <el-alert
               v-if="!modelStatus?.configured"
               title="模型未配置：可以检索真实文档和查看引用，不会生成或伪造模型答复。管理员可在“模型配置”接入服务。"
               type="info"
@@ -114,7 +110,7 @@
                   v-if="item.role === 'user' && item.status !== 'ANSWERED'"
                   :title="
                     item.status === 'PROCESSING'
-                      ? '此请求正在处理，提问已保存。长时间未完成时可重新打开会话核查；管理员可核对用量审计。'
+                      ? '此请求正在处理，提问已保存。长时间未完成时可重新打开会话核查。'
                       : item.status === 'MODEL_NOT_CONFIGURED'
                         ? '模型未配置，本次没有模型答复。以下为真实检索结果。'
                         : '模型服务未能返回答复；本次检索依据仍可查看。'
@@ -280,7 +276,7 @@
       <el-tab-pane v-if="canConfig" label="模型配置" name="config">
         <div class="assistant-config">
           <el-alert
-            title="配置凭据与调用预算分别保存。连接测试也消耗共享调用额度；请在“用量与预算”配置配额。文档检索不调用模型。"
+            title="本项目不设置模型计费、次数或Token累计配额；模型平台自身额度仍以服务商为准。文档检索不调用模型。"
             type="info"
             :closable="false"
           />
@@ -377,9 +373,6 @@
             :closable="false"
           />
         </div>
-      </el-tab-pane>
-      <el-tab-pane v-if="canConfig" label="用量与预算" name="usage">
-        <ModelUsagePanel v-if="tab === 'usage'" @changed="refreshModelStatus" />
       </el-tab-pane>
     </el-tabs>
   </ContentWrap>
@@ -494,14 +487,29 @@ import {
 } from '@/api/mes/assistant'
 import { checkPermi } from '@/utils/permission'
 import { formatAssistantTime as time } from './assistantTime'
-import ModelUsagePanel from './ModelUsagePanel.vue'
+import BusinessAssistant from '@/views/mes/insight/BusinessAssistant.vue'
 
 defineOptions({ name: 'MesAssistant' })
 const canChat = checkPermi(['mes:assistant:chat'])
 const canKnowledge = checkPermi(['mes:assistant:knowledge'])
 const canManage = checkPermi(['mes:assistant:manage'])
 const canConfig = computed(() => checkPermi(['mes:assistant:config']))
-const tab = ref(canChat || canKnowledge ? 'chat' : canManage ? 'knowledge' : 'config')
+const canBusiness = computed(
+  () => checkPermi(['mes:insight:query']) && checkPermi(['mes:insight:chat'])
+)
+const tab = ref(
+  canBusiness.value
+    ? 'business'
+    : canChat || canKnowledge
+      ? 'chat'
+      : canManage
+        ? 'knowledge'
+        : 'config'
+)
+const businessRouter = useRouter()
+function openBusinessAnalysis(topic: string) {
+  void businessRouter.push({ path: '/mes/insight', query: { tab: topic } })
+}
 const error = ref('')
 const modelStatus = ref<ModelStatus>()
 const bases = ref<KnowledgeBase[]>([])
@@ -847,13 +855,6 @@ async function testConfig() {
       exception instanceof Error ? exception.message : '连接测试失败，请检查服务、模型名称和密钥'
   } finally {
     testing.value = false
-  }
-}
-async function refreshModelStatus() {
-  try {
-    modelStatus.value = await AssistantApi.status()
-  } catch (exception) {
-    failure(exception, '模型状态刷新失败，请刷新页面核查')
   }
 }
 onMounted(async () => {
