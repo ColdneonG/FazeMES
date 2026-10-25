@@ -12,7 +12,7 @@ export interface QcPendingInspectVO {
   itemName: string
   specification: string
   unitName: string
-  quantity: number
+  quantity: number | string
   vendorId: number
   vendorName: string
   // 工单/工作站/任务（IPQC/RQC 场景）

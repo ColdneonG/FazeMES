@@ -74,5 +74,6 @@ foreach ($service in @(@{Name='backend'; Url='http://127.0.0.1:48080/admin-api/s
     }
     if (-not $ready) { throw "$($service.Name) did not become ready. Check $logRoot." }
 }
+Start-LocalBackupScheduler -ProjectRoot $projectRoot
 Write-Host 'MES UI: http://127.0.0.1:5173'
 Write-Host 'MES API: http://127.0.0.1:48080/admin-api'

@@ -119,6 +119,7 @@ try {
         if (-not $ready) { throw "$($service.Name) did not become ready; check $logRoot." }
         Write-Host "$($service.Name) ready"
     }
+    Start-LocalBackupScheduler -ProjectRoot $projectRoot
     Write-Host 'FazeMES ready: http://127.0.0.1:5173/mes/insight'
 } finally {
     if ($lockHeld) { $startupLock.ReleaseMutex() }

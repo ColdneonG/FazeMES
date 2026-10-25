@@ -85,11 +85,9 @@
           </el-form-item>
         </el-col>
         <el-col :span="8">
-          <el-form-item label="工单数量" prop="quantity">
-            <el-input-number
+          <el-form-item label="工单数量" prop="quantity" :rules="[quantityRule(true)]">
+            <MesQuantityInput
               v-model="formData.quantity"
-              :min="1"
-              :precision="2"
               class="!w-1/1"
               :disabled="isHeaderReadonly"
             />
@@ -203,6 +201,8 @@
 </template>
 
 <script setup lang="ts">
+import MesQuantityInput from '@/views/mes/components/MesQuantityInput.vue'
+import { quantityRule } from '@/utils/mesQuantity'
 import { getIntDictOptions, DICT_TYPE } from '@/utils/dict'
 import { ProWorkOrderApi, ProWorkOrderVO } from '@/api/mes/pro/workorder'
 import { AutoCodeRecordApi } from '@/api/mes/md/autocode/record'
@@ -256,7 +256,7 @@ const formData = ref({
   orderSourceType: undefined,
   orderSourceCode: undefined as string | undefined,
   productId: undefined as number | undefined,
-  quantity: undefined,
+  quantity: undefined as number | string | undefined,
   clientId: undefined as number | undefined,
   vendorId: undefined as number | undefined,
   batchCode: undefined as string | undefined,
@@ -439,7 +439,7 @@ const resetForm = () => {
     orderSourceType: undefined,
     orderSourceCode: undefined as string | undefined,
     productId: undefined as number | undefined,
-    quantity: undefined,
+    quantity: undefined as number | string | undefined,
     clientId: undefined as number | undefined,
     vendorId: undefined as number | undefined,
     batchCode: undefined as string | undefined,

@@ -39,14 +39,9 @@
         label="与主单位换算比例"
         prop="changeRate"
         v-if="formData.primaryFlag === false"
+        :rules="[quantityRule(true)]"
       >
-        <el-input-number
-          v-model="formData.changeRate"
-          :step="1"
-          :precision="4"
-          :min="0.0001"
-          class="!w-1/1"
-        />
+        <MesQuantityInput v-model="formData.changeRate" class="!w-1/1" />
       </el-form-item>
       <el-form-item label="状态" prop="status">
         <el-radio-group v-model="formData.status">
@@ -70,6 +65,8 @@
   </Dialog>
 </template>
 <script setup lang="ts">
+import MesQuantityInput from '@/views/mes/components/MesQuantityInput.vue'
+import { quantityRule, quantityUnits } from '@/utils/mesQuantity'
 import { getBoolDictOptions, getIntDictOptions, DICT_TYPE } from '@/utils/dict'
 import { MdUnitMeasureApi, MdUnitMeasureVO } from '@/api/mes/md/unitmeasure'
 import { CommonStatusEnum } from '@/utils/constants'
@@ -89,7 +86,7 @@ const formData = ref<MdUnitMeasureVO>({
   name: undefined,
   primaryFlag: true,
   primaryId: undefined,
-  changeRate: undefined,
+  changeRate: undefined as number | string | undefined,
   status: CommonStatusEnum.ENABLE,
   remark: undefined
 })
@@ -97,12 +94,31 @@ const formRules = reactive({
   code: [{ required: true, message: '单位编码不能为空', trigger: 'blur' }],
   name: [{ required: true, message: '单位名称不能为空', trigger: 'blur' }],
   primaryFlag: [{ required: true, message: '是否主单位不能为空', trigger: 'blur' }],
-  primaryId: [{ validator: (_rule: any, value: number | undefined, callback: any) => {
-    callback(formData.value.primaryFlag === false && !value ? new Error('辅单位必须选择主单位') : undefined)
-  }, trigger: 'change' }],
-  changeRate: [{ validator: (_rule: any, value: number | undefined, callback: any) => {
-    callback(formData.value.primaryFlag === false && (!value || value <= 0) ? new Error('换算比例必须大于零') : undefined)
-  }, trigger: 'change' }],
+  primaryId: [
+    {
+      validator: (_rule: any, value: number | undefined, callback: any) => {
+        callback(
+          formData.value.primaryFlag === false && !value
+            ? new Error('辅单位必须选择主单位')
+            : undefined
+        )
+      },
+      trigger: 'change'
+    }
+  ],
+  changeRate: [
+    {
+      validator: (_rule: any, value: number | string | undefined, callback: any) => {
+        callback(
+          formData.value.primaryFlag === false &&
+            (quantityUnits(value) === undefined || quantityUnits(value)! <= 0n)
+            ? new Error('换算比例必须大于零')
+            : undefined
+        )
+      },
+      trigger: 'change'
+    }
+  ],
   status: [{ required: true, message: '状态不能为空', trigger: 'blur' }]
 })
 const formRef = ref() // 表单 Ref
@@ -172,7 +188,7 @@ const resetForm = () => {
     name: undefined,
     primaryFlag: true,
     primaryId: undefined,
-    changeRate: undefined,
+    changeRate: undefined as number | string | undefined,
     status: CommonStatusEnum.ENABLE,
     remark: undefined
   }

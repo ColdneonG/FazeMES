@@ -11,12 +11,14 @@ import cn.hutool.crypto.digest.DigestUtil;
 import cn.iocoder.yudao.framework.common.pojo.PageResult;
 import cn.iocoder.yudao.framework.common.util.http.HttpUtils;
 import cn.iocoder.yudao.framework.common.util.object.BeanUtils;
+import cn.iocoder.yudao.framework.tenant.core.context.TenantContextHolder;
 import cn.iocoder.yudao.module.infra.controller.admin.file.vo.file.FileCreateReqVO;
 import cn.iocoder.yudao.module.infra.controller.admin.file.vo.file.FilePageReqVO;
 import cn.iocoder.yudao.module.infra.controller.admin.file.vo.file.FilePresignedUrlRespVO;
 import cn.iocoder.yudao.module.infra.dal.dataobject.file.FileDO;
 import cn.iocoder.yudao.module.infra.dal.mysql.file.FileMapper;
 import cn.iocoder.yudao.module.infra.framework.file.core.client.FileClient;
+import cn.iocoder.yudao.module.infra.framework.file.core.client.s3.S3FileClient;
 import cn.iocoder.yudao.module.infra.framework.file.core.utils.FilePathUtils;
 import cn.iocoder.yudao.module.infra.framework.file.core.utils.FileTypeUtils;
 import com.google.common.annotations.VisibleForTesting;
@@ -26,6 +28,8 @@ import org.springframework.stereotype.Service;
 
 import java.util.List;
 import java.util.Set;
+import java.util.Objects;
+import java.util.UUID;
 
 import static cn.hutool.core.date.DatePattern.PURE_DATE_PATTERN;
 import static cn.iocoder.yudao.framework.common.exception.util.ServiceExceptionUtil.exception;
@@ -74,7 +78,7 @@ public class FileServiceImpl implements FileService {
      * 算法：当前时间戳（毫秒）+ 5 位随机数；目的是保证文件的唯一性，避免覆盖
      * 定制：可按需调整成 UUID、或者其他方式
      */
-    static boolean PATH_SUFFIX_TIMESTAMP_ENABLE = false;
+    static boolean PATH_SUFFIX_TIMESTAMP_ENABLE = true;
     /**
      * 后缀是否作为上级目录
      *
@@ -88,6 +92,9 @@ public class FileServiceImpl implements FileService {
 
     @Resource
     private FileMapper fileMapper;
+
+    @Resource
+    private FileUploadTicketService uploadTicketService;
 
     @Override
     public PageResult<FileDO> getFilePage(FilePageReqVO pageReqVO) {
@@ -123,7 +130,7 @@ public class FileServiceImpl implements FileService {
         }
 
         // 2.1 生成上传的 path，需要保证唯一
-        String path = generateUploadPath(name, directory);
+        String path = tenantPathPrefix() + generateUploadPath(name, directory);
         // 2.2 上传到文件存储器
         FileClient client = fileConfigService.getMasterFileClient();
         Assert.notNull(client, "客户端(master) 不能为空");
@@ -131,6 +138,7 @@ public class FileServiceImpl implements FileService {
 
         // 3. 保存到数据库
         fileMapper.insert(new FileDO().setConfigId(client.getId())
+                .setTenantId(TenantContextHolder.getRequiredTenantId())
                 .setName(name).setPath(path).setUrl(url)
                 .setType(type).setSize((long) content.length));
         return url;
@@ -181,16 +189,20 @@ public class FileServiceImpl implements FileService {
     @SneakyThrows
     public FilePresignedUrlRespVO presignPutUrl(String name, String directory) {
         // 1.1 生成上传的 path，需要保证唯一
-        String path = generateUploadPath(name, directory);
+        String path = tenantPathPrefix() + "uploads/" + UUID.randomUUID() + "/" + generateUploadPath(name, directory);
         // 1.2 前端直传无法读取文件内容，此处仅校验文件名类型
         validateFileType(name);
 
         // 2. 获取文件预签名地址
         FileClient fileClient = fileConfigService.getMasterFileClient();
+        if (!(fileClient instanceof S3FileClient)) throw exception(FILE_CLIENT_UPLOAD_DISABLED);
         String uploadUrl = fileClient.presignPutUrl(path);
         String visitUrl = fileClient.presignGetUrl(path, null);
+        String ticket = uploadTicketService.issue(new FileUploadTicketService.Ticket()
+                .setTenantId(TenantContextHolder.getRequiredTenantId()).setConfigId(fileClient.getId())
+                .setPath(path).setName(name).setUrl(HttpUtils.removeUrlQuery(visitUrl)));
         return new FilePresignedUrlRespVO().setConfigId(fileClient.getId())
-                .setPath(path).setUploadUrl(uploadUrl).setUrl(visitUrl);
+                .setPath(path).setUploadUrl(uploadUrl).setUrl(visitUrl).setUploadTicket(ticket);
     }
 
     @Override
@@ -210,11 +222,18 @@ public class FileServiceImpl implements FileService {
             throw exception(FILE_TYPE_NOT_ALLOWED);
         }
         createReqVO.setType(type);
+        if (!createReqVO.getPath().startsWith(tenantPathPrefix())) throw exception(FILE_PATH_INVALID);
+        FileClient client = fileConfigService.getFileClient(createReqVO.getConfigId());
+        if (!(client instanceof S3FileClient)) throw exception(FILE_CLIENT_UPLOAD_DISABLED);
+        var ticket = uploadTicketService.consume(createReqVO.getUploadTicket(), TenantContextHolder.getRequiredTenantId(),
+                createReqVO.getConfigId(), createReqVO.getPath(), createReqVO.getName());
+        if (fileMapper.countAnyRegistration(createReqVO.getConfigId(), createReqVO.getPath()) != 0) throw exception(FILE_PATH_EXISTS);
         // 1.3 处理 URL 的合法性，移除 URL 中的查询参数（例如签名参数），保证 URL 的唯一性
-        createReqVO.setUrl(HttpUtils.removeUrlQuery(createReqVO.getUrl())); // 目的：移除私有桶情况下，URL 的签名参数
+        createReqVO.setUrl(ticket.getUrl()); // Only the URL produced by the trusted storage configuration is retained.
 
         // 2. 保存到数据库
         FileDO file = BeanUtils.toBean(createReqVO, FileDO.class);
+        file.setTenantId(TenantContextHolder.getRequiredTenantId());
         fileMapper.insert(file);
         return file.getId();
     }
@@ -252,7 +271,8 @@ public class FileServiceImpl implements FileService {
     @SneakyThrows
     public void deleteFileList(List<Long> ids) {
         // 删除文件
-        List<FileDO> files = fileMapper.selectByIds(ids);
+        // Validate every record before deleting any object; a foreign id cannot cause a partial batch.
+        List<FileDO> files = ids.stream().distinct().map(this::validateFileExists).toList();
         for (FileDO file : files) {
             FilePathUtils.validatePath(file.getPath());
             // 获取客户端
@@ -268,7 +288,7 @@ public class FileServiceImpl implements FileService {
 
     private FileDO validateFileExists(Long id) {
         FileDO fileDO = fileMapper.selectById(id);
-        if (fileDO == null) {
+        if (fileDO == null || !Objects.equals(fileDO.getTenantId(), TenantContextHolder.getRequiredTenantId())) {
             throw exception(FILE_NOT_EXISTS);
         }
         return fileDO;
@@ -278,6 +298,9 @@ public class FileServiceImpl implements FileService {
     public byte[] getFileContent(Long configId, String path) throws Exception {
         // 1. 校验路径合法性
         FilePathUtils.validatePath(path);
+
+        // An existing physical object is not sufficient authorization. Require a registered owned record.
+        if (getFileByConfigIdAndPath(configId, path) == null) throw exception(FILE_NOT_EXISTS);
 
         // 2.1 获取客户端
         FileClient client = fileConfigService.getFileClient(configId);
@@ -289,6 +312,10 @@ public class FileServiceImpl implements FileService {
     @Override
     public FileDO getFileByConfigIdAndPath(Long configId, String path) {
         return fileMapper.selectLatestByConfigIdAndPath(configId, path);
+    }
+
+    private String tenantPathPrefix() {
+        return "tenant/" + TenantContextHolder.getRequiredTenantId() + "/";
     }
 
 }

@@ -79,8 +79,8 @@
         <el-form-item v-if="bomFormType === 'update'" label="单位">
           <el-input :model-value="formData.unitMeasureName" disabled />
         </el-form-item>
-        <el-form-item label="预计使用量" prop="quantity">
-          <el-input-number v-model="formData.quantity" :min="0" :precision="2" class="!w-1/1" />
+        <el-form-item label="预计使用量" prop="quantity" :rules="[quantityRule(true)]">
+          <MesQuantityInput v-model="formData.quantity" class="!w-1/1" />
         </el-form-item>
         <el-form-item label="备注" prop="remark">
           <el-input type="textarea" v-model="formData.remark" placeholder="请输入备注" />
@@ -95,6 +95,8 @@
 </template>
 
 <script setup lang="ts">
+import MesQuantityInput from '@/views/mes/components/MesQuantityInput.vue'
+import { quantityRule } from '@/utils/mesQuantity'
 import { ProWorkOrderBomApi, ProWorkOrderBomVO } from '@/api/mes/pro/workorder/bom'
 import { MesProWorkOrderStatusEnum, MesProWorkOrderTypeEnum } from '@/views/mes/utils/constants'
 import { DICT_TYPE } from '@/utils/dict'
@@ -173,7 +175,7 @@ const formData = ref({
   itemId: undefined as number | undefined,
   itemName: undefined as string | undefined,
   unitMeasureName: undefined as string | undefined,
-  quantity: undefined as number | undefined,
+  quantity: undefined as number | string | undefined,
   remark: undefined as string | undefined
 })
 const formRules = reactive({
@@ -189,7 +191,7 @@ const resetForm = () => {
     itemId: undefined,
     itemName: undefined,
     unitMeasureName: undefined,
-    quantity: undefined,
+    quantity: undefined as number | string | undefined,
     remark: undefined
   }
   formRef.value?.resetFields()

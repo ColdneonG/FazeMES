@@ -68,23 +68,19 @@
           </el-form-item>
         </el-col>
         <el-col :span="8" v-if="formData.safeStockFlag">
-          <el-form-item label="最低库存量" prop="minStock">
-            <el-input-number
+          <el-form-item label="最低库存量" prop="minStock" :rules="[quantityRule(false)]">
+            <MesQuantityInput
               v-model="formData.minStock"
               placeholder="请输入最低库存量"
-              :min="0"
-              :precision="2"
               class="!w-1/1"
             />
           </el-form-item>
         </el-col>
         <el-col :span="8" v-if="formData.safeStockFlag">
-          <el-form-item label="最高库存量" prop="maxStock">
-            <el-input-number
+          <el-form-item label="最高库存量" prop="maxStock" :rules="[quantityRule(false)]">
+            <MesQuantityInput
               v-model="formData.maxStock"
               placeholder="请输入最高库存量"
-              :min="0"
-              :precision="2"
               class="!w-1/1"
             />
           </el-form-item>
@@ -133,6 +129,8 @@
   <BarcodeDetail ref="barcodeDetailRef" />
 </template>
 <script setup lang="ts">
+import MesQuantityInput from '@/views/mes/components/MesQuantityInput.vue'
+import { quantityRule } from '@/utils/mesQuantity'
 import { getIntDictOptions, DICT_TYPE } from '@/utils/dict'
 import { MdItemApi, MdItemVO } from '@/api/mes/md/item'
 import { AutoCodeRecordApi } from '@/api/mes/md/autocode/record'
@@ -174,8 +172,8 @@ const formData = ref({
   itemTypeId: undefined as number | undefined,
   status: CommonStatusEnum.DISABLE,
   safeStockFlag: false,
-  minStock: 0,
-  maxStock: 0,
+  minStock: 0 as number | string,
+  maxStock: 0 as number | string,
   highValue: false,
   batchFlag: true,
   remark: undefined,
@@ -268,8 +266,8 @@ const resetForm = () => {
     itemTypeId: undefined,
     status: CommonStatusEnum.DISABLE,
     safeStockFlag: false,
-    minStock: 0,
-    maxStock: 0,
+    minStock: 0 as number | string,
+    maxStock: 0 as number | string,
     highValue: false,
     batchFlag: true,
     remark: undefined,

@@ -23,14 +23,8 @@
       <el-form-item label="库位" prop="areaId" v-if="formData.locationId">
         <WmWarehouseAreaSelect v-model="formData.areaId" :location-id="formData.locationId" />
       </el-form-item>
-      <el-form-item label="数量" prop="quantity">
-        <el-input-number
-          v-model="formData.quantity"
-          :precision="2"
-          :min="0"
-          controls-position="right"
-          class="!w-1/1"
-        />
+      <el-form-item label="数量" prop="quantity" :rules="[quantityRule(true)]">
+        <MesQuantityInput v-model="formData.quantity" class="!w-1/1" />
       </el-form-item>
     </el-form>
     <template #footer>
@@ -41,6 +35,8 @@
 </template>
 
 <script setup lang="ts">
+import MesQuantityInput from '@/views/mes/components/MesQuantityInput.vue'
+import { quantityRule } from '@/utils/mesQuantity'
 import {
   WmProductReceiptDetailApi,
   WmProductReceiptDetailVO
@@ -72,7 +68,7 @@ const formData = ref({
   lineId: undefined as number | undefined,
   receiptId: undefined as number | undefined,
   itemId: undefined as number | undefined,
-  quantity: undefined as number | undefined,
+  quantity: undefined as number | string | undefined,
   warehouseId: undefined as number | undefined,
   locationId: undefined as number | undefined,
   areaId: undefined as number | undefined
@@ -136,7 +132,7 @@ const resetForm = () => {
     lineId: undefined,
     receiptId: undefined,
     itemId: undefined,
-    quantity: undefined,
+    quantity: undefined as number | string | undefined,
     warehouseId: undefined,
     locationId: undefined,
     areaId: undefined

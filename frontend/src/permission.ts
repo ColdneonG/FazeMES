@@ -1,7 +1,8 @@
 import router from './router'
 import type { RouteRecordRaw } from 'vue-router'
 import { isRelogin } from '@/config/axios/service'
-import { getAccessToken } from '@/utils/auth'
+import { getAccessToken, getTenantId } from '@/utils/auth'
+import { ensureFileMediaSession } from '@/utils/fileMediaSession'
 import { useTitle } from '@/hooks/web/useTitle'
 import { useNProgress } from '@/hooks/web/useNProgress'
 import { usePageLoading } from '@/hooks/web/usePageLoading'
@@ -36,6 +37,8 @@ router.beforeEach(async (to, from, next) => {
     return
   }
   if (getAccessToken()) {
+    // Establish browser media authentication before profile/SOP images are mounted after a reload.
+    await ensureFileMediaSession(getAccessToken(), getTenantId()).catch(() => undefined)
     if (to.path === '/login') {
       next({ path: '/' })
     } else {

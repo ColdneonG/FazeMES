@@ -11,7 +11,7 @@ export interface WmOutsourceIssueDetailVO {
   itemName: string
   specification: string
   unitMeasureName: string
-  quantity: number
+  quantity: number | string
   batchId: number
   batchCode: string
   warehouseId: number

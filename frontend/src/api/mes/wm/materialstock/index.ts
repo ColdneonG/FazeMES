@@ -22,7 +22,7 @@ export interface WmMaterialStockVO {
   areaName: string
   vendorId: number
   vendorName: string
-  quantity: number
+  quantity: number | string
   receiptTime: string
   frozen: boolean
   qualityHold?: boolean

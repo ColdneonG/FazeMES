@@ -11,6 +11,7 @@ import jakarta.annotation.Resource;
 import org.junit.jupiter.api.Test;
 
 import java.math.BigDecimal;
+import java.time.LocalDateTime;
 import java.util.List;
 import java.util.function.Consumer;
 
@@ -44,6 +45,25 @@ public class MesProTaskMapperTest extends BaseDbUnitTest {
             o.setChangedQuantity(new BigDecimal("0.00"));
             consumer.accept(o);
         });
+    }
+
+    @Test
+    void scheduleConflictsUseHalfOpenIntervalsAndExcludeSelfTerminalAndOtherStations() {
+        LocalDateTime start = LocalDateTime.of(2026, 11, 2, 16, 0);
+        var overlap = createTaskPojo(t -> t.setWorkstationId(10L).setStatus(0)
+                .setStartTime(start.minusHours(1)).setEndTime(start.plusHours(1)));
+        taskMapper.insert(overlap);
+        for (int status : List.of(4, 5)) taskMapper.insert(createTaskPojo(t -> t.setWorkstationId(10L).setStatus(status)
+                .setStartTime(start).setEndTime(start.plusHours(8))));
+        taskMapper.insert(createTaskPojo(t -> t.setWorkstationId(10L).setStatus(0)
+                .setStartTime(start.minusHours(8)).setEndTime(start)));
+        taskMapper.insert(createTaskPojo(t -> t.setWorkstationId(10L).setStatus(0)
+                .setStartTime(start.plusHours(8)).setEndTime(start.plusHours(16))));
+        taskMapper.insert(createTaskPojo(t -> t.setWorkstationId(11L).setStatus(0)
+                .setStartTime(start).setEndTime(start.plusHours(8))));
+        var matches = taskMapper.selectScheduleOverlaps(10L, start, start.plusHours(8), null);
+        assertEquals(List.of(overlap.getId()), matches.stream().map(MesProTaskDO::getId).toList());
+        assertEquals(List.of(), taskMapper.selectScheduleOverlaps(10L, start, start.plusHours(8), overlap.getId()));
     }
 
     // ==================== selectPage 基础过滤 ====================

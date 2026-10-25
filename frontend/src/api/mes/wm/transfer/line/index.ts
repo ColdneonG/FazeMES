@@ -11,7 +11,7 @@ export interface WmTransferLineVO {
   specification?: string
   unitName?: string
   unitMeasureName?: string
-  quantity: number
+  quantity: number | string
   batchId: number
   batchCode?: string
   fromWarehouseId: number

@@ -7,7 +7,7 @@ export interface WmProductReceiptDetailVO {
   receiptId: number
   itemId: number
   itemCode: string
-  quantity: number
+  quantity: number | string
   batchId: number
   warehouseId: number
   warehouseName: string

@@ -5,7 +5,7 @@ export interface MdProductBomVO {
   id?: number // BOM 编号
   itemId: number // 物料产品 ID
   bomItemId: number // BOM 物料 ID
-  quantity: number // 物料使用比例
+  quantity: number | string // 物料使用比例
   status?: number // 是否启用
   remark?: string // 备注
   createTime?: Date // 创建时间

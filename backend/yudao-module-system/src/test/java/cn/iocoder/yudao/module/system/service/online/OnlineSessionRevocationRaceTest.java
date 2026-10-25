@@ -44,6 +44,7 @@ class OnlineSessionRevocationRaceTest extends BaseDbAndRedisUnitTest {
         for (String token : credentials) {
             redis.delete(String.format(OAUTH2_ACCESS_TOKEN, token));
             redis.delete(String.format(OAUTH2_REVOKED_TOKEN, DigestUtil.sha256Hex(token)));
+            redis.delete(String.format(OAUTH2_REVOCATION_LOOKUP, DigestUtil.sha256Hex(token)));
         }
         TenantContextHolder.clear();
     }
@@ -196,5 +197,37 @@ class OnlineSessionRevocationRaceTest extends BaseDbAndRedisUnitTest {
         var access = fixture(true);
         doThrow(new IllegalStateException("Revocation status unavailable")).when(cache).isRevoked(eq(access.getAccessToken()), any());
         assertThrows(IllegalStateException.class, () -> tokenService.checkAccessToken(access.getAccessToken()));
+    }
+
+    @Test void ordinaryLogoutCannotBeUndoneByALateCredentialCacheWrite() {
+        var access = fixture(true);
+        assertNotNull(tokenService.removeAccessToken(access.getAccessToken()));
+        cache.set(access);
+        unauthorized(access.getAccessToken());
+        assertEquals(401, assertThrows(ServiceException.class,
+                () -> tokenService.refreshAccessToken(access.getRefreshToken(), "revocation-test")).getCode());
+    }
+
+    @Test void ordinaryLogoutUsingARotatedAccessTokenStillRevokesItsCurrentRefreshChain() {
+        var original = fixture(true);
+        when(clientService.validOAuthClientFromCache("revocation-test")).thenReturn(new OAuth2ClientDO()
+                .setClientId("revocation-test").setAccessTokenValiditySeconds(300).setRefreshTokenValiditySeconds(3600));
+        when(userService.getUser(7L)).thenReturn(new AdminUserDO().setNickname("Fixture").setDeptId(1L));
+        var rotated = tokenService.refreshAccessToken(original.getRefreshToken(), "revocation-test");
+        credentials.add(rotated.getAccessToken());
+        assertNull(accessMapper.selectByAccessToken(original.getAccessToken()));
+        unauthorized(original.getAccessToken()); // Retired evidence is deliberately not an authentication fallback.
+        assertNotNull(tokenService.removeAccessToken(original.getAccessToken()));
+        unauthorized(rotated.getAccessToken());
+        assertNull(refreshMapper.selectByRefreshToken(original.getRefreshToken()));
+    }
+
+    @Test void ordinaryLogoutRejectsAnotherTenantWithoutWritingRevocationMarkers() {
+        var access = fixture(true);
+        TenantContextHolder.setTenantId(2L);
+        assertEquals(403, assertThrows(ServiceException.class,
+                () -> tokenService.removeAccessToken(access.getAccessToken())).getCode());
+        verify(cache, never()).markRevoked(anyString(), any());
+        assertNotNull(accessMapper.selectById(access.getId()));
     }
 }

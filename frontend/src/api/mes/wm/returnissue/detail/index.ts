@@ -7,7 +7,7 @@ export interface WmReturnIssueDetailVO {
   lineId: number
   materialStockId: number
   itemId: number
-  quantity: number
+  quantity: number | string
   batchId?: number
   batchCode?: string
   warehouseId: number

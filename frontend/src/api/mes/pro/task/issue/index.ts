@@ -17,9 +17,9 @@ export interface ProTaskIssueVO {
   itemSpecification: string // 规格型号
   unitMeasureId: number // 单位编号
   unitMeasureName: string // 单位名称
-  issuedQuantity: number // 总投料数量
-  availableQuantity: number // 当前可用数量
-  usedQuantity: number // 当前使用数量
+  issuedQuantity: number | string // 总投料数量
+  availableQuantity: number | string // 当前可用数量
+  usedQuantity: number | string // 当前使用数量
   remark: string // 备注
 }
 

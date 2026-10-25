@@ -13,8 +13,8 @@ export interface MdItemVO {
   itemOrProduct?: string // 物料/产品标识
   status: number // 状态
   safeStockFlag: boolean // 是否启用安全库存
-  minStock: number // 最低库存量
-  maxStock: number // 最高库存量
+  minStock: number | string // 最低库存量
+  maxStock: number | string // 最高库存量
   highValue: boolean // 是否高值物料
   batchFlag: boolean // 是否启用批次管理
   remark: string // 备注

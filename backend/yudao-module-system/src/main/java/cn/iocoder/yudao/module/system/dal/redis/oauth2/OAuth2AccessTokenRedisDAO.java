@@ -20,6 +20,7 @@ import java.util.concurrent.TimeUnit;
 
 import static cn.iocoder.yudao.module.system.dal.redis.RedisKeyConstants.OAUTH2_ACCESS_TOKEN;
 import static cn.iocoder.yudao.module.system.dal.redis.RedisKeyConstants.OAUTH2_REVOKED_TOKEN;
+import static cn.iocoder.yudao.module.system.dal.redis.RedisKeyConstants.OAUTH2_REVOCATION_LOOKUP;
 
 /**
  * {@link OAuth2AccessTokenDO} 的 RedisDAO
@@ -55,6 +56,20 @@ public class OAuth2AccessTokenRedisDAO {
     public void deleteList(Collection<String> accessTokens) {
         List<String> redisKeys = CollectionUtils.convertList(accessTokens, OAuth2AccessTokenRedisDAO::formatKey);
         stringRedisTemplate.delete(redisKeys);
+    }
+
+    /** Keep rotation evidence until the old access expiry so an in-flight logout can revoke its chain. */
+    public void rememberForRevocation(OAuth2AccessTokenDO access) {
+        if (access.getExpiresTime() == null) return;
+        long seconds = Duration.between(LocalDateTime.now(), access.getExpiresTime()).getSeconds() + 61;
+        if (seconds <= 0) return;
+        stringRedisTemplate.opsForValue().set(String.format(OAUTH2_REVOCATION_LOOKUP,
+                DigestUtil.sha256Hex(access.getAccessToken())), JsonUtils.toJsonString(access), seconds, TimeUnit.SECONDS);
+    }
+
+    public OAuth2AccessTokenDO getRevocationSnapshot(String accessToken) {
+        return JsonUtils.parseObject(stringRedisTemplate.opsForValue().get(String.format(OAUTH2_REVOCATION_LOOKUP,
+                DigestUtil.sha256Hex(accessToken))), OAuth2AccessTokenDO.class);
     }
 
     /**

@@ -1,9 +1,9 @@
 import request from '@/config/axios'
 export interface ProductionDashboard {
-  produced: number
-  qualified: number
-  rejected: number
-  target: number
+  produced: number | string
+  qualified: number | string
+  rejected: number | string
+  target: number | string
   taskCount: number
   feedbackCount: number
   pendingInspection: number
@@ -22,7 +22,7 @@ export interface ProductionDashboard {
   }
   workshops: { id: number; name: string }[]
   workstations: { id: number; name: string; workshopId: number }[]
-  trend: { day: string; produced: number; qualified: number }[]
+  trend: { day: string; produced: number | string; qualified: number | string }[]
   devices: { status: number; count: number }[]
   tasks: {
     id: number
@@ -30,8 +30,8 @@ export interface ProductionDashboard {
     name: string
     workstationId: number
     workOrderId: number
-    quantity: number
-    producedQuantity: number
+    quantity: number | string
+    producedQuantity: number | string
     status: number
     startTime: string
     endTime: string
@@ -40,8 +40,8 @@ export interface ProductionDashboard {
     id: number
     code: string
     name: string
-    quantity: number
-    producedQuantity: number
+    quantity: number | string
+    producedQuantity: number | string
     status: number
   }[]
 }

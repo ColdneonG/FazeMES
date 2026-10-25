@@ -18,7 +18,7 @@ export interface SnMaterial {
   itemId: number
   batchId?: number
   batchCode?: string
-  quantity: number
+  quantity: number | string
 }
 export interface SnStation {
   id: number
@@ -44,7 +44,7 @@ export interface FeedbackOption {
   code: string
   taskId: number
   processId: number
-  feedbackQuantity: number
+  feedbackQuantity: number | string
 }
 export interface ConsumeOption {
   consumeDetailId: number
@@ -53,16 +53,16 @@ export interface ConsumeOption {
   batchId?: number
   batchCode?: string
   materialStockId: number
-  quantity: number
-  allocatedQuantity: number
-  availableQuantity: number
-  unitQuantity: number
+  quantity: number | string
+  allocatedQuantity: number | string
+  availableQuantity: number | string
+  unitQuantity: number | string
 }
 export interface StationRequest {
   requestKey: string
   traceId: number
   feedbackId: number
-  materials: { consumeDetailId: number; quantity: number }[]
+  materials: { consumeDetailId: number; quantity: number | string }[]
 }
 const base = '/mes/pro/sn-trace'
 export const SnTraceApi = {

@@ -10,6 +10,8 @@ export interface FilePresignedUrlRespVO {
   url: string
   // 文件路径
   path: string
+  // 服务端签发的一次性登记凭据
+  uploadTicket: string
 }
 
 // 查询文件列表

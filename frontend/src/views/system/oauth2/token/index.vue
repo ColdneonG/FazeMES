@@ -1,5 +1,4 @@
 <template>
-
   <ContentWrap>
     <!-- 搜索工作栏 -->
     <el-form
@@ -52,8 +51,8 @@
   <!-- 列表 -->
   <ContentWrap>
     <el-table v-loading="loading" :data="list">
-      <el-table-column label="访问令牌" align="center" prop="accessToken" width="300" />
-      <el-table-column label="刷新令牌" align="center" prop="refreshToken" width="300" />
+      <el-table-column label="会话编号" align="center" prop="id" />
+      <el-table-column label="客户端编号" align="center" prop="clientId" />
       <el-table-column label="用户编号" align="center" prop="userId" />
       <el-table-column label="用户类型" align="center" prop="userType">
         <template #default="scope">
@@ -79,7 +78,7 @@
           <el-button
             link
             type="danger"
-            @click="handleForceLogout(scope.row.accessToken)"
+            @click="handleForceLogout(scope.row.id)"
             v-hasPermi="['system:oauth2-token:delete']"
           >
             强退
@@ -144,12 +143,12 @@ const resetQuery = () => {
 }
 
 /** 强制退出操作 */
-const handleForceLogout = async (accessToken: string) => {
+const handleForceLogout = async (id: number) => {
   try {
     // 删除的二次确认
     await message.confirm('是否要强制退出用户')
     // 发起删除
-    await OAuth2AccessTokenApi.deleteAccessToken(accessToken)
+    await OAuth2AccessTokenApi.deleteAccessToken(id)
     message.success(t('common.success'))
     // 刷新列表
     await getList()

@@ -35,4 +35,7 @@ public class FilePresignedUrlRespVO {
     @Schema(description = "文件路径", requiredMode = Schema.RequiredMode.REQUIRED, example = "xxx.png")
     private String path;
 
+    @Schema(description = "上传后登记所需的一次性凭据，十分钟有效")
+    private String uploadTicket;
+
 }

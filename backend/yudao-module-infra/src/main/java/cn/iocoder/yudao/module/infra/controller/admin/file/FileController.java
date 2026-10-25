@@ -3,14 +3,17 @@ package cn.iocoder.yudao.module.infra.controller.admin.file;
 import cn.hutool.core.io.FileUtil;
 import cn.hutool.core.io.IoUtil;
 import cn.hutool.core.util.StrUtil;
+import cn.iocoder.yudao.framework.apilog.core.annotation.ApiAccessLog;
 import cn.iocoder.yudao.framework.common.pojo.CommonResult;
 import cn.iocoder.yudao.framework.common.pojo.PageResult;
 import cn.iocoder.yudao.framework.common.util.http.HttpUtils;
 import cn.iocoder.yudao.framework.common.util.object.BeanUtils;
 import cn.iocoder.yudao.framework.tenant.core.aop.TenantIgnore;
+import cn.iocoder.yudao.framework.tenant.core.context.TenantContextHolder;
 import cn.iocoder.yudao.module.infra.controller.admin.file.vo.file.*;
 import cn.iocoder.yudao.module.infra.dal.dataobject.file.FileDO;
 import cn.iocoder.yudao.module.infra.service.file.FileService;
+import cn.iocoder.yudao.module.infra.service.file.FileMediaSessionService;
 import io.swagger.v3.oas.annotations.Operation;
 import io.swagger.v3.oas.annotations.Parameter;
 import io.swagger.v3.oas.annotations.Parameters;
@@ -43,6 +46,27 @@ public class FileController {
     @Resource
     private FileService fileService;
 
+    @Resource
+    private FileMediaSessionService mediaSessionService;
+
+    @PostMapping("/media-session")
+    @Operation(summary = "为浏览器附件建立短期只读会话")
+    @PreAuthorize("isAuthenticated()")
+    @ApiAccessLog(enable = false)
+    public CommonResult<String> createMediaSession(HttpServletRequest request, HttpServletResponse response) {
+        return success(mediaSessionService.issue(request, response).toString());
+    }
+
+    @DeleteMapping("/media-session")
+    @PermitAll
+    @TenantIgnore
+    @Operation(summary = "清除当前浏览器附件会话")
+    @ApiAccessLog(enable = false)
+    public CommonResult<Boolean> deleteMediaSession(HttpServletRequest request, HttpServletResponse response) {
+        mediaSessionService.clear(request, response);
+        return success(true);
+    }
+
     @PostMapping("/upload")
     @Operation(summary = "上传文件", description = "模式一：后端上传文件")
     @Parameter(name = "file", description = "文件附件", required = true,
@@ -55,6 +79,7 @@ public class FileController {
     }
 
     @GetMapping("/presigned-url")
+    @ApiAccessLog(responseEnable = false)
     @Operation(summary = "获取文件预签名地址（上传）", description = "模式二：前端上传文件：用于前端直接上传七牛、阿里云 OSS 等文件存储器")
     @Parameters({
             @Parameter(name = "name", description = "文件名称", required = true),
@@ -67,6 +92,7 @@ public class FileController {
     }
 
     @PostMapping("/create")
+    @ApiAccessLog(sanitizeKeys = {"uploadTicket"})
     @Operation(summary = "创建文件", description = "模式二：前端上传文件：配合 presigned-url 接口，记录上传了上传的文件")
     public CommonResult<Long> createFile(@Valid @RequestBody FileCreateReqVO createReqVO) {
         return success(fileService.createFile(createReqVO));
@@ -99,6 +125,8 @@ public class FileController {
     }
 
     @GetMapping("/{configId}/get/**")
+    // Spring permits the short-lived HttpOnly media cookie; authorize() below always validates it.
+    // This is not anonymous file access. The cookie cannot authenticate any write endpoint.
     @PermitAll
     @TenantIgnore
     @Operation(summary = "下载文件")
@@ -116,16 +144,27 @@ public class FileController {
         // https://gitee.com/zhijiantianya/ruoyi-vue-pro/pulls/1432/
         path = HttpUtils.decodeUrlPath(path);
 
-        // 读取内容
-        byte[] content = fileService.getFileContent(configId, path);
-        if (content == null) {
-            log.warn("[getFileContent][configId({}) path({}) 文件不存在]", configId, path);
-            response.setStatus(HttpStatus.NOT_FOUND.value());
-            return;
+        Long tenantId = mediaSessionService.authorize(request);
+        response.setHeader("Cache-Control", "private, no-store");
+        response.setHeader("Referrer-Policy", "no-referrer");
+        // Only the verified session supplies the tenant; query parameters cannot select file ownership.
+        Long priorTenant = TenantContextHolder.getTenantId();
+        boolean priorIgnore = TenantContextHolder.isIgnore();
+        try {
+            TenantContextHolder.setTenantId(tenantId);
+            TenantContextHolder.setIgnore(false);
+            byte[] content = fileService.getFileContent(configId, path);
+            if (content == null) {
+                response.setStatus(HttpStatus.NOT_FOUND.value());
+                return;
+            }
+            FileDO file = fileService.getFileByConfigIdAndPath(configId, path);
+            String filename = file != null && StrUtil.isNotEmpty(file.getName()) ? file.getName() : FileUtil.getName(path);
+            writeAttachment(response, filename, content);
+        } finally {
+            TenantContextHolder.setTenantId(priorTenant);
+            TenantContextHolder.setIgnore(priorIgnore);
         }
-        FileDO file = fileService.getFileByConfigIdAndPath(configId, path);
-        String filename = file != null && StrUtil.isNotEmpty(file.getName()) ? file.getName() : FileUtil.getName(path);
-        writeAttachment(response, filename, content);
     }
 
     @GetMapping("/page")

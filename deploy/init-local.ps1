@@ -7,6 +7,9 @@ param([switch]$CoreOnly,
 $ErrorActionPreference = 'Stop'
 $projectRoot = Split-Path -Parent $PSScriptRoot
 $runtimeRoot = Join-Path $projectRoot '.runtime'
+. (Join-Path $PSScriptRoot 'local-tools.ps1')
+$maintenanceLease = Enter-LocalMaintenanceLock -ProjectRoot $projectRoot
+try {
 New-Item -ItemType Directory -Force -Path $runtimeRoot,(Join-Path $runtimeRoot 'logs'),(Join-Path $runtimeRoot 'redis'),(Join-Path $runtimeRoot 'uploads') | Out-Null
 $secretPath = Join-Path $runtimeRoot 'secrets.local.json'
 if (-not (Test-Path -LiteralPath $secretPath)) {
@@ -214,4 +217,5 @@ logging:
 "@
 $taskConfig | Set-Content -LiteralPath (Join-Path $runtimeRoot 'application-meslocal.yaml') -Encoding utf8NoBOM
 @('bind 127.0.0.1','protected-mode yes',"port $($taskSecrets.RedisPort)","requirepass $($taskSecrets.RedisPassword)",('dir "' + (Join-Path $runtimeRoot 'redis').Replace('\','/') + '"'),'save ""','appendonly no','maxmemory 128mb') | Set-Content -LiteralPath (Join-Path $runtimeRoot 'redis.local.conf') -Encoding utf8NoBOM
+} finally { Exit-LocalMaintenanceLock -Lease $maintenanceLease }
 Write-Host 'Local configuration ready. Database yudao_mes; Redis 6381; API 48080; UI 5173.'

@@ -42,13 +42,8 @@
             @change="handleBomItemChange"
           />
         </el-form-item>
-        <el-form-item label="用料比例" prop="quantity">
-          <el-input-number
-            v-model="formData.quantity"
-            :min="0"
-            :precision="2"
-            controls-position="right"
-          />
+        <el-form-item label="用料比例" prop="quantity" :rules="[quantityRule(true)]">
+          <MesQuantityInput v-model="formData.quantity" />
         </el-form-item>
         <el-form-item label="备注" prop="remark">
           <el-input v-model="formData.remark" type="textarea" placeholder="请输入备注" />
@@ -63,6 +58,8 @@
 </template>
 
 <script setup lang="ts">
+import MesQuantityInput from '@/views/mes/components/MesQuantityInput.vue'
+import { quantityRule } from '@/utils/mesQuantity'
 import { ProRouteProductBomApi, ProRouteProductBomVO } from '@/api/mes/pro/route/productbom'
 import { ProRouteProcessApi } from '@/api/mes/pro/route/process'
 import MdProductBomSelect from '@/views/mes/md/item/components/MdProductBomSelect.vue'
@@ -137,7 +134,7 @@ const openForm = (type: string, row?: ProRouteProductBomVO) => {
       routeId: props.routeId,
       processId: Number(activeProcessId.value),
       productId: props.productId,
-      quantity: 1
+      quantity: 1 as number | string
     }
   } else {
     formData.value = { ...row }

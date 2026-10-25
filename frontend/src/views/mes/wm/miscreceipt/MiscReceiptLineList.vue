@@ -41,14 +41,8 @@
           </el-form-item>
         </el-col>
         <el-col :span="8">
-          <el-form-item label="入库数量" prop="quantity">
-            <el-input-number
-              v-model="formData.quantity"
-              :precision="2"
-              :min="0.01"
-              controls-position="right"
-              class="!w-1/1"
-            />
+          <el-form-item label="入库数量" prop="quantity" :rules="[quantityRule(true)]">
+            <MesQuantityInput v-model="formData.quantity" class="!w-1/1" />
           </el-form-item>
         </el-col>
         <el-col :span="8">
@@ -106,6 +100,8 @@
 </template>
 
 <script setup lang="ts">
+import MesQuantityInput from '@/views/mes/components/MesQuantityInput.vue'
+import { quantityRule } from '@/utils/mesQuantity'
 import { WmMiscReceiptLineApi, WmMiscReceiptLineVO } from '@/api/mes/wm/miscreceipt/line/index'
 import MdItemSelect from '@/views/mes/md/item/components/MdItemSelect.vue'
 import WmWarehouseSelect from '@/views/mes/wm/warehouse/components/WmWarehouseSelect.vue'
@@ -158,7 +154,7 @@ const formData = ref({
   id: undefined as number | undefined,
   receiptId: props.receiptId,
   itemId: undefined,
-  quantity: undefined,
+  quantity: undefined as number | string | undefined,
   batchCode: undefined,
   warehouseId: undefined,
   locationId: undefined,
@@ -167,10 +163,7 @@ const formData = ref({
 })
 const formRules = reactive({
   itemId: [{ required: true, message: '物料不能为空', trigger: 'change' }],
-  quantity: [
-    { required: true, message: '入库数量不能为空', trigger: 'blur' },
-    { type: 'number', min: 0.01, message: '入库数量必须大于 0', trigger: 'blur' }
-  ],
+  quantity: [quantityRule(true)],
   warehouseId: [{ required: true, message: '仓库不能为空', trigger: 'change' }],
   locationId: [{ required: true, message: '库区不能为空', trigger: 'change' }],
   areaId: [{ required: true, message: '库位不能为空', trigger: 'change' }]
@@ -229,7 +222,7 @@ const resetForm = () => {
     id: undefined,
     receiptId: props.receiptId,
     itemId: undefined,
-    quantity: undefined,
+    quantity: undefined as number | string | undefined,
     batchCode: undefined,
     warehouseId: undefined,
     locationId: undefined,

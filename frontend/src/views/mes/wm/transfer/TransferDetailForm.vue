@@ -22,14 +22,8 @@
       <el-form-item label="移入库位" prop="toAreaId" v-if="formData.toLocationId">
         <WmWarehouseAreaSelect v-model="formData.toAreaId" :location-id="formData.toLocationId" />
       </el-form-item>
-      <el-form-item label="数量" prop="quantity">
-        <el-input-number
-          v-model="formData.quantity"
-          :precision="2"
-          :min="0"
-          controls-position="right"
-          class="!w-full"
-        />
+      <el-form-item label="数量" prop="quantity" :rules="[quantityRule(true)]">
+        <MesQuantityInput v-model="formData.quantity" class="!w-full" />
       </el-form-item>
       <el-form-item label="备注" prop="remark">
         <el-input v-model="formData.remark" type="textarea" placeholder="请输入备注" />
@@ -43,6 +37,8 @@
 </template>
 
 <script setup lang="ts">
+import MesQuantityInput from '@/views/mes/components/MesQuantityInput.vue'
+import { quantityRule } from '@/utils/mesQuantity'
 import { WmTransferDetailApi, WmTransferDetailVO } from '@/api/mes/wm/transfer/detail'
 import MdItemSelect from '@/views/mes/md/item/components/MdItemSelect.vue'
 import WmWarehouseSelect from '@/views/mes/wm/warehouse/components/WmWarehouseSelect.vue'
@@ -71,7 +67,7 @@ const formData = ref({
   lineId: undefined as number | undefined,
   transferId: undefined as number | undefined,
   itemId: undefined as number | undefined,
-  quantity: undefined as number | undefined,
+  quantity: undefined as number | string | undefined,
   batchId: undefined as number | undefined,
   toWarehouseId: undefined as number | undefined,
   toLocationId: undefined as number | undefined,
@@ -142,7 +138,7 @@ const resetForm = () => {
     lineId: undefined,
     transferId: undefined,
     itemId: undefined,
-    quantity: undefined,
+    quantity: undefined as number | string | undefined,
     batchId: undefined,
     toWarehouseId: undefined,
     toLocationId: undefined,

@@ -92,15 +92,8 @@
           </el-form-item>
         </el-col>
         <el-col :span="8">
-          <el-form-item label="入库数量" prop="quantity">
-            <el-input-number
-              v-model="formData.quantity"
-              :precision="2"
-              :min="0"
-              :max="quantityMax"
-              controls-position="right"
-              class="!w-1/1"
-            />
+          <el-form-item label="入库数量" prop="quantity" :rules="[quantityRule(true, quantityMax)]">
+            <MesQuantityInput v-model="formData.quantity" class="!w-1/1" />
           </el-form-item>
         </el-col>
         <el-col :span="8">
@@ -141,6 +134,8 @@
 </template>
 
 <script setup lang="ts">
+import MesQuantityInput from '@/views/mes/components/MesQuantityInput.vue'
+import { quantityRule } from '@/utils/mesQuantity'
 import { WmProductReceiptLineApi, WmProductReceiptLineVO } from '@/api/mes/wm/productreceipt/line'
 import { WmMaterialStockVO } from '@/api/mes/wm/materialstock'
 import WmMaterialStockSelect from '@/views/mes/wm/materialstock/components/WmMaterialStockSelect.vue'
@@ -202,13 +197,13 @@ const dialogVisible = ref(false)
 const dialogTitle = ref('')
 const formLoading = ref(false)
 const lineFormType = ref('')
-const quantityMax = ref<number | undefined>(undefined)
+const quantityMax = ref<number | string | undefined>(undefined)
 const formData = ref({
   id: undefined,
   receiptId: undefined as number | undefined,
   materialStockId: undefined as number | undefined,
   itemId: undefined as number | undefined,
-  quantity: undefined as number | undefined,
+  quantity: undefined as number | string | undefined,
   batchId: undefined as number | undefined,
   batchCode: undefined as string | undefined,
   remark: undefined
@@ -282,7 +277,7 @@ const resetForm = () => {
     receiptId: undefined,
     materialStockId: undefined,
     itemId: undefined,
-    quantity: undefined,
+    quantity: undefined as number | string | undefined,
     batchId: undefined,
     batchCode: undefined,
     remark: undefined

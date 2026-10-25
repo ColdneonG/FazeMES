@@ -2,6 +2,9 @@
 $ErrorActionPreference = 'Stop'
 $projectRoot = Split-Path -Parent $PSScriptRoot
 $runtimeRoot = Join-Path $projectRoot '.runtime'
+. (Join-Path $PSScriptRoot 'local-tools.ps1')
+# Gracefully stop any in-flight dump before shutting down its MySQL connection.
+Stop-LocalBackupScheduler -ProjectRoot $projectRoot
 foreach ($name in @('frontend','backend','face-auth','redis','mysql')) {
     $pidPath = Join-Path $runtimeRoot "$name.pid"
     if (-not (Test-Path -LiteralPath $pidPath)) { continue }

@@ -17,10 +17,10 @@ export interface QcIqcVO {
   itemName: string // 产品物料名称（关联查询）
   itemSpecification: string // 规格型号（关联查询）
   unitName: string // 单位名称（关联查询）
-  receivedQuantity: number // 本次接收数量
-  checkQuantity: number // 本次检测数量
-  qualifiedQuantity: number // 合格品数量
-  unqualifiedQuantity: number // 不合格品数量
+  receivedQuantity: number | string // 本次接收数量
+  checkQuantity: number | string // 本次检测数量
+  qualifiedQuantity: number | string // 合格品数量
+  unqualifiedQuantity: number | string // 不合格品数量
   criticalRate: number // 致命缺陷率（%）
   majorRate: number // 严重缺陷率（%）
   minorRate: number // 轻微缺陷率（%）

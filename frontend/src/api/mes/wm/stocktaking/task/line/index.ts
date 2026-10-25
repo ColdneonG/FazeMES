@@ -11,9 +11,9 @@ export interface StockTakingTaskLineVO {
   unitMeasureName?: string
   batchId?: number
   batchCode?: string
-  quantity?: number
-  takingQuantity?: number
-  differenceQuantity?: number
+  quantity?: number | string
+  takingQuantity?: number | string
+  differenceQuantity?: number | string
   warehouseId?: number
   warehouseName?: string
   locationId?: number
@@ -67,5 +67,5 @@ export interface StockTakingTaskLineSimpleVO {
   locationName?: string
   areaId?: number
   areaName?: string
-  quantity: number
+  quantity: number | string
 }

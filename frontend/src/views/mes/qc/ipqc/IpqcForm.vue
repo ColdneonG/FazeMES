@@ -1,6 +1,12 @@
 <!-- MES 过程检验单表单 -->
 <template>
-  <Dialog :title="dialogTitle" v-model="dialogVisible" :default-fullscreen="props.terminal" class="mes-qc-responsive" width="1080px">
+  <Dialog
+    :title="dialogTitle"
+    v-model="dialogVisible"
+    :default-fullscreen="props.terminal"
+    class="mes-qc-responsive"
+    width="1080px"
+  >
     <!-- 基本信息表单 -->
     <el-form
       ref="formRef"
@@ -27,7 +33,12 @@
         </el-col>
         <el-col :span="8">
           <el-form-item label="检验类型" prop="type">
-            <el-select v-model="formData.type" placeholder="请选择检验类型" class="!w-1/1" :disabled="formType !== 'create'">
+            <el-select
+              v-model="formData.type"
+              placeholder="请选择检验类型"
+              class="!w-1/1"
+              :disabled="formType !== 'create'"
+            >
               <el-option
                 v-for="dict in getIntDictOptions(DICT_TYPE.MES_IPQC_TYPE)"
                 :key="dict.value"
@@ -101,11 +112,9 @@
       <el-divider>检测情况</el-divider>
       <el-row :gutter="16">
         <el-col :span="8">
-          <el-form-item label="检测数量" prop="checkQuantity">
-            <el-input-number
+          <el-form-item label="检测数量" prop="checkQuantity" :rules="[quantityRule(true)]">
+            <MesQuantityInput
               v-model="formData.checkQuantity"
-              :min="0"
-              :precision="2"
               placeholder="请输入检测数量"
               class="!w-1/1"
               :disabled="isFromPendingTask"
@@ -113,22 +122,22 @@
           </el-form-item>
         </el-col>
         <el-col :span="8">
-          <el-form-item label="合格品数量" prop="qualifiedQuantity">
-            <el-input-number
+          <el-form-item label="合格品数量" prop="qualifiedQuantity" :rules="[quantityRule(false)]">
+            <MesQuantityInput
               v-model="formData.qualifiedQuantity"
-              :min="0"
-              :precision="2"
               placeholder="请输入合格品数量"
               class="!w-1/1"
             />
           </el-form-item>
         </el-col>
         <el-col :span="8">
-          <el-form-item label="不合格品数量" prop="unqualifiedQuantity">
-            <el-input-number
+          <el-form-item
+            label="不合格品数量"
+            prop="unqualifiedQuantity"
+            :rules="[quantityRule(false)]"
+          >
+            <MesQuantityInput
               v-model="formData.unqualifiedQuantity"
-              :min="0"
-              :precision="2"
               placeholder="请输入不合格品数量"
               class="!w-1/1"
             />
@@ -136,13 +145,11 @@
         </el-col>
       </el-row>
       <!-- 废品数量（当不合格数量大于 0 时显示） -->
-      <el-row :gutter="16" v-if="formData.unqualifiedQuantity && formData.unqualifiedQuantity > 0">
+      <el-row :gutter="16" v-if="(quantityUnits(formData.unqualifiedQuantity) ?? 0n) > 0n">
         <el-col :span="8">
-          <el-form-item label="工废数量" prop="laborScrapQuantity">
-            <el-input-number
+          <el-form-item label="工废数量" prop="laborScrapQuantity" :rules="[quantityRule(false)]">
+            <MesQuantityInput
               v-model="formData.laborScrapQuantity"
-              :min="0"
-              :precision="2"
               placeholder="请输入工废数量"
               class="!w-1/1"
               @change="handleScrapChanged"
@@ -150,11 +157,13 @@
           </el-form-item>
         </el-col>
         <el-col :span="8">
-          <el-form-item label="料废数量" prop="materialScrapQuantity">
-            <el-input-number
+          <el-form-item
+            label="料废数量"
+            prop="materialScrapQuantity"
+            :rules="[quantityRule(false)]"
+          >
+            <MesQuantityInput
               v-model="formData.materialScrapQuantity"
-              :min="0"
-              :precision="2"
               placeholder="请输入料废数量"
               class="!w-1/1"
               @change="handleScrapChanged"
@@ -162,11 +171,13 @@
           </el-form-item>
         </el-col>
         <el-col :span="8">
-          <el-form-item label="其他废品数量" prop="otherScrapQuantity">
-            <el-input-number
+          <el-form-item
+            label="其他废品数量"
+            prop="otherScrapQuantity"
+            :rules="[quantityRule(false)]"
+          >
+            <MesQuantityInput
               v-model="formData.otherScrapQuantity"
-              :min="0"
-              :precision="2"
               placeholder="请输入其他废品数量"
               class="!w-1/1"
               @change="handleScrapChanged"
@@ -291,6 +302,8 @@
 </template>
 
 <script setup lang="ts">
+import MesQuantityInput from '@/views/mes/components/MesQuantityInput.vue'
+import { quantityRule, quantityUnits, sumQuantities } from '@/utils/mesQuantity'
 import { DICT_TYPE, getIntDictOptions } from '@/utils/dict'
 import { AutoCodeRecordApi } from '@/api/mes/md/autocode/record'
 import { QcIpqcApi, QcIpqcVO } from '@/api/mes/qc/ipqc'
@@ -348,12 +361,12 @@ const formData = ref({
   workstationId: undefined as number | undefined,
   processId: undefined as number | undefined,
   itemId: undefined as number | undefined,
-  checkQuantity: undefined,
-  qualifiedQuantity: undefined,
-  unqualifiedQuantity: undefined as number | undefined,
-  laborScrapQuantity: 0,
-  materialScrapQuantity: 0,
-  otherScrapQuantity: 0,
+  checkQuantity: undefined as number | string | undefined,
+  qualifiedQuantity: undefined as number | string | undefined,
+  unqualifiedQuantity: undefined as number | string | undefined,
+  laborScrapQuantity: 0 as number | string,
+  materialScrapQuantity: 0 as number | string,
+  otherScrapQuantity: 0 as number | string,
   checkResult: undefined,
   inspectDate: undefined,
   inspectorUserId: undefined as number | undefined,
@@ -391,10 +404,11 @@ const generateCode = async () => {
 
 /** 废品明细变更：自动计算不合格品数量 = 工废 + 料废 + 其他 */
 const handleScrapChanged = () => {
-  formData.value.unqualifiedQuantity =
-    (formData.value.laborScrapQuantity || 0) +
-    (formData.value.materialScrapQuantity || 0) +
-    (formData.value.otherScrapQuantity || 0)
+  formData.value.unqualifiedQuantity = sumQuantities(
+    formData.value.laborScrapQuantity ?? '0',
+    formData.value.materialScrapQuantity ?? '0',
+    formData.value.otherScrapQuantity ?? '0'
+  )
 }
 
 /** 生产工单变更：清空关联的任务等信息 */
@@ -501,12 +515,12 @@ const resetForm = () => {
     workstationId: undefined as number | undefined,
     processId: undefined as number | undefined,
     itemId: undefined as number | undefined,
-    checkQuantity: undefined,
-    qualifiedQuantity: undefined,
-    unqualifiedQuantity: undefined,
-    laborScrapQuantity: 0,
-    materialScrapQuantity: 0,
-    otherScrapQuantity: 0,
+    checkQuantity: undefined as number | string | undefined,
+    qualifiedQuantity: undefined as number | string | undefined,
+    unqualifiedQuantity: undefined as number | string | undefined,
+    laborScrapQuantity: 0 as number | string,
+    materialScrapQuantity: 0 as number | string,
+    otherScrapQuantity: 0 as number | string,
     checkResult: undefined,
     inspectDate: undefined,
     inspectorUserId: undefined as number | undefined,

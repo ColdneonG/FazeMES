@@ -63,6 +63,13 @@ public interface MesMdWorkstationService {
      */
     MesMdWorkstationDO validateWorkstationAvailable(Long id);
 
+    /** Check resources at the proposed start, without substituting today's shift. */
+    cn.iocoder.yudao.module.mes.controller.admin.md.workstation.vo.MesMdWorkstationAvailabilityRespVO
+    getScheduleAvailability(Long id, java.time.LocalDateTime startTime);
+
+    /** Authoritative resource and workshop gate shared by creation and Gantt edits. */
+    void validateWorkstationForSchedule(Long id, java.time.LocalDateTime startTime);
+
     /**
      * 获得工作站
      *

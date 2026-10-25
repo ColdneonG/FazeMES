@@ -5,10 +5,10 @@ export interface MesHomeSummaryVO {
   workOrderActiveCount: number
   workOrderPrepareCount: number
   workOrderFinishedCount: number
-  todayOutput: number
-  yesterdayOutput: number
-  todayQualifiedQuantity: number
-  todayUnqualifiedQuantity: number
+  todayOutput: number | string
+  yesterdayOutput: number | string
+  todayQualifiedQuantity: number | string
+  todayUnqualifiedQuantity: number | string
   machineryTotal: number
   machineryProducing: number
   machineryStop: number
@@ -27,9 +27,9 @@ export interface MesHomeWorkOrderStatusVO {
 // MES 生产趋势 VO
 export interface MesHomeProductionTrendVO {
   date: string
-  quantity: number
-  qualifiedQuantity: number
-  unqualifiedQuantity: number
+  quantity: number | string
+  qualifiedQuantity: number | string
+  unqualifiedQuantity: number | string
 }
 
 // MES 首页统计 API

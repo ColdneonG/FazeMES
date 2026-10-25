@@ -49,14 +49,8 @@
           </el-form-item>
         </el-col>
         <el-col :span="8">
-          <el-form-item label="到货数量" prop="arrivalQuantity">
-            <el-input-number
-              v-model="formData.arrivalQuantity"
-              :precision="2"
-              :min="0.01"
-              controls-position="right"
-              class="!w-1/1"
-            />
+          <el-form-item label="到货数量" prop="arrivalQuantity" :rules="[quantityRule(true)]">
+            <MesQuantityInput v-model="formData.arrivalQuantity" class="!w-1/1" />
           </el-form-item>
         </el-col>
         <el-col :span="8">
@@ -81,6 +75,8 @@
 </template>
 
 <script setup lang="ts">
+import MesQuantityInput from '@/views/mes/components/MesQuantityInput.vue'
+import { quantityRule } from '@/utils/mesQuantity'
 import { DICT_TYPE } from '@/utils/dict'
 import { WmArrivalNoticeLineApi, WmArrivalNoticeLineVO } from '@/api/mes/wm/arrivalnotice/line'
 import MdItemSelect from '@/views/mes/md/item/components/MdItemSelect.vue'
@@ -139,16 +135,13 @@ const formData = ref({
   id: undefined,
   noticeId: undefined as number | undefined,
   itemId: undefined,
-  arrivalQuantity: undefined,
+  arrivalQuantity: undefined as number | string | undefined,
   iqcCheckFlag: false,
   remark: undefined
 })
 const formRules = reactive({
   itemId: [{ required: true, message: '物料不能为空', trigger: 'change' }],
-  arrivalQuantity: [
-    { required: true, message: '到货数量不能为空', trigger: 'blur' },
-    { type: 'number', min: 0.01, message: '到货数量必须大于0', trigger: 'blur' }
-  ],
+  arrivalQuantity: [quantityRule(true)],
   iqcCheckFlag: [{ required: true, message: '是否检验不能为空', trigger: 'change' }]
 })
 const formRef = ref() // 表单 Ref
@@ -198,7 +191,7 @@ const resetForm = () => {
     id: undefined,
     noticeId: undefined,
     itemId: undefined,
-    arrivalQuantity: undefined,
+    arrivalQuantity: undefined as number | string | undefined,
     iqcCheckFlag: false,
     remark: undefined
   }

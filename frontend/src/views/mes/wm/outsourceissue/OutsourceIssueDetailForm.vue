@@ -24,15 +24,8 @@
           </el-form-item>
         </el-col>
         <el-col :span="8">
-          <el-form-item label="数量" prop="quantity">
-            <el-input-number
-              v-model="formData.quantity"
-              :precision="2"
-              :min="0"
-              :max="quantityMax"
-              controls-position="right"
-              class="!w-1/1"
-            />
+          <el-form-item label="数量" prop="quantity" :rules="[quantityRule(true, quantityMax)]">
+            <MesQuantityInput v-model="formData.quantity" class="!w-1/1" />
           </el-form-item>
         </el-col>
       </el-row>
@@ -77,6 +70,8 @@
 </template>
 
 <script setup lang="ts">
+import MesQuantityInput from '@/views/mes/components/MesQuantityInput.vue'
+import { quantityRule } from '@/utils/mesQuantity'
 import {
   WmOutsourceIssueDetailApi,
   WmOutsourceIssueDetailVO
@@ -104,7 +99,7 @@ const dialogTitle = ref('') // 弹窗的标题
 const formLoading = ref(false) // 表单的加载中
 const formType = ref('') // 表单的类型：create / update
 const currentLineId = ref<number>() // 当前操作的行 ID
-const quantityMax = ref<number | undefined>(undefined) // 数量上限（在库数量）
+const quantityMax = ref<number | string | undefined>(undefined) // 数量上限（在库数量）
 const formRef = ref() // 表单 Ref
 const formData = ref({
   id: undefined as number | undefined,
@@ -112,7 +107,7 @@ const formData = ref({
   issueId: undefined as number | undefined,
   itemId: undefined as number | undefined,
   materialStockId: undefined as number | undefined,
-  quantity: undefined as number | undefined,
+  quantity: undefined as number | string | undefined,
   batchId: undefined as number | undefined,
   batchCode: undefined as string | undefined,
   warehouseId: undefined as number | undefined,
@@ -202,7 +197,7 @@ const resetForm = () => {
     issueId: undefined,
     itemId: undefined,
     materialStockId: undefined,
-    quantity: undefined,
+    quantity: undefined as number | string | undefined,
     batchId: undefined,
     batchCode: undefined,
     warehouseId: undefined,

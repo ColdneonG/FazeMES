@@ -45,7 +45,7 @@ const trendChartOptions = computed<EChartsOption>(() => ({
       name: '产量',
       type: 'line',
       smooth: true,
-      data: rows.value.map((row) => row.quantity),
+      data: rows.value.map((row) => Number(row.quantity)),
       itemStyle: { color: '#409eff' },
       areaStyle: { color: 'rgba(64,158,255,0.15)' }
     },
@@ -53,14 +53,14 @@ const trendChartOptions = computed<EChartsOption>(() => ({
       name: '合格品',
       type: 'line',
       smooth: true,
-      data: rows.value.map((row) => row.qualifiedQuantity),
+      data: rows.value.map((row) => Number(row.qualifiedQuantity)),
       itemStyle: { color: '#67c23a' }
     },
     {
       name: '不良品',
       type: 'line',
       smooth: true,
-      data: rows.value.map((row) => row.unqualifiedQuantity),
+      data: rows.value.map((row) => Number(row.unqualifiedQuantity)),
       itemStyle: { color: '#f56c6c' }
     }
   ]

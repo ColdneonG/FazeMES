@@ -22,6 +22,7 @@
 
 <script setup lang="ts">
 import type { MesHomeSummaryVO } from '@/api/mes/home'
+import { quantityUnits } from '@/utils/mesQuantity'
 
 defineOptions({ name: 'HomeKpiCards' })
 
@@ -33,7 +34,10 @@ const emit = defineEmits<{ navigate: [path: string] }>()
 
 const cards = computed(() => {
   const data = props.summary
-  const total = data.todayQualifiedQuantity + data.todayUnqualifiedQuantity
+  const qualified = quantityUnits(data.todayQualifiedQuantity)
+  const unqualified = quantityUnits(data.todayUnqualifiedQuantity)
+  const total = (qualified ?? 0n) + (unqualified ?? 0n)
+  const known = qualified !== undefined && unqualified !== undefined
   return [
     {
       label: '进行中工单',
@@ -55,9 +59,12 @@ const cards = computed(() => {
       label: '报工合格率',
       icon: 'ep:circle-check',
       color: '#e6a23c',
-      value: total > 0 ? ((data.todayQualifiedQuantity / total) * 100).toFixed(1) + '%' : '—',
+      value:
+        known && total > 0n
+          ? (Number((qualified * 1000n + total / 2n) / total) / 10).toFixed(1) + '%'
+          : '—',
       hint:
-        total > 0
+        known && total > 0n
           ? '今日合格 ' + data.todayQualifiedQuantity + ' · 不良 ' + data.todayUnqualifiedQuantity
           : '今日暂无报工质量数据',
       path: props.destinations.MesProFeedback

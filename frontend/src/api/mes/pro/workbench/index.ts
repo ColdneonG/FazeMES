@@ -31,8 +31,8 @@ export interface WorkbenchTask {
   itemCode: string
   itemName: string
   itemSpecification?: string
-  quantity: number
-  producedQuantity: number
+  quantity: number | string
+  producedQuantity: number | string
   startTime: string | number
   endTime: string | number
   checkFlag?: boolean

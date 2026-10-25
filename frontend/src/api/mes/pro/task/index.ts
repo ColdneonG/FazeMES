@@ -18,11 +18,11 @@ export interface ProTaskVO {
   itemName: string // 产品名称
   itemCode: string // 产品编码
   itemSpecification: string // 规格型号
-  quantity: number // 排产数量
-  producedQuantity: number // 已生产数量
-  qualifyQuantity: number // 合格品数量
-  unqualifyQuantity: number // 不良品数量
-  changedQuantity: number // 调整数量
+  quantity: number | string // 排产数量
+  producedQuantity: number | string // 已生产数量
+  qualifyQuantity: number | string // 合格品数量
+  unqualifyQuantity: number | string // 不良品数量
+  changedQuantity: number | string // 调整数量
   clientId: number // 客户编号
   clientName: string // 客户名称
   startTime: Date | number | string // 开始生产时间
@@ -38,7 +38,21 @@ export interface ProTaskVO {
 }
 
 // MES 生产任务 API
+export interface ScheduleCheck {
+  workstationId: number
+  startTime: string | number
+  endTime: string | number
+  resourceAvailable: boolean
+  blockingReasons: string[]
+  warnings: string[]
+  notes: string[]
+  predecessors?: { id: number; code: string; endTime: string | number }[]
+}
+
 export const ProTaskApi = {
+  checkSchedule: async (data: Partial<ProTaskVO>): Promise<ScheduleCheck> => {
+    return await request.post({ url: '/mes/pro/task/check-schedule', data })
+  },
   // 查询生产任务分页
   getTaskPage: async (params: any) => {
     return await request.get({ url: `/mes/pro/task/page`, params })

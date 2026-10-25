@@ -12,7 +12,7 @@ export interface WmMiscIssueLineVO {
   specification: string
   unitMeasure: string
   unitMeasureName: string
-  quantity: number
+  quantity: number | string
   batchId: number
   batchCode: string
   warehouseId: number

@@ -194,15 +194,7 @@
         <el-table-column prop="unitQuantity" label="该行一件用量" width="120" />
         <el-table-column label="分配给本 SN" width="180"
           ><template #default="{ row }">
-            <el-input-number
-              v-model="row.inputQuantity"
-              :min="0"
-              :max="Number(row.availableQuantity)"
-              :precision="6"
-              :step="0.1"
-              controls-position="right"
-              class="!w-160px"
-            /> </template
+            <MesQuantityInput v-model="row.inputQuantity" class="!w-160px" /> </template
         ></el-table-column>
       </el-table>
       <p v-if="!sourcesLoading && !sources.length" class="hint"
@@ -275,6 +267,9 @@
 </template>
 
 <script setup lang="ts">
+import MesQuantityInput from '@/views/mes/components/MesQuantityInput.vue'
+import { quantityUnits } from '@/utils/mesQuantity'
+import { snAllocationTotals, distributeSnMaterials } from './snQuantities'
 import { formatDate } from '@/utils/formatTime'
 import {
   SnTraceApi,
@@ -311,7 +306,7 @@ const selected = ref<SnTrace>()
 const stationVisible = ref(false)
 const feedbacks = ref<FeedbackOption[]>([])
 const feedbackId = ref<number>()
-const sources = ref<(ConsumeOption & { inputQuantity: number })[]>([])
+const sources = ref<(ConsumeOption & { inputQuantity: string })[]>([])
 const sourcesLoading = ref(false)
 const sourceReady = ref(false)
 const detailVisible = ref(false)
@@ -323,26 +318,7 @@ const reverseLoading = ref(false)
 let retryKey = ''
 let retryPayload = ''
 
-const lineTotals = computed(() => {
-  const totals = new Map<
-    number,
-    { id: number; quantity: number; required: number; valid: boolean }
-  >()
-  sources.value.forEach((row) => {
-    const line = totals.get(row.consumeLineId) || {
-      id: row.consumeLineId,
-      quantity: 0,
-      required: Number(row.unitQuantity),
-      valid: false
-    }
-    line.quantity = Number((line.quantity + (row.inputQuantity || 0)).toFixed(6))
-    totals.set(row.consumeLineId, line)
-  })
-  return [...totals.values()].map((line) => ({
-    ...line,
-    valid: Math.abs(line.quantity - line.required) < 0.0000001
-  }))
-})
+const lineTotals = computed(() => snAllocationTotals(sources.value))
 
 async function load() {
   loading.value = true
@@ -428,7 +404,7 @@ async function loadSources() {
   try {
     const result = await SnTraceApi.consumeOptions(requested)
     if (requested === feedbackId.value) {
-      sources.value = result.map((row) => ({ ...row, inputQuantity: 0 }))
+      sources.value = result.map((row) => ({ ...row, inputQuantity: '0' }))
       sourceReady.value = true
     }
   } finally {
@@ -436,15 +412,14 @@ async function loadSources() {
   }
 }
 function allocateOne() {
-  const remaining = new Map<number, number>()
-  sources.value.forEach((row) => {
-    const need = remaining.get(row.consumeLineId) ?? Number(row.unitQuantity)
-    row.inputQuantity = Number(Math.min(need, Number(row.availableQuantity)).toFixed(6))
-    remaining.set(row.consumeLineId, Number((need - row.inputQuantity).toFixed(6)))
+  const allocation = distributeSnMaterials(sources.value)
+  sources.value.forEach((row, index) => {
+    row.inputQuantity = allocation.quantities[index]
   })
-  if ([...remaining.values()].some((n) => n > 0))
-    message.warning('部分耗料行剩余份额不足，请刷新后核对其他单件分配')
+  if (!allocation.complete)
+    message.warning('部分耗料行剩余份额不足或单件用量无法以六位小数精确表达，请刷新后核对')
 }
+
 async function submitStation() {
   if (
     !selected.value ||
@@ -457,7 +432,7 @@ async function submitStation() {
     traceId: selected.value.id,
     feedbackId: feedbackId.value,
     materials: sources.value
-      .filter((row) => row.inputQuantity > 0)
+      .filter((row) => (quantityUnits(row.inputQuantity) ?? 0n) > 0n)
       .map((row) => ({ consumeDetailId: row.consumeDetailId, quantity: row.inputQuantity }))
   }
   const fingerprint = JSON.stringify(payload)

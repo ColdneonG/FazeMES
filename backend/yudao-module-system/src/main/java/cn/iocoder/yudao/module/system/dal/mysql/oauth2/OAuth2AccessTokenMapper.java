@@ -25,6 +25,13 @@ public interface OAuth2AccessTokenMapper extends BaseMapperX<OAuth2AccessTokenDO
         return selectList(OAuth2AccessTokenDO::getRefreshToken, refreshToken);
     }
 
+    default List<OAuth2AccessTokenDO> selectListByRefreshTokenForUpdate(String refreshToken, Long tenantId) {
+        return selectList(new LambdaQueryWrapperX<OAuth2AccessTokenDO>()
+                .eq(OAuth2AccessTokenDO::getRefreshToken, refreshToken)
+                .eq(OAuth2AccessTokenDO::getTenantId, tenantId)
+                .orderByAsc(OAuth2AccessTokenDO::getId).last("FOR UPDATE"));
+    }
+
     default PageResult<OAuth2AccessTokenDO> selectPage(OAuth2AccessTokenPageReqVO reqVO) {
         return selectPage(reqVO, new LambdaQueryWrapperX<OAuth2AccessTokenDO>()
                 .eqIfPresent(OAuth2AccessTokenDO::getUserId, reqVO.getUserId())

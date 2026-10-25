@@ -8,6 +8,9 @@ $ErrorActionPreference = 'Stop'
 $projectRoot = Split-Path -Parent $PSScriptRoot
 if (-not $ClientOptions) { $ClientOptions = Join-Path $projectRoot '.runtime\mysql-client.local.ini' }
 if (-not (Test-Path -LiteralPath $ClientOptions)) { throw 'Initialize the local database before applying migrations.' }
+. (Join-Path $PSScriptRoot 'local-tools.ps1')
+$maintenanceLease = Enter-LocalMaintenanceLock -ProjectRoot $projectRoot
+try {
 function Invoke-MigrationSql([string]$Sql) {
     $result = & $MysqlClient "--defaults-extra-file=$ClientOptions" --database=yudao_mes --batch --skip-column-names "--execute=$Sql"
     if ($LASTEXITCODE -ne 0) { throw 'Local database migration failed. Check the preceding SQL diagnostic.' }
@@ -49,3 +52,4 @@ foreach ($migration in $orderedMigrations) {
     Invoke-MigrationSql "INSERT INTO fazemes_schema_migration(name,sha256) VALUES('$migrationName','$digest')" | Out-Null
     Write-Host "Applied $($migration.Name)"
 }
+} finally { Exit-LocalMaintenanceLock -Lease $maintenanceLease }

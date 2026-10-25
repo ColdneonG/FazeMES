@@ -22,7 +22,7 @@ export interface WmOutsourceReceiptLineVO {
   itemId: number
   itemCode: string
   itemName: string
-  quantity: number
+  quantity: number | string
   unitId: number
   unitName: string
   remark: string
@@ -33,7 +33,7 @@ export interface WmOutsourceReceiptDetailVO {
   id: number
   lineId: number
   batchCode: string
-  quantity: number
+  quantity: number | string
   locationId: number
   locationName: string
   remark: string

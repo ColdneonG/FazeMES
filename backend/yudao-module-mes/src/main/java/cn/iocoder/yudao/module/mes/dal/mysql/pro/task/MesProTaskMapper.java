@@ -61,6 +61,17 @@ public interface MesProTaskMapper extends BaseMapperX<MesProTaskDO> {
                 .orderByDesc(MesProTaskDO::getId).last("FOR UPDATE"));
     }
 
+    /** Half-open intervals permit one task to start exactly when another ends. */
+    default List<MesProTaskDO> selectScheduleOverlaps(Long workstationId, java.time.LocalDateTime start,
+                                                    java.time.LocalDateTime end, Long excludingId) {
+        return selectList(new LambdaQueryWrapperX<MesProTaskDO>()
+                .eq(MesProTaskDO::getWorkstationId, workstationId)
+                .notIn(MesProTaskDO::getStatus, 4, 5)
+                .ne(excludingId != null, MesProTaskDO::getId, excludingId)
+                .lt(MesProTaskDO::getStartTime, end).gt(MesProTaskDO::getEndTime, start)
+                .orderByAsc(MesProTaskDO::getStartTime).orderByAsc(MesProTaskDO::getId).last("LIMIT 101"));
+    }
+
     default List<MesProTaskDO> selectListByWorkOrderIds(java.util.Collection<Long> workOrderIds) {
         return selectList(new LambdaQueryWrapperX<MesProTaskDO>()
                 .in(MesProTaskDO::getWorkOrderId, workOrderIds)

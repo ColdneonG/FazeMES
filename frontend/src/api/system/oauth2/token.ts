@@ -2,8 +2,6 @@ import request from '@/config/axios'
 
 export interface OAuth2TokenVO {
   id: number
-  accessToken: string
-  refreshToken: string
   userId: number
   userType: number
   clientId: string
@@ -17,6 +15,10 @@ export const getAccessTokenPage = (params: PageParam) => {
 }
 
 // 删除 token
-export const deleteAccessToken = (accessToken: string) => {
-  return request.delete({ url: '/system/oauth2-token/delete?accessToken=' + accessToken })
+export const deleteAccessToken = (id: number) => {
+  return request.delete({ url: '/system/oauth2-token/delete', params: { id } })
+}
+
+export const deleteAccessTokenList = (ids: number[]) => {
+  return request.delete({ url: '/system/oauth2-token/delete-list', params: { ids: ids.join(',') } })
 }

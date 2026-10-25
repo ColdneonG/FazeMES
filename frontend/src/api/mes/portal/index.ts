@@ -31,7 +31,7 @@ export interface PortalRequestLine {
   productName?: string
   specification?: string
   unitName?: string
-  quantity: number
+  quantity: number | string
 }
 export interface PortalOrderRequest {
   id: number
@@ -51,8 +51,8 @@ export interface PortalOrder {
   name: string
   productName: string
   specification: string
-  quantity: number
-  quantityProduced: number
+  quantity: number | string
+  quantityProduced: number | string
   requestDate?: string
   finishDate?: string
   status: number
@@ -124,7 +124,7 @@ export const CustomerPortalApi = {
     requestKey: string
     deliveryDate: string
     remark: string
-    items: { productId: number; quantity: number }[]
+    items: { productId: number; quantity: number | string }[]
   }) => portalCall<{ id: number; code: string; status: string }>('POST', '/requests', data)
 }
 export const PortalAdminApi = {

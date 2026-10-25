@@ -84,14 +84,8 @@
           </el-form-item>
         </el-col>
         <el-col :span="8">
-          <el-form-item label="发料数量" prop="quantity" required>
-            <el-input-number
-              v-model="formData.quantity"
-              :precision="2"
-              :min="0"
-              controls-position="right"
-              class="!w-1/1"
-            />
+          <el-form-item label="发料数量" prop="quantity" required :rules="[quantityRule(true)]">
+            <MesQuantityInput v-model="formData.quantity" class="!w-1/1" />
           </el-form-item>
         </el-col>
         <el-col :span="8">
@@ -123,6 +117,8 @@
 </template>
 
 <script setup lang="ts">
+import MesQuantityInput from '@/views/mes/components/MesQuantityInput.vue'
+import { quantityRule } from '@/utils/mesQuantity'
 import { WmOutsourceIssueLineApi, WmOutsourceIssueLineVO } from '@/api/mes/wm/outsourceissue/line'
 import MdItemSelect from '@/views/mes/md/item/components/MdItemSelect.vue'
 import OutsourceIssueDetailList from './OutsourceIssueDetailList.vue'
@@ -183,7 +179,7 @@ const formData = ref({
   id: undefined,
   issueId: undefined as number | undefined,
   itemId: undefined,
-  quantity: undefined,
+  quantity: undefined as number | string | undefined,
   batchId: undefined,
   batchCode: undefined,
   remark: undefined
@@ -236,7 +232,7 @@ const resetForm = () => {
     id: undefined,
     issueId: undefined,
     itemId: undefined,
-    quantity: undefined,
+    quantity: undefined as number | string | undefined,
     batchId: undefined,
     batchCode: undefined,
     remark: undefined

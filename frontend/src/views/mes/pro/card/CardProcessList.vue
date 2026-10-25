@@ -97,33 +97,30 @@
         </el-row>
         <el-row>
           <el-col :span="8">
-            <el-form-item label="投入数量" prop="inputQuantity">
-              <el-input-number
-                v-model="processFormData.inputQuantity"
-                :min="0"
-                :precision="2"
-                class="!w-1/1"
-              />
+            <el-form-item
+              label="投入数量"
+              prop="inputQuantity"
+              :rules="[quantityRule(false, undefined, true)]"
+            >
+              <MesQuantityInput v-model="processFormData.inputQuantity" class="!w-1/1" />
             </el-form-item>
           </el-col>
           <el-col :span="8">
-            <el-form-item label="产出数量" prop="outputQuantity">
-              <el-input-number
-                v-model="processFormData.outputQuantity"
-                :min="0"
-                :precision="2"
-                class="!w-1/1"
-              />
+            <el-form-item
+              label="产出数量"
+              prop="outputQuantity"
+              :rules="[quantityRule(false, undefined, true)]"
+            >
+              <MesQuantityInput v-model="processFormData.outputQuantity" class="!w-1/1" />
             </el-form-item>
           </el-col>
           <el-col :span="8">
-            <el-form-item label="不合格数量" prop="unqualifiedQuantity">
-              <el-input-number
-                v-model="processFormData.unqualifiedQuantity"
-                :min="0"
-                :precision="2"
-                class="!w-1/1"
-              />
+            <el-form-item
+              label="不合格数量"
+              prop="unqualifiedQuantity"
+              :rules="[quantityRule(false, undefined, true)]"
+            >
+              <MesQuantityInput v-model="processFormData.unqualifiedQuantity" class="!w-1/1" />
             </el-form-item>
           </el-col>
         </el-row>
@@ -158,6 +155,8 @@
 </template>
 
 <script setup lang="ts">
+import MesQuantityInput from '@/views/mes/components/MesQuantityInput.vue'
+import { quantityRule } from '@/utils/mesQuantity'
 import { dateFormatter } from '@/utils/formatTime'
 import { ProCardProcessApi, ProCardProcessVO } from '@/api/mes/pro/card/process'
 import ProProcessSelect from '@/views/mes/pro/process/components/ProProcessSelect.vue'
@@ -219,9 +218,9 @@ const processFormData = ref({
   processId: undefined as number | undefined,
   inputTime: undefined as any,
   outputTime: undefined as any,
-  inputQuantity: undefined as number | undefined,
-  outputQuantity: undefined as number | undefined,
-  unqualifiedQuantity: undefined as number | undefined,
+  inputQuantity: undefined as number | string | undefined,
+  outputQuantity: undefined as number | string | undefined,
+  unqualifiedQuantity: undefined as number | string | undefined,
   workstationId: undefined as number | undefined,
   userId: undefined as number | undefined,
   remark: undefined as string | undefined
@@ -240,9 +239,9 @@ const openProcessForm = (type: string, row?: any) => {
       processId: undefined,
       inputTime: undefined,
       outputTime: undefined,
-      inputQuantity: undefined,
-      outputQuantity: undefined,
-      unqualifiedQuantity: undefined,
+      inputQuantity: undefined as number | string | undefined,
+      outputQuantity: undefined as number | string | undefined,
+      unqualifiedQuantity: undefined as number | string | undefined,
       workstationId: undefined,
       userId: undefined,
       remark: undefined

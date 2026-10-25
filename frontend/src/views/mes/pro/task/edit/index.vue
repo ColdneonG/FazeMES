@@ -31,6 +31,7 @@
 import { ProTaskApi } from '@/api/mes/pro/task'
 import { formatDate } from '@/utils/formatTime'
 import GanttChart from '../components/GanttChart.vue'
+import { reviewScheduleChanges } from '../scheduleReview'
 
 defineOptions({ name: 'MesProTaskGanttEdit' })
 
@@ -61,15 +62,24 @@ const handleSave = async () => {
   formLoading.value = true
   try {
     const changes = Array.from(pendingChanges.value.values())
+    const requests = changes.map((change) => ({
+      id: change.id,
+      startTime: formatDate(change.startTime, 'YYYY-MM-DD HH:mm:ss'),
+      endTime: formatDate(change.endTime, 'YYYY-MM-DD HH:mm:ss'),
+      duration: change.duration
+    }))
+    if (
+      !(await reviewScheduleChanges(
+        requests,
+        ProTaskApi.checkSchedule,
+        message.confirm,
+        message.error
+      ))
+    ) {
+      return
+    }
     const results = await Promise.allSettled(
-      changes.map((change) =>
-        ProTaskApi.updateTask({
-          id: change.id,
-          startTime: formatDate(change.startTime, 'YYYY-MM-DD HH:mm:ss'),
-          endTime: formatDate(change.endTime, 'YYYY-MM-DD HH:mm:ss'),
-          duration: change.duration
-        })
-      )
+      requests.map((request) => ProTaskApi.updateTask(request))
     )
     let saved = 0
     results.forEach((result, index) => {

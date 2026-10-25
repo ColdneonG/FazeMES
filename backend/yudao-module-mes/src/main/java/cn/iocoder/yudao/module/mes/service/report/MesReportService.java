@@ -8,6 +8,7 @@ import com.fasterxml.jackson.databind.ObjectMapper;
 import jakarta.annotation.Resource;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
+import java.math.BigDecimal;
 import java.util.*;
 import static cn.iocoder.yudao.module.mes.service.report.MesReportErrorConstants.*;
 
@@ -57,8 +58,28 @@ public class MesReportService {
         int size=export?5000:(req.getPageSize()==null?50:req.getPageSize());
         if(!export&&(size<1||size>200))throw invalid("每页最多200行");
         int page=export?1:(req.getPageNo()==null?1:req.getPageNo());
-        var q=registry.compile(config(req,designer,draftReader),TenantContextHolder.getRequiredTenantId(),page,size);
-        var rows=repository.query(q);boolean more=rows.size()>size;if(more)rows.remove(rows.size()-1);
+        var reportConfig=config(req,designer,draftReader);
+        var q=registry.compile(reportConfig,TenantContextHolder.getRequiredTenantId(),page,size);
+        var rows=new ArrayList<>(repository.query(q));boolean more=rows.size()>size;if(more)rows.remove(rows.size()-1);
+        if(!export) {
+            // SQL uses c0/c1 aliases, so generic JSON field-name advice cannot
+            // identify their quantity semantics. Resolve them from the trusted
+            // column definitions; COUNT remains an integer, not a quantity.
+            Set<String> quantityAliases=new HashSet<>();
+            for(var column:q.columns()) {
+                String field=(String)column.get("field");
+                boolean quantity="quantity".equals(field)||field.endsWith("_quantity")||field.startsWith("quantity_");
+                boolean count=reportConfig.getColumns().stream().anyMatch(c->field.equals(c.getField())&&"COUNT".equals(c.getAggregate()));
+                if(quantity&&!count) quantityAliases.add((String)column.get("key"));
+            }
+            rows.replaceAll(row->{
+                Map<String,Object> exact=new LinkedHashMap<>(row);
+                for(String alias:quantityAliases) {
+                    if(exact.get(alias) instanceof BigDecimal value) exact.put(alias,value.toPlainString());
+                }
+                return exact;
+            });
+        }
         return Map.of("columns",q.columns(),"rows",rows,"hasMore",more,"pageNo",page,"pageSize",size,"generatedAt",MesReportTimeFormat.isoValue(java.time.LocalDateTime.now()));
     }
     private MesReportConfig read(String json) {try{return objectMapper.readValue(json,MesReportConfig.class);}catch(Exception ex){throw invalid("已保存的报表配置无法读取");}}

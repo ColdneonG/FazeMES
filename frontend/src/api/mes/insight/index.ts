@@ -18,8 +18,8 @@ export interface RiskOrder {
   code: string
   name: string
   productName: string
-  quantity: number
-  producedQuantity: number
+  quantity: number | string
+  producedQuantity: number | string
   dueAt?: string
   forecastAt?: string
   riskLevel: string
@@ -89,8 +89,8 @@ export interface QualityGroup {
   dimension: string
   value: string
   product: string
-  quantity: number
-  rejected: number
+  quantity: number | string
+  rejected: number | string
   rate: number
   baselineRate: number
   difference: number
@@ -232,7 +232,7 @@ export const InsightApi = {
         type: string
         label: string
         id: number
-        quantity?: number
+        quantity?: number | string
         rejected?: number
       }[]
       basis: string

@@ -18,7 +18,7 @@ export interface StockTakingResultVO {
   locationName?: string
   areaId?: number
   areaName?: string
-  quantity?: number
+  quantity?: number | string
   remark?: string
   createTime?: string
 }

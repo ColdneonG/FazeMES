@@ -5,7 +5,7 @@ export interface WmMiscReceiptLineVO {
   id: number
   receiptId: number
   itemId: number
-  quantity: number
+  quantity: number | string
   batchCode: string
   warehouseId: number
   locationId: number

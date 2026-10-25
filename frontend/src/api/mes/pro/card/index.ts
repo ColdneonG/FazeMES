@@ -13,7 +13,7 @@ export interface ProCardVO {
   itemName: string // 产品名称
   specification: string // 规格型号
   unitMeasureName: string // 单位名称
-  transferedQuantity: number // 流转数量
+  transferedQuantity: number | string // 流转数量
   status: number // 状态
   remark: string // 备注
 }

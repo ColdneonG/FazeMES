@@ -52,15 +52,8 @@
         <el-form-item label="单位" prop="unitMeasureName">
           <el-input v-model="formData.unitMeasureName" readonly />
         </el-form-item>
-        <el-form-item label="用量比例" prop="quantity">
-          <el-input-number
-            v-model="formData.quantity"
-            :min="0"
-            :precision="4"
-            :step="0.1"
-            controls-position="right"
-            class="!w-1/1"
-          />
+        <el-form-item label="用量比例" prop="quantity" :rules="[quantityRule(true)]">
+          <MesQuantityInput v-model="formData.quantity" class="!w-1/1" />
         </el-form-item>
         <el-form-item label="备注" prop="remark">
           <el-input v-model="formData.remark" type="textarea" placeholder="请输入备注" />
@@ -78,6 +71,8 @@
 </template>
 
 <script setup lang="ts">
+import MesQuantityInput from '@/views/mes/components/MesQuantityInput.vue'
+import { quantityRule } from '@/utils/mesQuantity'
 import { MdProductBomApi, MdProductBomVO } from '@/api/mes/md/item/productBom'
 import { MdItemVO } from '@/api/mes/md/item'
 import { DICT_TYPE } from '@/utils/dict'
@@ -123,7 +118,7 @@ const handleItemSelected = async (rows: MdItemVO[]) => {
     await MdProductBomApi.createProductBom({
       itemId: props.itemId,
       bomItemId: item.id,
-      quantity: 1
+      quantity: 1 as number | string
     } as unknown as MdProductBomVO)
   }
   message.success(t('common.createSuccess'))
@@ -144,7 +139,7 @@ const formData = ref({
   bomItemName: undefined as string | undefined, // 只读展示
   bomItemSpecification: undefined as string | undefined, // 只读展示
   unitMeasureName: undefined as string | undefined, // 只读展示
-  quantity: 1,
+  quantity: 1 as number | string,
   remark: undefined as string | undefined
 }) // 表单数据
 const formRules = reactive({
@@ -183,7 +178,7 @@ const resetForm = () => {
     bomItemName: undefined,
     bomItemSpecification: undefined,
     unitMeasureName: undefined,
-    quantity: 1,
+    quantity: 1 as number | string,
     remark: undefined
   }
   formRef.value?.resetFields()

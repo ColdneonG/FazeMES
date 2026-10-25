@@ -9,7 +9,7 @@ export interface WmReturnVendorLineVO {
   itemName?: string
   specification?: string
   unitMeasureName?: string
-  quantity: number
+  quantity: number | string
   batchId?: number
   batchCode?: string
   remark?: string

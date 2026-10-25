@@ -9,8 +9,8 @@ export interface WmArrivalNoticeLineVO {
   itemName: string
   specification: string
   unitMeasureName: string
-  arrivalQuantity: number
-  qualifiedQuantity: number
+  arrivalQuantity: number | string
+  qualifiedQuantity: number | string
   iqcCheckFlag: boolean
   iqcId: number
   iqcCode: string

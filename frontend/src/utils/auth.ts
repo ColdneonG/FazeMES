@@ -1,6 +1,7 @@
 import { useCache, CACHE_KEY } from '@/hooks/web/useCache'
 import { TokenType } from '@/api/login/types'
 import { decrypt, encrypt } from '@/utils/jsencrypt'
+import { clearFileMediaSession, ensureFileMediaSession } from '@/utils/fileMediaSession'
 
 const { wsCache } = useCache()
 
@@ -23,10 +24,12 @@ export const getRefreshToken = () => {
 export const setToken = (token: TokenType) => {
   wsCache.set(RefreshTokenKey, token.refreshToken)
   wsCache.set(AccessTokenKey, token.accessToken)
+  void ensureFileMediaSession(token.accessToken, getTenantId()).catch(() => undefined)
 }
 
 // 删除token
 export const removeToken = () => {
+  clearFileMediaSession()
   wsCache.delete(AccessTokenKey)
   wsCache.delete(RefreshTokenKey)
 }

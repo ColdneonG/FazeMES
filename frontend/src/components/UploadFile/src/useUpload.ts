@@ -41,9 +41,9 @@ export const useUpload = (directory?: string) => {
           },
           onUploadProgress: uploadProgressHandler
         })
-        .then(() => {
-          // 1.4. 记录文件信息到后端（异步）
-          createFile(presignedInfo, options.file, fileName)
+        .then(async () => {
+          // Only publish the URL after its server-issued upload ticket is consumed successfully.
+          await createFile(presignedInfo, options.file, fileName)
           // 通知成功，数据格式保持与后端上传的返回结果一致
           return { data: presignedInfo.url }
         })
@@ -78,16 +78,21 @@ export const useUpload = (directory?: string) => {
  * @param file 文件
  * @param fileName
  */
-function createFile(vo: FileApi.FilePresignedUrlRespVO, file: UploadRawFile, fileName: string) {
+async function createFile(
+  vo: FileApi.FilePresignedUrlRespVO,
+  file: UploadRawFile,
+  fileName: string
+) {
   const fileVo = {
     configId: vo.configId,
     url: vo.url,
     path: vo.path,
     name: fileName,
     type: file.type || 'application/octet-stream',
-    size: file.size
+    size: file.size,
+    uploadTicket: vo.uploadTicket
   }
-  FileApi.createFile(fileVo)
+  await FileApi.createFile(fileVo)
   return fileVo
 }
 

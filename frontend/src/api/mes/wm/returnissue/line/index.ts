@@ -10,7 +10,7 @@ export interface WmReturnIssueLineVO {
   specification?: string
   unitMeasureName?: string
   materialStockId?: number
-  quantity: number
+  quantity: number | string
   batchId?: number
   batchCode?: string
   rqcCheckFlag?: boolean

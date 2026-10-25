@@ -5,17 +5,21 @@ import cn.iocoder.yudao.framework.common.pojo.PageResult;
 import cn.iocoder.yudao.framework.common.util.object.ObjectUtils;
 import cn.iocoder.yudao.framework.test.core.ut.BaseDbUnitTest;
 import cn.iocoder.yudao.framework.test.core.util.AssertUtils;
+import cn.iocoder.yudao.framework.tenant.core.context.TenantContextHolder;
 import cn.iocoder.yudao.module.infra.controller.admin.file.vo.file.FileCreateReqVO;
 import cn.iocoder.yudao.module.infra.controller.admin.file.vo.file.FilePageReqVO;
 import cn.iocoder.yudao.module.infra.controller.admin.file.vo.file.FilePresignedUrlRespVO;
 import cn.iocoder.yudao.module.infra.dal.dataobject.file.FileDO;
 import cn.iocoder.yudao.module.infra.dal.mysql.file.FileMapper;
 import cn.iocoder.yudao.module.infra.framework.file.core.client.FileClient;
+import cn.iocoder.yudao.module.infra.framework.file.core.client.s3.S3FileClient;
+import cn.iocoder.yudao.module.infra.framework.file.core.client.local.LocalFileClient;
 import jakarta.annotation.Resource;
 import org.apache.poi.hssf.usermodel.HSSFWorkbook;
 import org.apache.poi.ss.usermodel.Workbook;
 import org.apache.poi.xssf.usermodel.XSSFWorkbook;
 import org.junit.jupiter.api.BeforeEach;
+import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.Test;
 import org.springframework.context.annotation.Import;
 import org.springframework.test.context.bean.override.mockito.MockitoBean;
@@ -48,17 +52,25 @@ public class FileServiceImplTest extends BaseDbUnitTest {
     @MockitoBean
     private FileConfigService fileConfigService;
 
+    @MockitoBean
+    private FileUploadTicketService uploadTicketService;
+
     @BeforeEach
     public void setUp() {
+        TenantContextHolder.setTenantId(1L);
         FileServiceImpl.PATH_PREFIX_DATE_ENABLE = true;
         FileServiceImpl.PATH_SUFFIX_TIMESTAMP_ENABLE = true;
         FileServiceImpl.PATH_SUFFIX_AS_DIRECTORY = true;
     }
 
+    @AfterEach
+    public void clearTenant() { TenantContextHolder.clear(); }
+
     @Test
     public void testGetFilePage() {
         // mock 数据
         FileDO dbFile = randomPojo(FileDO.class, o -> { // 等会查询到
+            o.setTenantId(1L);
             o.setPath("yunai");
             o.setType("image/jpg");
             o.setCreateTime(buildTime(2021, 1, 15));
@@ -104,7 +116,7 @@ public class FileServiceImplTest extends BaseDbUnitTest {
         String url = randomString();
         AtomicReference<String> pathRef = new AtomicReference<>();
         when(client.upload(same(content), argThat(path -> {
-            assertTrue(path.matches(directory + "/\\d{8}/\\d+/" + name + ".jpg"));
+            assertTrue(path.matches("tenant/1/" + directory + "/\\d{8}/\\d+/" + name + ".jpg"));
             pathRef.set(path);
             return true;
         }), eq(type))).thenReturn(url);
@@ -136,7 +148,7 @@ public class FileServiceImplTest extends BaseDbUnitTest {
         String url = randomString();
         AtomicReference<String> pathRef = new AtomicReference<>();
         when(client.upload(same(content), argThat(path -> {
-            assertTrue(path.matches("\\d{8}/\\d+/6318848e882d8a7e7e82789d87608f684ee52d41966bfc8cad3ce15aad2b970e\\.jpg"));
+            assertTrue(path.matches("tenant/1/\\d{8}/\\d+/6318848e882d8a7e7e82789d87608f684ee52d41966bfc8cad3ce15aad2b970e\\.jpg"));
             pathRef.set(path);
             return true;
         }), eq(type))).thenReturn(url);
@@ -319,11 +331,12 @@ public class FileServiceImplTest extends BaseDbUnitTest {
             // 准备参数
             String name = "测试文件." + extension;
             // mock 方法
-            FileClient client = mock(FileClient.class);
+            FileClient client = mock(S3FileClient.class);
             when(fileConfigService.getMasterFileClient()).thenReturn(client);
             when(client.getId()).thenReturn(10L);
             when(client.presignPutUrl(anyString())).thenReturn("upload-url");
             when(client.presignGetUrl(anyString(), isNull())).thenReturn("visit-url");
+            when(uploadTicketService.issue(any())).thenReturn("issued-upload-ticket");
 
             // 调用
             FilePresignedUrlRespVO result = fileService.presignPutUrl(name, "avatar");
@@ -332,6 +345,7 @@ public class FileServiceImplTest extends BaseDbUnitTest {
             assertTrue(result.getPath().endsWith("/" + name));
             assertEquals("upload-url", result.getUploadUrl());
             assertEquals("visit-url", result.getUrl());
+            assertEquals("issued-upload-ticket", result.getUploadTicket());
         }
     }
 
@@ -349,7 +363,7 @@ public class FileServiceImplTest extends BaseDbUnitTest {
     @Test
     public void testDeleteFile_success() throws Exception {
         // mock 数据
-        FileDO dbFile = randomPojo(FileDO.class, o -> o.setConfigId(10L).setPath("tudou.jpg"));
+        FileDO dbFile = randomPojo(FileDO.class, o -> o.setTenantId(1L).setConfigId(10L).setPath("tudou.jpg"));
         fileMapper.insert(dbFile);// @Sql: 先插入出一条存在的数据
         // mock Master 文件客户端
         FileClient client = mock(FileClient.class);
@@ -377,7 +391,7 @@ public class FileServiceImplTest extends BaseDbUnitTest {
     @Test
     public void testDeleteFile_pathInvalid() {
         // mock 数据
-        FileDO dbFile = randomPojo(FileDO.class, o -> o.setConfigId(10L).setPath("../tudou.jpg"));
+        FileDO dbFile = randomPojo(FileDO.class, o -> o.setTenantId(1L).setConfigId(10L).setPath("../tudou.jpg"));
         fileMapper.insert(dbFile);
 
         // 调用，并断言异常
@@ -389,6 +403,7 @@ public class FileServiceImplTest extends BaseDbUnitTest {
         // 准备参数
         Long configId = 10L;
         String path = "tudou.jpg";
+        fileMapper.insert(randomPojo(FileDO.class, o -> o.setTenantId(1L).setConfigId(configId).setPath(path)));
         // mock 方法
         FileClient client = mock(FileClient.class);
         when(fileConfigService.getFileClient(eq(10L))).thenReturn(client);
@@ -414,7 +429,7 @@ public class FileServiceImplTest extends BaseDbUnitTest {
     @Test
     public void testGetFileByConfigIdAndPath() {
         // mock 数据
-        FileDO dbFile = randomPojo(FileDO.class, o -> o.setConfigId(10L).setPath("avatar/中文 100%+文件.jpg"));
+        FileDO dbFile = randomPojo(FileDO.class, o -> o.setTenantId(1L).setConfigId(10L).setPath("avatar/中文 100%+文件.jpg"));
         fileMapper.insert(dbFile);
         FileDO latestFile = ObjectUtils.cloneIgnoreId(dbFile, o -> o.setName("最新文件名.jpg"));
         fileMapper.insert(latestFile);
@@ -429,22 +444,104 @@ public class FileServiceImplTest extends BaseDbUnitTest {
     }
 
     @Test
+    public void anotherTenantCannotReadListOrDeleteAFileEvenWithItsExactPath() {
+        FileDO foreign = randomPojo(FileDO.class, o -> o.setTenantId(2L).setConfigId(10L).setPath("legacy/foreign.jpg"));
+        fileMapper.insert(foreign);
+        assertTrue(fileService.getFilePage(new FilePageReqVO()).getList().isEmpty());
+        assertNull(fileService.getFileByConfigIdAndPath(10L, foreign.getPath()));
+        assertServiceException(() -> fileService.getFile(foreign.getId()), FILE_NOT_EXISTS);
+        assertServiceException(() -> fileService.deleteFile(foreign.getId()), FILE_NOT_EXISTS);
+        assertServiceException(() -> fileService.getFileContent(10L, foreign.getPath()), FILE_NOT_EXISTS);
+        verifyNoInteractions(fileConfigService);
+    }
+
+    @Test
+    public void batchWithForeignFileDoesNotDeleteAnyPhysicalObject() {
+        FileDO own = randomPojo(FileDO.class, o -> o.setTenantId(1L).setConfigId(10L).setPath("own.jpg"));
+        FileDO foreign = randomPojo(FileDO.class, o -> o.setTenantId(2L).setConfigId(10L).setPath("foreign.jpg"));
+        fileMapper.insert(own); fileMapper.insert(foreign);
+        assertServiceException(() -> fileService.deleteFileList(java.util.List.of(own.getId(), foreign.getId())), FILE_NOT_EXISTS);
+        assertNotNull(fileMapper.selectById(own.getId()));
+        verifyNoInteractions(fileConfigService);
+    }
+
+    @Test
+    public void aPhysicalPathWithoutOwnedMetadataIsNotDownloadable() {
+        assertServiceException(() -> fileService.getFileContent(10L, "existing-but-unregistered.jpg"), FILE_NOT_EXISTS);
+        verifyNoInteractions(fileConfigService);
+    }
+
+    @Test
+    public void unassignedHistoricalMetadataDoesNotBecomeCurrentTenantData() {
+        FileDO legacy = randomPojo(FileDO.class, o -> o.setTenantId(null).setConfigId(10L).setPath("legacy/unassigned.jpg"));
+        fileMapper.insert(legacy);
+        assertTrue(fileService.getFilePage(new FilePageReqVO()).getList().isEmpty());
+        assertServiceException(() -> fileService.getFile(legacy.getId()), FILE_NOT_EXISTS);
+        assertServiceException(() -> fileService.getFileContent(10L, legacy.getPath()), FILE_NOT_EXISTS);
+        verifyNoInteractions(fileConfigService);
+    }
+
+    @Test
+    public void clientUploadCannotRegisterAnotherTenantPath() {
+        FileCreateReqVO req = randomPojo(FileCreateReqVO.class, o -> o.setName("a.jpg")
+                .setPath("tenant/2/avatar/a.jpg").setUrl("https://files.test/a.jpg"));
+        assertServiceException(() -> fileService.createFile(req), FILE_PATH_INVALID);
+        assertEquals(0L, fileMapper.selectCount());
+    }
+
+    @Test
+    public void localClientRegistrationCannotClaimAnUnassignedHistoricalPhysicalPath() {
+        var legacy = new FileDO().setTenantId(null).setConfigId(29L).setName("legacy.jpg")
+                .setPath("tenant/1/legacy.jpg").setUrl("https://files.test/legacy.jpg").setSize(3L);
+        fileMapper.insert(legacy);
+        when(fileConfigService.getFileClient(29L)).thenReturn(mock(LocalFileClient.class));
+        var req = new FileCreateReqVO().setConfigId(29L).setPath(legacy.getPath()).setName("legacy.jpg")
+                .setUrl(legacy.getUrl()).setSize(3L);
+        assertServiceException(() -> fileService.createFile(req), FILE_CLIENT_UPLOAD_DISABLED);
+        assertEquals(1L, fileMapper.selectCount());
+        assertServiceException(() -> fileService.getFileContent(29L, legacy.getPath()), FILE_NOT_EXISTS);
+        verifyNoInteractions(uploadTicketService);
+    }
+
+    @Test
+    public void evenATicketCannotReplaceUnassignedOrForeignPathMetadata() {
+        when(fileConfigService.getFileClient(29L)).thenReturn(mock(S3FileClient.class));
+        int n = 0;
+        for (Long owner : new Long[]{null, 2L}) {
+            String path = "tenant/1/ambiguous-" + (n++) + ".jpg";
+            fileMapper.insert(new FileDO().setTenantId(owner).setConfigId(29L).setName("a.jpg")
+                    .setPath(path).setUrl("https://files.test/a.jpg").setSize(3L));
+            var req = new FileCreateReqVO().setConfigId(29L).setPath(path).setName("a.jpg")
+                    .setUrl("https://attacker.test/a.jpg").setSize(3L).setUploadTicket("fixture");
+            when(uploadTicketService.consume("fixture", 1L, 29L, path, "a.jpg"))
+                    .thenReturn(new FileUploadTicketService.Ticket().setUrl("https://trusted.test/a.jpg"));
+            assertServiceException(() -> fileService.createFile(req), FILE_PATH_EXISTS);
+        }
+        assertEquals(2L, fileMapper.selectCount());
+    }
+
+    @Test
     public void testCreateFileByPresignedPath_success() {
         // 准备参数
         FileCreateReqVO reqVO = randomPojo(FileCreateReqVO.class, o -> {
-            o.setPath("avatar/test.jpg");
+            o.setConfigId(10L);
+            o.setPath("tenant/1/avatar/test.jpg");
             o.setName("test.jpg");
             o.setUrl("https://www.iocoder.cn/test.jpg?token=123");
         });
+        when(fileConfigService.getFileClient(10L)).thenReturn(mock(S3FileClient.class));
+        when(uploadTicketService.consume(reqVO.getUploadTicket(), 1L, 10L, reqVO.getPath(), "test.jpg"))
+                .thenReturn(new FileUploadTicketService.Ticket().setUrl("https://trusted-storage.test/test.jpg"));
 
         // 调用
         Long fileId = fileService.createFile(reqVO);
 
         // 断言
         FileDO file = fileMapper.selectById(fileId);
-        assertEquals("avatar/test.jpg", file.getPath());
+        assertEquals("tenant/1/avatar/test.jpg", file.getPath());
+        assertEquals(1L, file.getTenantId());
         assertEquals("test.jpg", file.getName());
-        assertEquals("https://www.iocoder.cn/test.jpg", file.getUrl());
+        assertEquals("https://trusted-storage.test/test.jpg", file.getUrl());
         assertEquals("image/jpeg", file.getType());
     }
 

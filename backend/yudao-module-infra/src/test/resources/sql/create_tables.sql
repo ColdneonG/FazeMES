@@ -44,7 +44,7 @@ CREATE TABLE IF NOT EXISTS "infra_file" (
     "updater" varchar(64) DEFAULT '',
     "update_time" timestamp NOT NULL DEFAULT CURRENT_TIMESTAMP,
     "deleted" bit NOT NULL DEFAULT FALSE,
-    "tenant_id" bigint not null default  '0',
+    "tenant_id" bigint default null,
     PRIMARY KEY ("id")
 ) COMMENT '文件表';
 

@@ -124,6 +124,33 @@ pwsh -NoProfile -File deploy/start-local.ps1
 
 更新前请使用 MySQL 备份工具备份 `yudao_mes`，并另存本地配置。已有安装的日常启动只复用原数据，并通过 `fazemes_schema_migration` 的文件名和 SHA-256 记录顺序执行待应用迁移，不再导入初始化 SQL 或示例数据。同日迁移按声明的先决依赖排序，例如 Broky 产品配置会等待成本和受控 SOP 表就绪。已执行迁移的内容如有变化会中止，请添加新迁移文件。`-InitializeDatabase` 只用于显式的首次初始化或配置修复，不是日常升级命令；已有数据但配置不完整时，默认启动会报错，不会自动重新导入数据。
 
+正常启动和恢复启动会同时运行独立的数据库备份进程，按 **Asia/Shanghai 每日 02:00** 生成完整逻辑备份，周日标记为周完整备份；首次启动或错过时间时补做最近一个到期时点。同一时点只保留一次有效执行，备份失败下一轮重试，不阻塞业务就绪等待。停止项目时先结束备份进程及其正在运行的导出，再停止数据库。备份位置为 `.runtime/backups/operations`，至少保留 30 天，并保留最新日备份与周备份；它与重建测试库的首次永久恢复点及最近 3 份政策相互独立。
+
+```powershell
+pwsh -NoProfile -File deploy/operational-backup.ps1 -Action Run       # 到期时补做；重复执行不重复导出
+pwsh -NoProfile -File deploy/operational-backup.ps1 -Action Verify    # 校验全部运维备份，不连接数据库
+pwsh -NoProfile -File deploy/operational-backup.ps1 -Action Status    # 查看最近一次调度结果
+pwsh -NoProfile -File deploy/operational-backup.ps1 -Action TaskPlan  # 只输出无人登录任务配置
+```
+
+默认进程随当前 Windows 会话运行。需要在无人登录时备份，可在管理员 PowerShell 中执行 `deploy/operational-backup.ps1 -Action InstallTask`，注册本项目专属的 SYSTEM 任务；使用 `-Action RemoveTask` 移除。任务固定 Python、脚本及工作目录的绝对路径，按上海时间 02:00 触发，错过后补跑，失败后重试，MySQL 必须由运行环境保持可用。凭据只从本机 MySQL 配置文件读取，安装时限制该文件和备份目录的 ACL，不写入任务参数或日志。日常启动不会自动注册系统任务。详细校验和恢复条件见 [数据库说明](database/README.md#运维数据库备份)。
+
+## 数量与排产约束
+
+工单、BOM、排产、检验、仓储、SN分摊及门户订购的业务数量采用十进制文本处理，支持最多14位整数和6位小数。数量接口响应保留精确字符串，客户端不要先转为JavaScript `Number` 再保存；金额、尺寸、百分率和整数计数继续遵循各自接口定义。单件分摊、废品合计及可用数量比较使用精确运算，微量和大数不会在表单中被两位小数控件截断。
+
+排产新增和甘特调整会在保存时检查工作站、所属车间及计划开始时刻的资源可用性。人员使用已确认排班，设备、工装和账号使用当前有效状态；未绑定具体人员或台账时显示未限制说明。该检查不保证未来整个任务时段的资源情况，实际作业与报工仍重新核验。保存前的资源与时间检查会提示同工作站重叠及结束—开始前序冲突，甘特批量调整同时核对本次拟提交方案；按设计保留人工确认时间重叠的方式，不自动移动其他任务。
+
+## 会话与业务附件访问
+
+在线会话清单不返回访问令牌或刷新令牌。旧 `/system/oauth2-token/delete` 接口改用记录 `id`，批量接口使用 `ids`；登录及普通注销接口的认证方式不变。注销、停用和管理员强退后，关联媒体访问也立即失效。
+
+本地业务附件保留原URL，浏览器登录、刷新和重新进入页面时建立并续期600秒的只读媒体会话。凭据通过HttpOnly、SameSite=Strict Cookie传输，HTTPS下启用Secure；媒体Cookie仅用于文件GET，不授权上传、删除或其他业务写入。部署采用同源或同站点反向代理，跨站环境需相应部署适配，不能以恢复匿名下载替代认证。外部对象存储需使用私有桶；此保护覆盖应用代理的本地附件通道。
+
+本地、FTP和数据库存储使用后端上传接口，不接受客户端自行登记已有路径。S3直传由服务端预签名接口返回短期一次性 `uploadTicket`；客户端完成PUT后携带票据登记成功，才能发布文件URL。票据绑定租户、存储配置、路径及文件名，失效或重复登记时应重新发起上传。
+
+`20261025_file_tenant_access.sql` 根据可验证的创建用户回填历史文件租户，不猜配来源不明的附件。迁移后 `tenant_id IS NULL` 的文件默认不能读取，管理员使用 `SELECT id,creator,path FROM infra_file WHERE tenant_id IS NULL;` 定位，并核对真实业务引用后逐条确认归属，不应把全部历史附件直接归入某个默认租户。新上传文件使用 `tenant/{id}/` 独立路径，避免跨租户同名覆盖。
+
 ## 目录结构
 
 ```text

@@ -19,6 +19,7 @@ import cn.iocoder.yudao.module.system.service.user.AdminUserService;
 import jakarta.annotation.Resource;
 import org.assertj.core.util.Lists;
 import org.junit.jupiter.api.Test;
+import org.junit.jupiter.api.AfterEach;
 import org.springframework.context.annotation.Import;
 import org.springframework.test.context.bean.override.mockito.MockitoBean;
 
@@ -40,6 +41,8 @@ import static org.mockito.Mockito.when;
  */
 @Import({OAuth2TokenServiceImpl.class, OAuth2AccessTokenRedisDAO.class})
 public class OAuth2TokenServiceImplTest extends BaseDbAndRedisUnitTest {
+
+    @AfterEach void clearTenantContext() { TenantContextHolder.clear(); }
 
     @Resource
     private OAuth2TokenServiceImpl oauth2TokenService;
@@ -277,10 +280,13 @@ public class OAuth2TokenServiceImplTest extends BaseDbAndRedisUnitTest {
         // mock 数据（访问令牌）
         OAuth2AccessTokenDO accessTokenDO = randomPojo(OAuth2AccessTokenDO.class)
                 .setExpiresTime(LocalDateTime.now().plusDays(1));
+        accessTokenDO.setTenantId(1L);
+        TenantContextHolder.setTenantId(1L);
         oauth2AccessTokenMapper.insert(accessTokenDO);
         // mock 数据（刷新令牌）
         OAuth2RefreshTokenDO refreshTokenDO = randomPojo(OAuth2RefreshTokenDO.class)
                 .setRefreshToken(accessTokenDO.getRefreshToken());
+        refreshTokenDO.setTenantId(1L);
         oauth2RefreshTokenMapper.insert(refreshTokenDO);
         // 调用
         OAuth2AccessTokenDO result = oauth2TokenService.removeAccessToken(accessTokenDO.getAccessToken());

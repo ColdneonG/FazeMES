@@ -317,6 +317,7 @@
 
 <script setup lang="ts">
 import type { FormInstance } from 'element-plus'
+import { formatQuantity } from '@/utils/mesQuantity'
 import { formatDate } from '@/utils/formatTime'
 import ProWorkOrderSelect from '@/views/mes/pro/workorder/components/ProWorkOrderSelect.vue'
 import {
@@ -385,8 +386,7 @@ const actionLabels: Record<string, string> = {
   AUTO_RELEASE: '工单关闭释放'
 }
 const actionText = (s: string) => actionLabels[s] || s
-const quantity = (v: unknown) =>
-  Number(v || 0).toLocaleString('zh-CN', { maximumFractionDigits: 6 })
+const quantity = (v: unknown) => formatQuantity(v ?? '0')
 const materialLabel = (id: number) => {
   const material = analysis.value?.materials.find((m) => m.itemId === id)
   return material ? `${material.itemCode} · ${material.itemName}` : `物料 ${id}`

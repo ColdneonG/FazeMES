@@ -15,5 +15,6 @@ public class MesMdStockWarningRespVO {
     private BigDecimal maxStock;
     @Schema(description = "LOW低于下限，HIGH高于上限；上限0表示未设置")
     private String level;
+    @com.fasterxml.jackson.databind.annotation.JsonSerialize(using = com.fasterxml.jackson.databind.ser.std.ToStringSerializer.class)
     private BigDecimal difference;
 }

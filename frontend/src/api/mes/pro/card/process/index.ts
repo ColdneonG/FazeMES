@@ -10,9 +10,9 @@ export interface ProCardProcessVO {
   processName: string // 工序名称
   inputTime: Date // 进入工序时间
   outputTime: Date // 出工序时间
-  inputQuantity: number // 投入数量
-  outputQuantity: number // 产出数量
-  unqualifiedQuantity: number // 不合格品数量
+  inputQuantity: number | string // 投入数量
+  outputQuantity: number | string // 产出数量
+  unqualifiedQuantity: number | string // 不合格品数量
   workstationId: number // 工位编号
   workstationCode: string // 工位编码
   workstationName: string // 工位名称

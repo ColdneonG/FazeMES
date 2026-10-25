@@ -204,13 +204,10 @@
           ><div
             ><strong>{{ line.productName }}</strong
             ><small>{{ line.productCode }} · {{ line.unitName }}</small></div
-          ><el-input-number
-            v-model="line.quantity"
-            :min="0.000001"
-            :max="1000000"
-            :precision="6"
-            :step="1"
-          /><el-button text type="danger" @click="removeProduct(line.productId)"
+          ><MesQuantityInput v-model="line.quantity" /><el-button
+            text
+            type="danger"
+            @click="removeProduct(line.productId)"
             >移除</el-button
           ></div
         ><el-form label-position="top" class="checkout-form"
@@ -248,6 +245,8 @@
 </template>
 
 <script setup lang="ts">
+import MesQuantityInput from '@/views/mes/components/MesQuantityInput.vue'
+import { minQuantity, quantityUnits, quantityText, sumQuantities } from '@/utils/mesQuantity'
 import { money } from '@/views/mes/cost/format'
 import { generateUUID } from '@/utils'
 import { ElMessage } from 'element-plus'
@@ -383,8 +382,10 @@ async function logout() {
 }
 function addProduct(product: PortalProduct) {
   const line = cart.value.find((item) => item.productId === product.productId)
-  if (line) line.quantity = Math.min(1000000, Number(line.quantity || 0) + 1)
-  else cart.value.push({ ...product, quantity: 1 })
+  if (line)
+    line.quantity =
+      minQuantity('1000000', sumQuantities(line.quantity || '0', '1')) ?? line.quantity
+  else cart.value.push({ ...product, quantity: '1' })
   checkoutOpen.value = true
 }
 function removeProduct(id: number) {
@@ -392,6 +393,15 @@ function removeProduct(id: number) {
 }
 async function submit() {
   if (!deliveryDate.value || !cart.value.length || submitting.value) return
+  if (
+    cart.value.some((line) => {
+      const units = quantityUnits(line.quantity)
+      return units === undefined || units <= 0n || units > 1_000_000_000_000n
+    })
+  ) {
+    ElMessage.warning('订购数量须大于零、不超过100万，且最多保留六位小数')
+    return
+  }
   submitting.value = true
   error.value = ''
   try {
@@ -399,7 +409,10 @@ async function submit() {
       requestKey: requestKey.value,
       deliveryDate: deliveryDate.value,
       remark: remark.value,
-      items: cart.value.map((line) => ({ productId: line.productId, quantity: line.quantity }))
+      items: cart.value.map((line) => ({
+        productId: line.productId,
+        quantity: quantityText(quantityUnits(line.quantity)!)
+      }))
     })
     ElMessage.success(`申请 ${result.code} 已提交`)
     cart.value = []

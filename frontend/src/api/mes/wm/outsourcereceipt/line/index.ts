@@ -8,7 +8,7 @@ export interface WmOutsourceReceiptLineVO {
   itemCode: string
   itemName: string
   specification: string
-  quantity: number
+  quantity: number | string
   unitId: number
   unitName: string
   batchId: number

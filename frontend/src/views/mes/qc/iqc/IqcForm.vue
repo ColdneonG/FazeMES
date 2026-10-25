@@ -1,6 +1,12 @@
 <!-- MES 来料检验单表单 -->
 <template>
-  <Dialog :title="dialogTitle" v-model="dialogVisible" :default-fullscreen="props.terminal" class="mes-qc-responsive" width="1080px">
+  <Dialog
+    :title="dialogTitle"
+    v-model="dialogVisible"
+    :default-fullscreen="props.terminal"
+    class="mes-qc-responsive"
+    width="1080px"
+  >
     <!-- 基本信息表单 -->
     <el-form
       ref="formRef"
@@ -79,11 +85,9 @@
       <el-divider>检测情况</el-divider>
       <el-row :gutter="16">
         <el-col :span="8">
-          <el-form-item label="本次接收数量" prop="receivedQuantity">
-            <el-input-number
+          <el-form-item label="本次接收数量" prop="receivedQuantity" :rules="[quantityRule(true)]">
+            <MesQuantityInput
               v-model="formData.receivedQuantity"
-              :min="0"
-              :precision="2"
               placeholder="请输入本次接收数量"
               class="!w-1/1"
               :disabled="isFromPendingTask"
@@ -91,20 +95,22 @@
           </el-form-item>
         </el-col>
         <el-col :span="8">
-          <el-form-item label="合格品数量" prop="qualifiedQuantity">
-            <el-input-number
+          <el-form-item label="合格品数量" prop="qualifiedQuantity" :rules="[quantityRule(false)]">
+            <MesQuantityInput
               v-model="formData.qualifiedQuantity"
-              :min="0"
               placeholder="请输入合格品数量"
               class="!w-1/1"
             />
           </el-form-item>
         </el-col>
         <el-col :span="8">
-          <el-form-item label="不合格品数量" prop="unqualifiedQuantity">
-            <el-input-number
+          <el-form-item
+            label="不合格品数量"
+            prop="unqualifiedQuantity"
+            :rules="[quantityRule(false)]"
+          >
+            <MesQuantityInput
               v-model="formData.unqualifiedQuantity"
-              :min="0"
               placeholder="请输入不合格品数量"
               class="!w-1/1"
             />
@@ -239,6 +245,8 @@
 </template>
 
 <script setup lang="ts">
+import MesQuantityInput from '@/views/mes/components/MesQuantityInput.vue'
+import { quantityRule } from '@/utils/mesQuantity'
 import { DICT_TYPE, getIntDictOptions } from '@/utils/dict'
 import { AutoCodeRecordApi } from '@/api/mes/md/autocode/record'
 import { QcIqcApi, QcIqcVO } from '@/api/mes/qc/iqc'
@@ -286,9 +294,9 @@ const formData = ref({
   vendorId: undefined,
   vendorBatch: undefined,
   itemId: undefined,
-  receivedQuantity: undefined,
-  qualifiedQuantity: undefined,
-  unqualifiedQuantity: undefined,
+  receivedQuantity: undefined as number | string | undefined,
+  qualifiedQuantity: undefined as number | string | undefined,
+  unqualifiedQuantity: undefined as number | string | undefined,
   inspectorUserId: undefined,
   inspectDate: undefined,
   checkResult: undefined,
@@ -420,9 +428,9 @@ const resetForm = () => {
     vendorId: undefined,
     vendorBatch: undefined,
     itemId: undefined,
-    receivedQuantity: undefined,
-    qualifiedQuantity: undefined,
-    unqualifiedQuantity: undefined,
+    receivedQuantity: undefined as number | string | undefined,
+    qualifiedQuantity: undefined as number | string | undefined,
+    unqualifiedQuantity: undefined as number | string | undefined,
     inspectorUserId: undefined,
     inspectDate: undefined,
     checkResult: undefined,

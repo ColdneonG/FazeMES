@@ -64,14 +64,8 @@
       </el-row>
       <el-row>
         <el-col :span="8">
-          <el-form-item label="工单数量" prop="quantity">
-            <el-input-number
-              v-model="formData.quantity"
-              :min="0"
-              :precision="2"
-              class="!w-1/1"
-              disabled
-            />
+          <el-form-item label="工单数量" prop="quantity" :rules="[quantityRule(true)]">
+            <MesQuantityInput v-model="formData.quantity" class="!w-1/1" disabled />
           </el-form-item>
         </el-col>
         <el-col :span="8">
@@ -171,6 +165,8 @@
 </template>
 
 <script setup lang="ts">
+import MesQuantityInput from '@/views/mes/components/MesQuantityInput.vue'
+import { quantityRule } from '@/utils/mesQuantity'
 import { getIntDictOptions, DICT_TYPE } from '@/utils/dict'
 import { ProWorkOrderApi } from '@/api/mes/pro/workorder'
 import { ProRouteProcessApi, ProRouteProcessVO } from '@/api/mes/pro/route/process'

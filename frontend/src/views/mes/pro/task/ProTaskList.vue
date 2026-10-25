@@ -89,14 +89,8 @@
           </el-form-item>
         </el-col>
         <el-col :span="8">
-          <el-form-item label="排产数量" prop="quantity">
-            <el-input-number
-              v-model="formData.quantity"
-              :min="0.01"
-              :precision="2"
-              class="!w-1/1"
-              :disabled="isDetail"
-            />
+          <el-form-item label="排产数量" prop="quantity" :rules="[quantityRule(true)]">
+            <MesQuantityInput v-model="formData.quantity" class="!w-1/1" :disabled="isDetail" />
           </el-form-item>
         </el-col>
         <el-col :span="8">
@@ -163,8 +157,11 @@
 </template>
 
 <script setup lang="ts">
+import MesQuantityInput from '@/views/mes/components/MesQuantityInput.vue'
+import { quantityRule } from '@/utils/mesQuantity'
 import { dateFormatter } from '@/utils/formatTime'
 import { ProTaskApi, ProTaskVO } from '@/api/mes/pro/task'
+import { reviewScheduleChanges } from './scheduleReview'
 import MdWorkstationSelect from '@/views/mes/md/workstation/components/MdWorkstationSelect.vue'
 
 defineOptions({ name: 'ProTaskList' })
@@ -201,10 +198,7 @@ const isDetail = computed(() => formType.value === 'detail')
 const formData = ref<ProTaskVO>({} as unknown as ProTaskVO)
 const formRules = reactive({
   workstationId: [{ required: true, message: '工作站不能为空', trigger: 'change' }],
-  quantity: [
-    { required: true, message: '排产数量不能为空', trigger: 'blur' },
-    { type: 'number', min: 0.01, message: '排产数量必须大于 0', trigger: 'blur' }
-  ],
+  quantity: [quantityRule(true)],
   startTime: [{ required: true, message: '开始时间不能为空', trigger: 'change' }],
   duration: [{ required: true, message: '生产时长不能为空', trigger: 'blur' }]
 })
@@ -254,6 +248,16 @@ const submitForm = async () => {
   formLoading.value = true
   try {
     const data = formData.value as unknown as ProTaskVO
+    if (
+      !(await reviewScheduleChanges(
+        [data],
+        ProTaskApi.checkSchedule,
+        message.confirm,
+        message.error
+      ))
+    ) {
+      return
+    }
     if (formType.value === 'create') {
       await ProTaskApi.createTask(data)
       message.success(t('common.createSuccess'))
@@ -300,7 +304,7 @@ const resetForm = () => {
     routeId: undefined,
     processId: undefined,
     itemId: undefined,
-    quantity: undefined,
+    quantity: undefined as number | string | undefined,
     startTime: undefined,
     duration: 1,
     endTime: undefined,

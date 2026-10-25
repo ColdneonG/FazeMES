@@ -30,4 +30,7 @@ public class FileCreateReqVO {
     @Schema(description = "文件大小", example = "2048", requiredMode = Schema.RequiredMode.REQUIRED)
     private Long size;
 
+    @Schema(description = "S3预签名上传的一次性登记凭据")
+    private String uploadTicket;
+
 }

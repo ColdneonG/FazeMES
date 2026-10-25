@@ -35,6 +35,8 @@ public interface ErrorCodeConstants {
     ErrorCode FILE_IS_EMPTY = new ErrorCode(1_001_003_002, "文件为空");
     ErrorCode FILE_PATH_INVALID = new ErrorCode(1_001_003_003, "文件路径不正确");
     ErrorCode FILE_TYPE_NOT_ALLOWED = new ErrorCode(1_001_003_004, "不支持的文件类型");
+    ErrorCode FILE_CLIENT_UPLOAD_DISABLED = new ErrorCode(1_001_003_005, "当前文件存储只允许后端上传，不能手工登记已有文件");
+    ErrorCode FILE_UPLOAD_TICKET_INVALID = new ErrorCode(1_001_003_006, "上传凭据无效、已过期或已使用，请重新上传");
 
     // ========== 代码生成器 1-001-004-000 ==========
     ErrorCode CODEGEN_TABLE_EXISTS = new ErrorCode(1_001_004_002, "表定义已经存在");

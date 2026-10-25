@@ -37,6 +37,9 @@ public interface MesProTaskService {
      */
     void updateTask(@Valid MesProTaskSaveReqVO updateReqVO);
 
+    cn.iocoder.yudao.module.mes.controller.admin.pro.task.vo.MesProTaskScheduleCheckRespVO
+    checkSchedule(@Valid MesProTaskSaveReqVO request);
+
     /**
      * 删除生产任务
      *

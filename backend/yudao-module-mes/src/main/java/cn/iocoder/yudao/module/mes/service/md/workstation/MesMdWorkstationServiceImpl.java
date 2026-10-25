@@ -149,6 +149,28 @@ public class MesMdWorkstationServiceImpl implements MesMdWorkstationService {
         return workstation;
     }
 
+    @Override
+    public cn.iocoder.yudao.module.mes.controller.admin.md.workstation.vo.MesMdWorkstationAvailabilityRespVO
+    getScheduleAvailability(Long id, java.time.LocalDateTime startTime) {
+        if (startTime == null) throw exception(PRO_TASK_TIME_INVALID);
+        MesMdWorkstationDO workstation = validateWorkstationExistsAndEnable(id);
+        var result = availabilityService.check(workstation, startTime);
+        MesMdWorkshopDO workshop = workshopService.getWorkshop(workstation.getWorkshopId());
+        if (workshop == null) result.getReasons().add("工作站所属车间不存在");
+        else if (!CommonStatusEnum.isEnable(workshop.getStatus())) result.getReasons().add("工作站所属车间已停用");
+        result.setAvailable(result.getReasons().isEmpty());
+        result.getNotes().add("人员排班按计划开始时刻检查；设备、工装及账号采用当前有效状态，执行作业时仍需重新核验");
+        return result;
+    }
+
+    @Override
+    public void validateWorkstationForSchedule(Long id, java.time.LocalDateTime startTime) {
+        var availability = getScheduleAvailability(id, startTime);
+        if (!Boolean.TRUE.equals(availability.getAvailable())) {
+            throw exception(MD_WORKSTATION_RESOURCE_UNAVAILABLE, String.join("；", availability.getReasons()));
+        }
+    }
+
     private void validateWorkshopExists(Long workshopId) {
         MesMdWorkshopDO workshop = workshopService.getWorkshop(workshopId);
         if (workshop == null) {

@@ -10,7 +10,7 @@ export interface ProWorkOrderBomVO {
   itemSpecification: string // 规格型号
   unitMeasureId: number // 单位编号
   unitMeasureName: string // 单位名称
-  quantity: number // 预计使用量
+  quantity: number | string // 预计使用量
   remark: string // 备注
   itemOrProduct: string // 物料产品标识
 }

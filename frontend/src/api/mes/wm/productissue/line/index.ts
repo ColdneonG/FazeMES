@@ -9,7 +9,7 @@ export interface WmProductIssueLineVO {
   itemName?: string
   specification?: string
   unitMeasureName?: string
-  quantity: number
+  quantity: number | string
   batchId?: number
   remark?: string
 }

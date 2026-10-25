@@ -31,15 +31,8 @@
           </el-form-item>
         </el-col>
         <el-col :span="8">
-          <el-form-item label="数量" prop="quantity">
-            <el-input-number
-              v-model="formData.quantity"
-              :precision="2"
-              :min="0"
-              :max="quantityMax"
-              controls-position="right"
-              class="!w-1/1"
-            />
+          <el-form-item label="数量" prop="quantity" :rules="[quantityRule(true, quantityMax)]">
+            <MesQuantityInput v-model="formData.quantity" class="!w-1/1" />
           </el-form-item>
         </el-col>
       </el-row>
@@ -89,6 +82,8 @@
 </template>
 
 <script setup lang="ts">
+import MesQuantityInput from '@/views/mes/components/MesQuantityInput.vue'
+import { quantityRule, minQuantity } from '@/utils/mesQuantity'
 import { WmReturnIssueDetailApi, WmReturnIssueDetailVO } from '@/api/mes/wm/returnissue/detail'
 import { WmMaterialStockApi } from '@/api/mes/wm/materialstock'
 import { WmReturnIssueLineApi } from '@/api/mes/wm/returnissue/line'
@@ -116,7 +111,7 @@ const formLoading = ref(false) // 表单的加载中
 const formType = ref('') // 表单的类型：create / update
 const currentLineId = ref<number>() // 当前操作的行 ID
 const qualityStatus = ref<number>()
-const quantityMax = ref<number | undefined>(undefined) // 数量上限（在库数量）
+const quantityMax = ref<number | string | undefined>(undefined) // 数量上限（在库数量）
 const formRef = ref() // 表单 Ref
 const formData = ref({
   id: undefined as number | undefined,
@@ -124,7 +119,7 @@ const formData = ref({
   issueId: undefined as number | undefined,
   itemId: undefined as number | undefined,
   materialStockId: undefined as number | undefined,
-  quantity: undefined as number | undefined,
+  quantity: undefined as number | string | undefined,
   batchId: undefined as number | undefined,
   batchCode: undefined as string | undefined,
   warehouseId: undefined as number | undefined,
@@ -164,7 +159,7 @@ const open = async (type: string, lineId: number, _itemId?: number, detailId?: n
       formData.value.batchId = line.batchId
       formData.value.batchCode = line.batchCode
       const stock = await WmMaterialStockApi.getMaterialStock(line.materialStockId)
-      quantityMax.value = Math.min(line.quantity, stock.quantity)
+      quantityMax.value = minQuantity(line.quantity, stock.quantity)
       formData.value.quantity = quantityMax.value
     }
   } finally {
@@ -213,7 +208,7 @@ const resetForm = () => {
     issueId: undefined,
     itemId: undefined,
     materialStockId: undefined,
-    quantity: undefined,
+    quantity: undefined as number | string | undefined,
     batchId: undefined,
     batchCode: undefined,
     warehouseId: undefined,

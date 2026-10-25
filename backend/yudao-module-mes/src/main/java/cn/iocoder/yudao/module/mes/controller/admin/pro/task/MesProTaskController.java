@@ -90,6 +90,14 @@ public class MesProTaskController {
         return success(true);
     }
 
+    @PostMapping("/check-schedule")
+    @Operation(summary = "检查人工排产的计划时刻资源、重叠和前序时间")
+    @PreAuthorize("@ss.hasAnyPermissions('mes:pro-task:create', 'mes:pro-task:update')")
+    public CommonResult<cn.iocoder.yudao.module.mes.controller.admin.pro.task.vo.MesProTaskScheduleCheckRespVO>
+    checkSchedule(@Valid @RequestBody MesProTaskSaveReqVO request) {
+        return success(taskService.checkSchedule(request));
+    }
+
     @DeleteMapping("/delete")
     @Operation(summary = "删除生产任务")
     @Parameter(name = "id", description = "编号", required = true)

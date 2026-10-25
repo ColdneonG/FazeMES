@@ -10,6 +10,8 @@ import cn.iocoder.yudao.module.mes.service.report.MesReportTimeFormat;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import org.springframework.jdbc.core.JdbcTemplate;
 import org.springframework.stereotype.Service;
+import java.math.BigDecimal;
+import java.math.MathContext;
 import java.sql.Timestamp;
 import java.time.*;
 import java.util.*;
@@ -40,6 +42,18 @@ public class MesInsightService {
     }
     private static String text(Object value) { return value == null ? "" : value.toString(); }
     private static double round(double value) { return Math.round(value*100)/100.0; }
+    private static BigDecimal qualityQuantity(Object value) {
+        if(value instanceof BigDecimal decimal)return decimal;
+        if(value instanceof Number number) {
+            try {return new BigDecimal(number.toString());}
+            catch(NumberFormatException ignored) {return null;}
+        }
+        return null;
+    }
+    private static boolean validQualityQuantity(Map<String,Object> report) {
+        BigDecimal quantity=qualityQuantity(report.get("quantity")),rejected=qualityQuantity(report.get("rejected"));
+        return quantity!=null&&rejected!=null&&quantity.signum()>0&&rejected.signum()>=0&&rejected.compareTo(quantity)<=0;
+    }
     private record Snapshot(List<Map<String,Object>> orders, List<Map<String,Object>> tasks,
                             List<MesScheduleEngine.Job> jobs, List<String> warnings, LocalDateTime now) {}
 
@@ -158,7 +172,7 @@ public class MesInsightService {
     }
 
     public Map<String,Object> quality(int days,int minSample) {
-        var all=feedback(days); var valid=all.stream().filter(r->r.get("rejected")!=null && num(r.get("quantity"))>0 && num(r.get("rejected"))>=0 && num(r.get("rejected"))<=num(r.get("quantity"))).toList();
+        var all=feedback(days); var valid=all.stream().filter(MesInsightService::validQualityQuantity).toList();
         List<Map<String,Object>> groups=new ArrayList<>();
         Map<String,String> dimensions=new LinkedHashMap<>(); dimensions.put("station","工作站"); dimensions.put("process","工序"); dimensions.put("product","产品"); dimensions.put("batch","生产批次"); dimensions.put("sop","SOP版本");
         for(var dim:dimensions.entrySet()) {
@@ -169,14 +183,20 @@ public class MesInsightService {
                 return product+"|"+scope;
             }));
             for(var entry:grouped.entrySet()) {
-                var source=entry.getValue(); var first=source.get(0); double total=source.stream().mapToDouble(r->num(r.get("quantity"))).sum(),bad=source.stream().mapToDouble(r->num(r.get("rejected"))).sum();
+                var source=entry.getValue(); var first=source.get(0);
+                BigDecimal total=source.stream().map(r->qualityQuantity(r.get("quantity"))).reduce(BigDecimal.ZERO,BigDecimal::add);
+                BigDecimal bad=source.stream().map(r->qualityQuantity(r.get("rejected"))).reduce(BigDecimal.ZERO,BigDecimal::add);
                 var productRows=valid.stream().filter(r->Objects.equals(r.get("itemId"),first.get("itemId"))).toList();
-                double productTotal=productRows.stream().mapToDouble(r->num(r.get("quantity"))).sum(),productBad=productRows.stream().mapToDouble(r->num(r.get("rejected"))).sum();
-                double rate=bad/total*100, baseline=productTotal==0?0:productBad/productTotal*100;
+                BigDecimal productTotal=productRows.stream().map(r->qualityQuantity(r.get("quantity"))).reduce(BigDecimal.ZERO,BigDecimal::add);
+                BigDecimal productBad=productRows.stream().map(r->qualityQuantity(r.get("rejected"))).reduce(BigDecimal.ZERO,BigDecimal::add);
+                // Only percentages use an approximate numeric presentation;
+                // report amounts and conservation checks remain decimal exact.
+                double rate=bad.divide(total,MathContext.DECIMAL128).doubleValue()*100;
+                double baseline=productTotal.signum()==0?0:productBad.divide(productTotal,MathContext.DECIMAL128).doubleValue()*100;
                 String label=text(first.get(dim.getKey()));
                 groups.add(map("dimension",dim.getValue(),"value",label.isBlank()?"未记录":label,"product",first.get("product"),"quantity",total,"rejected",bad,
                         "rate",round(rate),"baselineRate",round(baseline),"difference",round(rate-baseline),"records",source.size(),
-                        "sufficient",total>=minSample && source.size()>=2,"evidence",source));
+                        "sufficient",total.compareTo(BigDecimal.valueOf(minSample))>=0 && source.size()>=2,"evidence",source));
             }
         }
         groups.sort(Comparator.<Map<String,Object>>comparingDouble(g->num(g.get("difference"))).reversed());

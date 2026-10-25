@@ -13,10 +13,10 @@ export interface ProWorkOrderVO {
   productCode: string // 产品编码
   productSpecification: string // 规格型号
   unitMeasureName: string // 单位名称
-  quantity: number // 生产数量
-  quantityProduced: number // 已生产数量
-  quantityChanged: number // 调整数量
-  quantityScheduled: number // 已排产数量
+  quantity: number | string // 生产数量
+  quantityProduced: number | string // 已生产数量
+  quantityChanged: number | string // 调整数量
+  quantityScheduled: number | string // 已排产数量
   clientId: number // 客户编号
   clientCode: string // 客户编码
   clientName: string // 客户名称

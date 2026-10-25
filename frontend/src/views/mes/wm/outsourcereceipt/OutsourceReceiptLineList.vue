@@ -93,14 +93,8 @@
           </el-form-item>
         </el-col>
         <el-col :span="8">
-          <el-form-item label="入库数量" prop="quantity">
-            <el-input-number
-              v-model="formData.quantity"
-              :precision="2"
-              :min="0"
-              controls-position="right"
-              class="!w-1/1"
-            />
+          <el-form-item label="入库数量" prop="quantity" :rules="[quantityRule(true)]">
+            <MesQuantityInput v-model="formData.quantity" class="!w-1/1" />
           </el-form-item>
         </el-col>
         <el-col :span="8">
@@ -168,6 +162,8 @@
 </template>
 
 <script setup lang="ts">
+import MesQuantityInput from '@/views/mes/components/MesQuantityInput.vue'
+import { quantityRule } from '@/utils/mesQuantity'
 import { DICT_TYPE } from '@/utils/dict'
 import {
   WmOutsourceReceiptLineApi,
@@ -233,7 +229,7 @@ const formData = ref({
   id: undefined,
   receiptId: undefined as number | undefined,
   itemId: undefined,
-  quantity: undefined,
+  quantity: undefined as number | string | undefined,
   batchCode: undefined, // 仅展示，不提交
   productionDate: undefined,
   expireDate: undefined,
@@ -293,7 +289,7 @@ const resetForm = () => {
     id: undefined,
     receiptId: undefined,
     itemId: undefined,
-    quantity: undefined,
+    quantity: undefined as number | string | undefined,
     batchCode: undefined,
     productionDate: undefined,
     expireDate: undefined,

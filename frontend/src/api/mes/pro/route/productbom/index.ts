@@ -11,7 +11,7 @@ export interface ProRouteProductBomVO {
   itemName?: string // 物料名称
   specification?: string // 规格型号
   unitName?: string // 单位名称
-  quantity?: number // 用料比例
+  quantity?: number | string // 用料比例
   remark?: string // 备注
   createTime?: Date // 创建时间
 }

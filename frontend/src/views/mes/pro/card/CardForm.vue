@@ -40,11 +40,9 @@
           </el-form-item>
         </el-col>
         <el-col :span="8">
-          <el-form-item label="流转数量" prop="transferedQuantity">
-            <el-input-number
+          <el-form-item label="流转数量" prop="transferedQuantity" :rules="[quantityRule(true)]">
+            <MesQuantityInput
               v-model="formData.transferedQuantity"
-              :min="0"
-              :precision="2"
               class="!w-1/1"
               :disabled="isHeaderReadonly"
             />
@@ -109,6 +107,8 @@
 </template>
 
 <script setup lang="ts">
+import MesQuantityInput from '@/views/mes/components/MesQuantityInput.vue'
+import { quantityRule } from '@/utils/mesQuantity'
 import { ProCardApi, ProCardVO } from '@/api/mes/pro/card'
 import { AutoCodeRecordApi } from '@/api/mes/md/autocode/record'
 import MdItemSelect from '@/views/mes/md/item/components/MdItemSelect.vue'
@@ -148,7 +148,7 @@ const formData = ref({
   workOrderId: undefined as number | undefined,
   batchCode: undefined as string | undefined,
   itemId: undefined as number | undefined,
-  transferedQuantity: undefined as number | undefined,
+  transferedQuantity: undefined as number | string | undefined,
   status: undefined as number | undefined,
   remark: undefined as string | undefined
 })
@@ -264,7 +264,7 @@ const resetForm = () => {
     workOrderId: undefined,
     batchCode: undefined,
     itemId: undefined,
-    transferedQuantity: undefined,
+    transferedQuantity: undefined as number | string | undefined,
     status: undefined,
     remark: undefined
   }

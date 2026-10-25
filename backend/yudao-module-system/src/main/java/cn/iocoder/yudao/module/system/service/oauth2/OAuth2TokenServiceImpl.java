@@ -32,6 +32,7 @@ import java.time.LocalDateTime;
 import java.util.Collections;
 import java.util.List;
 import java.util.Map;
+import java.util.Objects;
 
 import static cn.iocoder.yudao.framework.common.exception.util.ServiceExceptionUtil.exception0;
 import static cn.iocoder.yudao.framework.common.util.collection.CollectionUtils.convertSet;
@@ -89,6 +90,7 @@ public class OAuth2TokenServiceImpl implements OAuth2TokenService {
         // 移除相关的访问令牌
         List<OAuth2AccessTokenDO> accessTokenDOs = oauth2AccessTokenMapper.selectListByRefreshToken(refreshToken);
         if (CollUtil.isNotEmpty(accessTokenDOs)) {
+            accessTokenDOs.forEach(oauth2AccessTokenRedisDAO::rememberForRevocation);
             oauth2AccessTokenMapper.deleteByIds(convertSet(accessTokenDOs, OAuth2AccessTokenDO::getId));
             oauth2AccessTokenRedisDAO.deleteList(convertSet(accessTokenDOs, OAuth2AccessTokenDO::getAccessToken));
         }
@@ -147,17 +149,49 @@ public class OAuth2TokenServiceImpl implements OAuth2TokenService {
     @Override
     @Transactional(rollbackFor = Exception.class)
     public OAuth2AccessTokenDO removeAccessToken(String accessToken) {
-        // 删除访问令牌
         OAuth2AccessTokenDO accessTokenDO = oauth2AccessTokenMapper.selectByAccessToken(accessToken);
-        if (accessTokenDO == null) {
-            return null;
+        if (accessTokenDO == null) accessTokenDO = oauth2AccessTokenRedisDAO.getRevocationSnapshot(accessToken);
+        if (accessTokenDO == null) accessTokenDO = oauth2AccessTokenRedisDAO.get(accessToken);
+        if (accessTokenDO == null) return null;
+        Long tenantId = accessTokenDO.getTenantId();
+        Long priorTenant = TenantContextHolder.getTenantId();
+        boolean priorIgnore = TenantContextHolder.isIgnore();
+        if (tenantId == null || (priorTenant != null && !Objects.equals(tenantId, priorTenant))) {
+            throw exception0(GlobalErrorCodeConstants.FORBIDDEN.getCode(), "您无权注销该租户的会话");
         }
-        oauth2AccessTokenMapper.deleteById(accessTokenDO.getId());
-        oauth2AccessTokenRedisDAO.delete(accessToken);
-        // 删除刷新令牌
-        oauth2RefreshTokenMapper.deleteByRefreshToken(accessTokenDO.getRefreshToken());
-        oauth2AccessTokenRedisDAO.delete(accessTokenDO.getRefreshToken());
-        return accessTokenDO;
+        try {
+            TenantContextHolder.setTenantId(tenantId);
+            TenantContextHolder.setIgnore(false);
+            LocalDateTime expiry = accessTokenDO.getExpiresTime() == null ? LocalDateTime.now() : accessTokenDO.getExpiresTime();
+            String refreshToken = accessTokenDO.getRefreshToken();
+            if (refreshToken == null || refreshToken.isBlank()) {
+                oauth2AccessTokenRedisDAO.markRevoked(accessToken, expiry);
+                oauth2AccessTokenMapper.deleteById(accessTokenDO.getId());
+                oauth2AccessTokenRedisDAO.delete(accessToken);
+                return accessTokenDO;
+            }
+            // Same first lock as refresh. A current read sees access tokens rotated while logout waited.
+            var refresh = oauth2RefreshTokenMapper.selectByRefreshTokenForUpdate(refreshToken);
+            if (refresh != null && !Objects.equals(refresh.getTenantId(), tenantId)) {
+                throw exception0(GlobalErrorCodeConstants.FORBIDDEN.getCode(), "登录会话来源不一致");
+            }
+            var chain = oauth2AccessTokenMapper.selectListByRefreshTokenForUpdate(refreshToken, tenantId);
+            if (refresh != null && refresh.getExpiresTime() != null && refresh.getExpiresTime().isAfter(expiry)) expiry = refresh.getExpiresTime();
+            for (var row : chain) if (row.getExpiresTime() != null && row.getExpiresTime().isAfter(expiry)) expiry = row.getExpiresTime();
+            oauth2AccessTokenRedisDAO.markRevoked(refreshToken, expiry);
+            oauth2AccessTokenRedisDAO.markRevoked(accessToken, expiry);
+            if (!chain.isEmpty()) {
+                oauth2AccessTokenMapper.deleteByIds(convertSet(chain, OAuth2AccessTokenDO::getId));
+                oauth2AccessTokenRedisDAO.deleteList(convertSet(chain, OAuth2AccessTokenDO::getAccessToken));
+            }
+            oauth2RefreshTokenMapper.deleteByRefreshToken(refreshToken);
+            oauth2AccessTokenRedisDAO.delete(accessToken);
+            oauth2AccessTokenRedisDAO.delete(refreshToken);
+            return accessTokenDO;
+        } finally {
+            TenantContextHolder.setTenantId(priorTenant);
+            TenantContextHolder.setIgnore(priorIgnore);
+        }
     }
 
     @Override

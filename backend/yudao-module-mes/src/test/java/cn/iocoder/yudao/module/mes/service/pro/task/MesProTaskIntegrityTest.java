@@ -39,6 +39,7 @@ import java.util.List;
 import static org.junit.jupiter.api.Assertions.*;
 import static org.mockito.ArgumentMatchers.*;
 import static org.mockito.Mockito.*;
+import static cn.iocoder.yudao.module.mes.enums.ErrorCodeConstants.MD_WORKSTATION_RESOURCE_UNAVAILABLE;
 
 /** Boundary tests run real service mutations against controlled, locked snapshots. */
 @ExtendWith(MockitoExtension.class)
@@ -93,6 +94,48 @@ class MesProTaskIntegrityTest {
         locks.verify(integrityService).lockBomGraph();
         locks.verify(workOrderService).validateWorkOrderExistsForUpdate(1L);
         locks.verify(taskMapper).selectListByWorkOrderIdForUpdate(1L);
+    }
+
+    @Test
+    void createAndGanttUpdateRecheckPlannedResourceAvailabilityBeforeWriting() {
+        doThrow(new ServiceException(MD_WORKSTATION_RESOURCE_UNAVAILABLE.getCode(), "计划班次人数不足"))
+                .when(workstationService).validateWorkstationForSchedule(anyLong(), any());
+        var create = request(1L, 10L, "1.000001");
+        assertThrows(ServiceException.class, () -> service.createTask(create));
+        var update = new MesProTaskSaveReqVO();
+        update.setId(10L);
+        update.setStartTime(LocalDateTime.of(2026, 11, 2, 22, 0));
+        assertThrows(ServiceException.class, () -> service.updateTask(update));
+        verify(taskMapper, never()).insert(any(MesProTaskDO.class));
+        verify(taskMapper, never()).updateById(any(MesProTaskDO.class));
+        verify(workstationService).validateWorkstationForSchedule(10L, update.getStartTime());
+    }
+
+    @Test
+    void schedulePreviewReturnsResourceAndTimeEvidenceWithoutWritingOrReserving() {
+        var request = request(1L, 10L, "1.000001");
+        when(workOrderService.getWorkOrder(1L)).thenReturn(new MesProWorkOrderDO()
+                .setId(1L).setProductId(9L).setStatus(1).setQuantity(new BigDecimal("100")));
+        when(workstationService.getScheduleAvailability(10L, request.getStartTime())).thenReturn(
+                new cn.iocoder.yudao.module.mes.controller.admin.md.workstation.vo.MesMdWorkstationAvailabilityRespVO()
+                        .setAvailable(false).setReasons(List.of("计划班次人数不足")));
+        when(taskMapper.selectScheduleOverlaps(eq(10L), any(), any(), isNull())).thenReturn(List.of(
+                new MesProTaskDO().setId(20L).setCode("TASK-OTHER").setStartTime(request.getStartTime())
+                        .setEndTime(request.getStartTime().plusHours(8))));
+        when(routeProcessService.getRouteProcessListByRouteId(8L)).thenReturn(List.of(
+                new MesProRouteProcessDO().setProcessId(5L).setNextProcessId(10L).setLinkType(3)));
+        when(taskMapper.selectListByWorkOrderId(1L)).thenReturn(List.of(
+                new MesProTaskDO().setId(21L).setCode("TASK-PREVIOUS").setRouteId(8L).setProcessId(5L)
+                        .setEndTime(request.getStartTime().plusHours(1)).setStatus(0)));
+        var result = service.checkSchedule(request);
+        assertFalse(result.getResourceAvailable());
+        assertTrue(result.getBlockingReasons().contains("计划班次人数不足"));
+        assertTrue(result.getWarnings().stream().anyMatch(s -> s.contains("TASK-OTHER")));
+        assertEquals("TASK-PREVIOUS", result.getPredecessors().get(0).getCode());
+        assertEquals(21L, result.getPredecessors().get(0).getId());
+        verify(taskMapper, never()).insert(any(MesProTaskDO.class));
+        verify(taskMapper, never()).updateById(any(MesProTaskDO.class));
+        verifyNoInteractions(integrityService, autoCodeRecordService, sopService);
     }
 
     @Test

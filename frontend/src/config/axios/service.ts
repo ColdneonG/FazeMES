@@ -16,6 +16,7 @@ import errorCode from './errorCode'
 import { resetRouter } from '@/router'
 import { deleteUserCache } from '@/hooks/web/useCache'
 import { ApiEncrypt } from '@/utils/encrypt'
+import { ensureFileMediaSession } from '@/utils/fileMediaSession'
 
 const tenantEnable = import.meta.env.VITE_APP_TENANT_ENABLE
 const { result_code, base_url, request_timeout } = config
@@ -48,7 +49,7 @@ const service: AxiosInstance = axios.create({
 
 // request拦截器
 service.interceptors.request.use(
-  (config: InternalAxiosRequestConfig) => {
+  async (config: InternalAxiosRequestConfig) => {
     // 是否需要设置访问租户；该配置仅供前端请求拦截器使用，不作为请求头发送
     const isVisitTenant = config.headers.get('isVisitTenant') !== false
     config.headers.delete('isVisitTenant')
@@ -59,6 +60,9 @@ service.interceptors.request.use(
     }
     if (getAccessToken() && isToken) {
       config.headers.Authorization = 'Bearer ' + getAccessToken() // 让每个请求携带自定义 token
+      // A business response may immediately mount an image/SOP. Finish the matching browser
+      // media session first; the native-fetch helper is independent of this axios queue.
+      await ensureFileMediaSession(getAccessToken(), getTenantId()).catch(() => undefined)
     }
     // 设置租户
     if (tenantEnable && tenantEnable === 'true') {
@@ -164,6 +168,7 @@ service.interceptors.response.use(
           const refreshTokenRes = await refreshToken()
           // 2.1 刷新成功，则回放队列的请求 + 当前请求
           setToken((await refreshTokenRes).data.data)
+          await ensureFileMediaSession(getAccessToken(), getTenantId()).catch(() => undefined)
           config.headers!.Authorization = 'Bearer ' + getAccessToken()
           requestList.forEach((cb: any) => {
             cb()

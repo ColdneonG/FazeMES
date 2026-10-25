@@ -27,6 +27,8 @@ public class FileDO extends BaseDO {
      * 编号，数据库自增
      */
     private Long id;
+    /** Explicit ownership. Legacy unassigned files remain inaccessible until ownership is verified. */
+    private Long tenantId;
     /**
      * 配置编号
      *

@@ -58,15 +58,12 @@
           </el-form-item>
         </el-col>
         <el-col :span="8">
-          <el-form-item label="出库数量" prop="quantity">
-            <el-input-number
-              v-model="formData.quantity"
-              :precision="2"
-              :min="0.01"
-              :max="formData.quantityMax"
-              controls-position="right"
-              class="!w-1/1"
-            />
+          <el-form-item
+            label="出库数量"
+            prop="quantity"
+            :rules="[quantityRule(true, formData.quantityMax)]"
+          >
+            <MesQuantityInput v-model="formData.quantity" class="!w-1/1" />
           </el-form-item>
         </el-col>
         <el-col :span="8">
@@ -116,6 +113,8 @@
 </template>
 
 <script setup lang="ts">
+import MesQuantityInput from '@/views/mes/components/MesQuantityInput.vue'
+import { quantityRule } from '@/utils/mesQuantity'
 import { WmMiscIssueLineApi, WmMiscIssueLineVO } from '@/api/mes/wm/miscissue/line'
 import { WmMaterialStockVO } from '@/api/mes/wm/materialstock'
 import WmMaterialStockSelect from '@/views/mes/wm/materialstock/components/WmMaterialStockSelect.vue'
@@ -178,20 +177,17 @@ const formData = ref({
   issueId: undefined as number | undefined,
   materialStockId: undefined as number | undefined,
   itemId: undefined as number | undefined,
-  quantity: undefined,
+  quantity: undefined as number | string | undefined,
   batchCode: undefined as string | undefined,
   warehouseId: undefined as number | undefined,
   locationId: undefined as number | undefined,
   areaId: undefined as number | undefined,
   remark: undefined as string | undefined,
-  quantityMax: undefined as number | undefined
+  quantityMax: undefined as number | string | undefined
 })
 const formRules = reactive({
   materialStockId: [{ required: true, message: '请选择库存物资', trigger: 'change' }],
-  quantity: [
-    { required: true, message: '出库数量不能为空', trigger: 'blur' },
-    { type: 'number', min: 0.01, message: '出库数量必须大于等于0.01', trigger: 'blur' }
-  ]
+  quantity: [quantityRule(true)]
 })
 const formRef = ref() // 表单 Ref
 
@@ -257,7 +253,7 @@ const resetForm = () => {
     issueId: undefined,
     materialStockId: undefined,
     itemId: undefined as number | undefined,
-    quantity: undefined,
+    quantity: undefined as number | string | undefined,
     batchCode: undefined as string | undefined,
     warehouseId: undefined as number | undefined,
     locationId: undefined as number | undefined,

@@ -18,6 +18,7 @@ $ErrorActionPreference = 'Stop'
 if (($VerifyOnly -and ($DeferBackupRetention -or $FinalizeBackups)) -or ($DeferBackupRetention -and $FinalizeBackups)) { throw 'VerifyOnly, DeferBackupRetention and FinalizeBackups cannot be combined.' }
 $projectRoot = Split-Path -Parent $PSScriptRoot
 $runtimeRoot = Join-Path $projectRoot '.runtime'
+. (Join-Path $PSScriptRoot 'local-tools.ps1')
 $python = (Get-Command python.exe -CommandType Application -ErrorAction Stop | Select-Object -First 1).Source
 $script = Join-Path $projectRoot 'database\tools\reset_test_data.py'
 if ($VerifyOnly) {
@@ -36,11 +37,13 @@ $startupLockName = 'Local\FazeMES-' + [Convert]::ToHexString([Security.Cryptogra
 $startupLock = [Threading.Mutex]::new($false,$startupLockName)
 $startupHeld = $false
 $held = $false
+$maintenanceLease = $null
 try {
     try { $startupHeld = $startupLock.WaitOne(0) } catch [Threading.AbandonedMutexException] { $startupHeld = $true }
     if (-not $startupHeld) { throw 'FazeMES is already starting or resetting in another window.' }
     try { $held = $resetLock.WaitOne(0) } catch [Threading.AbandonedMutexException] { $held = $true }
     if (-not $held) { throw 'Another test-data reset is already running.' }
+    $maintenanceLease = Enter-LocalMaintenanceLock -ProjectRoot $projectRoot
     if ($FinalizeBackups) {
         & $python -X utf8 $script retain-backups
         if ($LASTEXITCODE -ne 0) { throw 'Backup retention failed; project data is unchanged. Check the error above.' }
@@ -78,6 +81,7 @@ try {
     }
     Write-Host 'Comprehensive test data ready. Report: .runtime/testdata-verification.json'
 } finally {
+    if ($maintenanceLease) { Exit-LocalMaintenanceLock -Lease $maintenanceLease }
     if ($held) { $resetLock.ReleaseMutex() }
     $resetLock.Dispose()
     if ($startupHeld) { $startupLock.ReleaseMutex() }

@@ -57,14 +57,14 @@ export interface ProFeedbackVO {
   unitMeasureId: number // 单位编号
   unitMeasureName: string // 单位名称
   expireDate: Date // 过期日期
-  scheduledQuantity: number // 排产数量
+  scheduledQuantity: number | string // 排产数量
   feedbackQuantity: number | string // 本次报工数量
   qualifiedQuantity: number | string // 合格品数量
   unqualifiedQuantity: number | string // 不良品数量
   uncheckQuantity: number | string // 待检测数量
-  laborScrapQuantity: number // 工废数量
-  materialScrapQuantity: number // 料废数量
-  otherScrapQuantity: number // 其他废品数量
+  laborScrapQuantity: number | string // 工废数量
+  materialScrapQuantity: number | string // 料废数量
+  otherScrapQuantity: number | string // 其他废品数量
   feedbackUserId: number // 报工用户编号
   feedbackUserNickname: string // 报工人昵称
   approveUserId: number // 审核用户编号

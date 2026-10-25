@@ -9,7 +9,7 @@ export interface WmPackageLineVO {
   itemName?: string
   specification?: string
   unitMeasureName?: string
-  quantity: number
+  quantity: number | string
   workOrderId?: number
   workOrderCode?: string
   batchCode?: string

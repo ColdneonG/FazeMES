@@ -59,14 +59,8 @@
           </el-form-item>
         </el-col>
         <el-col :span="8">
-          <el-form-item label="装箱数量" prop="quantity">
-            <el-input-number
-              v-model="formData.quantity"
-              :precision="2"
-              :min="0.01"
-              controls-position="right"
-              class="!w-1/1"
-            />
+          <el-form-item label="装箱数量" prop="quantity" :rules="[quantityRule(true)]">
+            <MesQuantityInput v-model="formData.quantity" class="!w-1/1" />
           </el-form-item>
         </el-col>
       </el-row>
@@ -100,6 +94,8 @@
 </template>
 
 <script setup lang="ts">
+import MesQuantityInput from '@/views/mes/components/MesQuantityInput.vue'
+import { quantityRule } from '@/utils/mesQuantity'
 import { dateFormatter2 } from '@/utils/formatTime'
 import { WmPackageLineApi, WmPackageLineVO } from '@/api/mes/wm/packages/line'
 import ProWorkOrderSelect from '@/views/mes/pro/workorder/components/ProWorkOrderSelect.vue'
@@ -163,7 +159,7 @@ const formData = ref({
   packageId: undefined as number | undefined,
   materialStockId: undefined as number | undefined,
   itemId: undefined as number | undefined,
-  quantity: undefined as number | undefined,
+  quantity: undefined as number | string | undefined,
   workOrderId: undefined as number | undefined,
   expireDate: undefined as number | undefined,
   remark: undefined as string | undefined
@@ -171,10 +167,7 @@ const formData = ref({
 const formRules = reactive({
   workOrderId: [{ required: true, message: '请选择生产工单', trigger: 'change' }],
   itemId: [{ required: true, message: '请选择产品物料', trigger: 'change' }],
-  quantity: [
-    { required: true, message: '装箱数量不能为空', trigger: 'blur' },
-    { type: 'number', min: 0.01, message: '装箱数量必须大于0', trigger: 'blur' }
-  ]
+  quantity: [quantityRule(true)]
 })
 const formRef = ref()
 
@@ -224,7 +217,7 @@ const resetForm = () => {
     packageId: undefined,
     materialStockId: undefined,
     itemId: undefined,
-    quantity: undefined,
+    quantity: undefined as number | string | undefined,
     workOrderId: undefined,
     expireDate: undefined,
     remark: undefined

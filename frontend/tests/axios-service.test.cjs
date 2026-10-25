@@ -5,13 +5,15 @@ const test = require('node:test')
 const vm = require('node:vm')
 const ts = require('typescript')
 
-function setup(data) {
+function setup(data, options = {}) {
   const filename = path.join(__dirname, '../src/config/axios/service.ts')
   const source = fs
     .readFileSync(filename, 'utf8')
     .replace('import.meta.env.VITE_APP_TENANT_ENABLE', "'true'")
   const notifications = []
+  let accessToken = options.accessToken
   const dependencies = {
+    axios: options.axios || require('axios'),
     'element-plus': {
       ElMessage: { error: (message) => notifications.push(message) },
       ElMessageBox: {},
@@ -21,14 +23,20 @@ function setup(data) {
       config: { result_code: 0, base_url: 'http://unit.test', request_timeout: 1000 }
     },
     '@/utils/auth': {
-      getAccessToken: () => undefined,
+      getAccessToken: () => accessToken,
+      getRefreshToken: () => options.refreshToken,
+      setToken: (value) => {
+        accessToken = value.accessToken
+        options.onSetToken?.(value)
+      },
       getTenantId: () => 1,
       getVisitTenantId: () => undefined
     },
     './errorCode': { __esModule: true, default: { 403: '没有权限访问', default: '未知业务错误' } },
     '@/router': {},
     '@/hooks/web/useCache': {},
-    '@/utils/encrypt': { ApiEncrypt: { getEncryptHeader: () => 'X-Test-Encrypted' } }
+    '@/utils/encrypt': { ApiEncrypt: { getEncryptHeader: () => 'X-Test-Encrypted' } },
+    '@/utils/fileMediaSession': { ensureFileMediaSession: options.ensureMedia || (async () => {}) }
   }
   const module = { exports: {} }
   vm.runInNewContext(
@@ -50,7 +58,7 @@ function setup(data) {
   const request = () =>
     module.exports.service.get('/mes/insight/incident', {
       adapter: async (config) => ({
-        data,
+        data: options.responseData ? options.responseData(config) : data,
         status: 200,
         statusText: 'OK',
         headers: {},
@@ -81,4 +89,56 @@ test('successful business responses are returned intact', async () => {
   const { request, notifications } = setup(data)
   assert.deepEqual(await request(), data)
   assert.deepEqual(notifications, [])
+})
+
+test('token refresh waits for media issuance before replaying queued or newly-started business requests', async () => {
+  const axios = require('axios')
+  let finishRefresh
+  let finishMedia
+  let signalMedia
+  const mediaStarted = new Promise((resolve) => {
+    signalMedia = resolve
+  })
+  const mediaReady = new Promise((resolve) => {
+    finishMedia = resolve
+  })
+  const refreshReady = new Promise((resolve) => {
+    finishRefresh = resolve
+  })
+  const events = []
+  const h = setup(undefined, {
+    accessToken: 'old-login',
+    refreshToken: 'refresh-login',
+    axios: {
+      create: axios.create.bind(axios),
+      defaults: { headers: { common: {} } },
+      post: () => refreshReady
+    },
+    ensureMedia: async (token) => {
+      if (token === 'new-login') {
+        events.push('media-start')
+        signalMedia()
+        await mediaReady
+        events.push('media-ready')
+      }
+    },
+    responseData: (config) => {
+      const token = config.headers.Authorization
+      events.push(`business:${token}`)
+      return token === 'Bearer old-login' ? { code: 401 } : { code: 0, data: { saved: true } }
+    }
+  })
+  const first = h.request()
+  await new Promise(setImmediate)
+  const queued = h.request()
+  await new Promise(setImmediate)
+  finishRefresh({ data: { data: { accessToken: 'new-login', refreshToken: 'new-refresh' } } })
+  await mediaStarted
+  const newlyStarted = h.request()
+  await new Promise(setImmediate)
+  assert.ok(!events.includes('business:Bearer new-login'))
+  finishMedia()
+  await Promise.all([first, queued, newlyStarted])
+  assert.equal(events.filter((event) => event === 'business:Bearer new-login').length, 3)
+  assert.ok(events.indexOf('media-ready') < events.indexOf('business:Bearer new-login'))
 })

@@ -6,6 +6,7 @@ import cn.iocoder.yudao.framework.common.pojo.PageResult;
 import cn.iocoder.yudao.framework.common.util.object.BeanUtils;
 import cn.iocoder.yudao.module.mes.controller.admin.pro.task.vo.MesProTaskPageReqVO;
 import cn.iocoder.yudao.module.mes.controller.admin.pro.task.vo.MesProTaskSaveReqVO;
+import cn.iocoder.yudao.module.mes.controller.admin.pro.task.vo.MesProTaskScheduleCheckRespVO;
 import cn.iocoder.yudao.module.mes.dal.dataobject.md.item.MesMdItemDO;
 import cn.iocoder.yudao.module.mes.dal.dataobject.md.workstation.MesMdWorkstationDO;
 import cn.iocoder.yudao.module.mes.dal.dataobject.md.unitmeasure.MesMdUnitMeasureDO;
@@ -111,6 +112,7 @@ public class MesProTaskServiceImpl implements MesProTaskService {
         MesMdItemDO item = validateScheduleRelations(createReqVO, workOrder);
         validateScheduledQuantity(createReqVO, workOrder, null, BigDecimal.ZERO);
         validateScheduleTime(createReqVO);
+        workstationService.validateWorkstationForSchedule(createReqVO.getWorkstationId(), createReqVO.getStartTime());
 
         // 2.1 构建任务 DO：自动填充客户信息
         MesProTaskDO task = BeanUtils.toBean(createReqVO, MesProTaskDO.class)
@@ -155,6 +157,7 @@ public class MesProTaskServiceImpl implements MesProTaskService {
         MesMdItemDO item = validateScheduleRelations(effective, workOrder);
         validateScheduledQuantity(effective, workOrder, task.getId(), task.getChangedQuantity());
         validateScheduleTime(effective);
+        workstationService.validateWorkstationForSchedule(effective.getWorkstationId(), effective.getStartTime());
 
         // 2. 更新
         MesProTaskDO updateObj = BeanUtils.toBean(updateReqVO, MesProTaskDO.class)
@@ -270,6 +273,59 @@ public class MesProTaskServiceImpl implements MesProTaskService {
             throw exception(PRO_TASK_TIME_INVALID);
         }
         reqVO.setEndTime(endTime);
+    }
+
+    @Override
+    public MesProTaskScheduleCheckRespVO checkSchedule(MesProTaskSaveReqVO request) {
+        MesProTaskSaveReqVO effective = request;
+        if (request.getId() != null) {
+            MesProTaskDO task = validateTaskNotFinished(request.getId());
+            effective = BeanUtils.toBean(task, MesProTaskSaveReqVO.class);
+            if (request.getWorkOrderId() != null) effective.setWorkOrderId(request.getWorkOrderId());
+            if (request.getWorkstationId() != null) effective.setWorkstationId(request.getWorkstationId());
+            if (request.getRouteId() != null) effective.setRouteId(request.getRouteId());
+            if (request.getProcessId() != null) effective.setProcessId(request.getProcessId());
+            if (request.getItemId() != null) effective.setItemId(request.getItemId());
+            if (request.getQuantity() != null) effective.setQuantity(request.getQuantity());
+            if (request.getStartTime() != null) effective.setStartTime(request.getStartTime());
+            if (request.getDuration() != null) effective.setDuration(request.getDuration());
+            effective.setEndTime(request.getEndTime());
+        }
+        validateScheduleFields(effective);
+        MesProWorkOrderDO order = workOrderService.getWorkOrder(effective.getWorkOrderId());
+        if (order == null) throw exception(PRO_WORK_ORDER_NOT_EXISTS);
+        validateScheduleRelations(effective, order);
+        validateScheduleTime(effective);
+        var availability = workstationService.getScheduleAvailability(effective.getWorkstationId(), effective.getStartTime());
+        var result = new MesProTaskScheduleCheckRespVO().setWorkstationId(effective.getWorkstationId())
+                .setStartTime(effective.getStartTime()).setEndTime(effective.getEndTime())
+                .setResourceAvailable(availability.getAvailable()).setBlockingReasons(availability.getReasons())
+                .setNotes(new java.util.ArrayList<>(availability.getNotes()));
+        var overlaps = taskMapper.selectScheduleOverlaps(effective.getWorkstationId(), effective.getStartTime(),
+                effective.getEndTime(), effective.getId());
+        for (MesProTaskDO task : overlaps.stream().limit(100).toList()) {
+            result.getWarnings().add("工作站与任务「" + task.getCode() + "」时间重叠（"
+                    + task.getStartTime() + " 至 " + task.getEndTime() + "）");
+        }
+        if (overlaps.size() > 100) result.getWarnings().add("重叠任务超过100条，请缩小计划时段后核对");
+        // Manual plans are advisory, as specified by the design. Execution and
+        // feedback still enforce the actual preceding qualified capacity.
+        var processes = routeProcessService.getRouteProcessListByRouteId(effective.getRouteId());
+        for (var previous : processes) {
+            if (!Objects.equals(previous.getNextProcessId(), effective.getProcessId())
+                    || !Objects.equals(previous.getLinkType(), 3)) continue;
+            for (MesProTaskDO task : taskMapper.selectListByWorkOrderId(effective.getWorkOrderId())) {
+                if (Objects.equals(task.getRouteId(), effective.getRouteId())
+                        && Objects.equals(task.getProcessId(), previous.getProcessId())
+                        && !Objects.equals(task.getStatus(), MesProTaskStatusEnum.CANCELED.getStatus())
+                        && task.getEndTime() != null) {
+                    result.getPredecessors().add(new MesProTaskScheduleCheckRespVO.Predecessor()
+                            .setId(task.getId()).setCode(task.getCode()).setEndTime(task.getEndTime()));
+                }
+            }
+        }
+        result.getNotes().add("时间冲突供人工确认，不自动移动其他任务；保存与实际作业会重新校验业务条件");
+        return result;
     }
 
     /**

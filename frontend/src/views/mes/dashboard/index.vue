@@ -240,6 +240,7 @@
 </template>
 
 <script setup lang="ts">
+import { formatQuantity, quantityText, quantityUnits } from '@/utils/mesQuantity'
 import { formatDate } from '@/utils/formatTime'
 import dayjs from 'dayjs'
 import { Echart } from '@/components/Echart'
@@ -270,8 +271,8 @@ const filters = reactive<{ workshopId?: number; workstationId?: number; date: st
 const now = ref(new Date())
 const clock = computed(() => dayjs(now.value).format('HH:mm:ss'))
 const dateLabel = computed(() => dayjs(now.value).format('YYYY年MM月DD日'))
-const format = (n: unknown) => Number(n || 0).toLocaleString('zh-CN', { maximumFractionDigits: 2 })
-const progress = (produced: number, target: number) =>
+const format = (n: unknown) => formatQuantity(n ?? '0')
+const progress = (produced: number | string, target: number | string) =>
   Number(target) > 0
     ? Math.min(100, Math.max(0, Math.round((Number(produced || 0) / Number(target)) * 100)))
     : 0
@@ -404,7 +405,7 @@ const trendOptions = computed<EChartsOption>(() => {
 const stationTasks = computed(() => {
   const result = new Map<
     number,
-    { id: number; name: string; count: number; produced: number; target: number }
+    { id: number; name: string; count: number; producedUnits: bigint; targetUnits: bigint }
   >()
   data.value?.tasks.forEach((t) => {
     const s = result.get(t.workstationId) || {
@@ -413,15 +414,19 @@ const stationTasks = computed(() => {
         data.value?.workstations.find((s) => s.id === t.workstationId)?.name ||
         `工位 ${t.workstationId}`,
       count: 0,
-      produced: 0,
-      target: 0
+      producedUnits: 0n,
+      targetUnits: 0n
     }
     s.count++
-    s.produced += Number(t.producedQuantity || 0)
-    s.target += Number(t.quantity || 0)
+    s.producedUnits += quantityUnits(t.producedQuantity ?? '0') ?? 0n
+    s.targetUnits += quantityUnits(t.quantity ?? '0') ?? 0n
     result.set(t.workstationId, s)
   })
-  return [...result.values()]
+  return [...result.values()].map((station) => ({
+    ...station,
+    produced: quantityText(station.producedUnits),
+    target: quantityText(station.targetUnits)
+  }))
 })
 const flowStations = computed(() => stationTasks.value.slice(0, 5))
 const drawer = ref(false)

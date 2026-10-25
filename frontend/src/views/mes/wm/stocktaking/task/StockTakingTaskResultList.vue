@@ -91,13 +91,8 @@
           </el-form-item>
         </el-col>
         <el-col :span="8">
-          <el-form-item label="盘点数量" prop="takingQuantity">
-            <el-input-number
-              v-model="formData.takingQuantity"
-              :precision="2"
-              controls-position="right"
-              class="!w-1/1"
-            />
+          <el-form-item label="盘点数量" prop="takingQuantity" :rules="[quantityRule(false)]">
+            <MesQuantityInput v-model="formData.takingQuantity" class="!w-1/1" />
           </el-form-item>
         </el-col>
       </el-row>
@@ -151,6 +146,8 @@
 </template>
 
 <script setup lang="ts">
+import MesQuantityInput from '@/views/mes/components/MesQuantityInput.vue'
+import { quantityRule } from '@/utils/mesQuantity'
 import {
   StockTakingResultApi,
   type StockTakingResultVO
@@ -234,7 +231,7 @@ const formData = ref({
   warehouseId: undefined as number | undefined,
   locationId: undefined as number | undefined,
   areaId: undefined as number | undefined,
-  takingQuantity: undefined as number | undefined,
+  takingQuantity: undefined as number | string | undefined,
   remark: undefined as string | undefined
 }) // 表单数据
 const formRules = reactive({
@@ -347,7 +344,7 @@ const resetForm = () => {
     warehouseId: undefined,
     locationId: undefined,
     areaId: undefined,
-    takingQuantity: undefined,
+    takingQuantity: undefined as number | string | undefined,
     remark: undefined
   }
   formRef.value?.resetFields()

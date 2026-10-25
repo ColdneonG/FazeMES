@@ -81,14 +81,8 @@
           </el-form-item>
         </el-col>
         <el-col :span="8">
-          <el-form-item label="领料数量" prop="quantity">
-            <el-input-number
-              v-model="formData.quantity"
-              :precision="2"
-              :min="0"
-              controls-position="right"
-              class="!w-1/1"
-            />
+          <el-form-item label="领料数量" prop="quantity" :rules="[quantityRule(true)]">
+            <MesQuantityInput v-model="formData.quantity" class="!w-1/1" />
           </el-form-item>
         </el-col>
       </el-row>
@@ -115,6 +109,8 @@
 </template>
 
 <script setup lang="ts">
+import MesQuantityInput from '@/views/mes/components/MesQuantityInput.vue'
+import { quantityRule } from '@/utils/mesQuantity'
 import { WmProductIssueLineApi, WmProductIssueLineVO } from '@/api/mes/wm/productissue/line'
 import MdItemSelect from '@/views/mes/md/item/components/MdItemSelect.vue'
 import ProductIssueDetailList from './ProductIssueDetailList.vue'
@@ -175,7 +171,7 @@ const formData = ref({
   id: undefined,
   issueId: undefined as number | undefined,
   itemId: undefined,
-  quantity: undefined,
+  quantity: undefined as number | string | undefined,
   remark: undefined
 })
 const formRules = reactive({
@@ -233,7 +229,7 @@ const resetForm = () => {
     id: undefined,
     issueId: undefined,
     itemId: undefined,
-    quantity: undefined,
+    quantity: undefined as number | string | undefined,
     remark: undefined
   }
   formRef.value?.resetFields()

@@ -9,7 +9,7 @@ export interface WmOutsourceReceiptDetailVO {
   itemCode: string
   itemName: string
   batchCode: string
-  quantity: number
+  quantity: number | string
   locationId: number
   locationName: string
   remark: string

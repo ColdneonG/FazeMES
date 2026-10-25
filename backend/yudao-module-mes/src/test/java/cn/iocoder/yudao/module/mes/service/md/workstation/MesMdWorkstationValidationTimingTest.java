@@ -4,6 +4,7 @@ import cn.iocoder.yudao.framework.common.exception.ServiceException;
 import cn.iocoder.yudao.framework.test.core.ut.BaseMockitoUnitTest;
 import cn.iocoder.yudao.module.mes.controller.admin.md.workstation.vo.MesMdWorkstationAvailabilityRespVO;
 import cn.iocoder.yudao.module.mes.dal.dataobject.md.workstation.MesMdWorkstationDO;
+import cn.iocoder.yudao.module.mes.dal.dataobject.md.workstation.MesMdWorkshopDO;
 import cn.iocoder.yudao.module.mes.dal.mysql.md.workstation.MesMdWorkstationMapper;
 import org.junit.jupiter.api.Test;
 import org.mockito.InjectMocks;
@@ -17,6 +18,7 @@ class MesMdWorkstationValidationTimingTest extends BaseMockitoUnitTest {
     @InjectMocks private MesMdWorkstationServiceImpl service;
     @Mock private MesMdWorkstationMapper mapper;
     @Mock private MesMdWorkstationAvailabilityService availabilityService;
+    @Mock private MesMdWorkshopService workshopService;
     private MesMdWorkstationDO enabled() {
         var station = new MesMdWorkstationDO().setId(1L).setStatus(0);
         when(mapper.selectById(1L)).thenReturn(station); return station;
@@ -55,5 +57,30 @@ class MesMdWorkstationValidationTimingTest extends BaseMockitoUnitTest {
         when(availabilityService.check(station)).thenReturn(new MesMdWorkstationAvailabilityRespVO().setAvailable(true));
         assertSame(station, service.validateWorkstationAvailable(1L));
         verify(availabilityService).check(station);
+    }
+
+    @Test void planningChecksTheProposedShiftAndRejectsDisabledWorkshops() {
+        var station = enabled().setWorkshopId(8L);
+        var plannedAt = java.time.LocalDateTime.of(2026, 11, 2, 22, 0);
+        when(availabilityService.check(station, plannedAt)).thenAnswer(i ->
+                new MesMdWorkstationAvailabilityRespVO().setAvailable(true));
+        when(workshopService.getWorkshop(8L)).thenReturn(new MesMdWorkshopDO().setId(8L).setStatus(1));
+        var error = assertThrows(ServiceException.class, () -> service.validateWorkstationForSchedule(1L, plannedAt));
+        assertTrue(error.getMessage().contains("车间已停用"));
+        verify(availabilityService).check(station, plannedAt);
+        verify(availabilityService, never()).check(station);
+        when(workshopService.getWorkshop(8L)).thenReturn(new MesMdWorkshopDO().setId(8L).setStatus(0));
+        assertDoesNotThrow(() -> service.validateWorkstationForSchedule(1L, plannedAt));
+    }
+
+    @Test void planningDoesNotAcceptMissingWorkshopOrInsufficientPlannedResources() {
+        var station = enabled().setWorkshopId(8L);
+        var plannedAt = java.time.LocalDateTime.of(2026, 11, 2, 8, 0);
+        when(availabilityService.check(station, plannedAt)).thenAnswer(i ->
+                new MesMdWorkstationAvailabilityRespVO().setAvailable(false).setReasons(new java.util.ArrayList<>(List.of("计划班次人数不足"))));
+        var result = service.getScheduleAvailability(1L, plannedAt);
+        assertFalse(result.getAvailable());
+        assertTrue(result.getReasons().contains("工作站所属车间不存在"));
+        assertThrows(ServiceException.class, () -> service.validateWorkstationForSchedule(1L, plannedAt));
     }
 }

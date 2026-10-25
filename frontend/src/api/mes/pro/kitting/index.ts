@@ -5,16 +5,16 @@ export interface KittingMaterial {
   itemCode: string
   itemName: string
   unitName: string
-  requiredQuantity: number
-  issuedQuantity: number
-  outstandingQuantity: number
-  physicalQuantity: number
-  reservedQuantity: number
-  usableReservedQuantity: number
-  otherReservedQuantity: number
-  freeQuantity: number
-  availableQuantity: number
-  shortageQuantity: number
+  requiredQuantity: number | string
+  issuedQuantity: number | string
+  outstandingQuantity: number | string
+  physicalQuantity: number | string
+  reservedQuantity: number | string
+  usableReservedQuantity: number | string
+  otherReservedQuantity: number | string
+  freeQuantity: number | string
+  availableQuantity: number | string
+  shortageQuantity: number | string
   trackingStatus: string
   expectedDate?: string
   remark?: string
@@ -34,10 +34,10 @@ export interface KittingReservation {
   id: number
   materialStockId: number
   itemId: number
-  quantity: number
-  allocatedQuantity: number
-  consumedQuantity: number
-  releasedQuantity: number
+  quantity: number | string
+  allocatedQuantity: number | string
+  consumedQuantity: number | string
+  releasedQuantity: number | string
   batchCode?: string
   warehouseName?: string
   locationName?: string
@@ -50,7 +50,7 @@ export interface KittingEvent {
   materialStockId: number
   reservationId: number
   action: string
-  quantity: number
+  quantity: number | string
   referenceId?: number
   operatorId: number
   createTime: string
