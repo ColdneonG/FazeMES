@@ -170,8 +170,8 @@ def _extras(ctx):
                  "/mes/dashboard/production", "/mes/insight/risks", "/mes/insight/quality",
                  "/mes/insight/flow", "/mes/insight/incidents", "/mes/insight/drafts",
                  "/mes/insight/jev/status", "/mes/report/datasets", "/mes/report/list",
-                 "/mes/assistant/status", "/mes/assistant/bases", "/mes/assistant/usage-policy",
-                 "/mes/assistant/usage-summary", "/mes/pro/kitting/board", "/mes/pro/workbench/workstations",
+                 "/mes/assistant/status", "/mes/assistant/bases",
+                 "/mes/pro/kitting/board", "/mes/pro/workbench/workstations",
                  "/mes/sop/document/list"]:
         get(path)
     get("/mes/qc/analysis/comparison", startDate=(now-timedelta(days=30)).date().isoformat(),
