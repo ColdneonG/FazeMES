@@ -11,8 +11,11 @@ DEALLOCATE PREPARE file_tenant_statement;
 ALTER TABLE infra_file MODIFY COLUMN tenant_id BIGINT NULL DEFAULT NULL COMMENT 'Verified file tenant; NULL is unassigned legacy data';
 
 -- A numeric creator is a globally unique user identity. Other historical records remain unassigned.
+-- Compare exact identity bytes: CAST(... AS CHAR) inherits the connection collation,
+-- which can differ from creator's column collation on MySQL 8. Do not coerce legacy
+-- creator text to a number, since values such as '1-old' must not claim user 1's tenant.
 UPDATE infra_file f
-JOIN system_users u ON f.creator = CAST(u.id AS CHAR)
+JOIN system_users u ON CAST(f.creator AS BINARY) = CAST(u.id AS BINARY)
 SET f.tenant_id = u.tenant_id
 WHERE (f.tenant_id IS NULL OR f.tenant_id = 0) AND u.tenant_id > 0;
 UPDATE infra_file SET tenant_id = NULL WHERE tenant_id = 0;

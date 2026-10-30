@@ -2,7 +2,7 @@
 <template>
   <div class="overflow-hidden">
     <!-- 操作按钮 -->
-    <el-row :gutter="10" class="mb8">
+    <el-row v-if="!readonly" :gutter="10" class="mb8">
       <el-col :span="1.5">
         <el-button type="primary" plain @click="handleAdd">
           <Icon icon="ep:plus" class="mr-5px" /> 新增
@@ -15,10 +15,13 @@
       <el-table-column label="样品编号" align="center" prop="code" width="200" />
       <el-table-column label="物资SN" align="center" prop="sn" min-width="200" />
       <el-table-column label="备注" align="center" prop="remark" min-width="200" />
-      <el-table-column label="操作" align="center" width="150" fixed="right">
+      <el-table-column label="操作" align="center" width="200" fixed="right">
         <template #default="scope">
-          <el-button link type="primary" @click="handleUpdate(scope.row)">修改</el-button>
-          <el-button link type="danger" @click="handleDelete(scope.row)">删除</el-button>
+          <el-button link type="primary" @click="handleView(scope.row)">查看</el-button>
+          <template v-if="!readonly">
+            <el-button link type="primary" @click="handleUpdate(scope.row)">修改</el-button>
+            <el-button link type="danger" @click="handleDelete(scope.row)">删除</el-button>
+          </template>
         </template>
       </el-table-column>
     </el-table>
@@ -44,6 +47,7 @@ defineOptions({ name: 'QcIndicatorResultList' })
 const props = defineProps<{
   qcId: number
   qcType: number
+  readonly?: boolean
 }>()
 
 const { t } = useI18n()
@@ -79,22 +83,29 @@ const getList = async () => {
 
 /** 新增操作 */
 const handleAdd = () => {
+  if (props.readonly) return
   formRef.value.open('create')
 }
 
 /** 修改操作 */
 const handleUpdate = (row: QcIndicatorResultVO) => {
+  if (props.readonly) return
   formRef.value.open('update', row.id)
 }
 
 /** 删除操作 */
 const handleDelete = async (row: QcIndicatorResultVO) => {
+  if (props.readonly) return
   try {
     await message.delConfirm()
     await QcIndicatorResultApi.deleteResult(row.id)
     message.success(t('common.delSuccess'))
     await getList()
   } catch {}
+}
+
+const handleView = (row: QcIndicatorResultVO) => {
+  formRef.value.open('detail', row.id)
 }
 
 /** 监听 qcId 变化，重新加载列表 */

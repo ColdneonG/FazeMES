@@ -36,7 +36,10 @@ function setup(data, options = {}) {
     '@/router': {},
     '@/hooks/web/useCache': {},
     '@/utils/encrypt': { ApiEncrypt: { getEncryptHeader: () => 'X-Test-Encrypted' } },
-    '@/utils/fileMediaSession': { ensureFileMediaSession: options.ensureMedia || (async () => {}) }
+    '@/utils/fileMediaSession': {
+      ensureFileMediaSession: options.ensureMedia || (async () => {}),
+      setFileMediaSessionTokenRefresh: (handler) => options.onRegisterMediaRefresh?.(handler)
+    }
   }
   const module = { exports: {} }
   vm.runInNewContext(
@@ -141,4 +144,41 @@ test('token refresh waits for media issuance before replaying queued or newly-st
   await Promise.all([first, queued, newlyStarted])
   assert.equal(events.filter((event) => event === 'business:Bearer new-login').length, 3)
   assert.ok(events.indexOf('media-ready') < events.indexOf('business:Bearer new-login'))
+})
+
+test('idle media and concurrent business 401s share one validated refresh', async () => {
+  const axios = require('axios')
+  let renew, complete
+  let calls = 0
+  const ready = new Promise((resolve) => { complete = resolve })
+  const h = setup(undefined, {
+    accessToken: 'old-login', refreshToken: 'refresh-login',
+    onRegisterMediaRefresh: (handler) => { renew = handler },
+    axios: { create: axios.create.bind(axios), post: () => { calls++; return ready } },
+    responseData: (config) => config.headers.Authorization === 'Bearer old-login'
+      ? { code: 401 } : { code: 0, data: true }
+  })
+  const media = renew()
+  const business = h.request()
+  await new Promise(setImmediate)
+  complete({ data: { code: 0, data: { accessToken: 'new-login', refreshToken: 'new-refresh' } } })
+  await Promise.all([media, business])
+  assert.equal(calls, 1)
+})
+
+test('a business-error refresh response never sets invalid credentials and allows a later retry', async () => {
+  const axios = require('axios')
+  let renew, calls = 0, saved = 0
+  setup(undefined, {
+    accessToken: 'old', refreshToken: 'refresh', onSetToken: () => saved++,
+    onRegisterMediaRefresh: (handler) => { renew = handler },
+    axios: { create: axios.create.bind(axios), post: async () => {
+      calls++
+      return { data: { code: 401, msg: '刷新令牌已过期' } }
+    } }
+  })
+  await assert.rejects(renew(), /登录续期失败/)
+  await assert.rejects(renew(), /登录续期失败/)
+  assert.equal(saved, 0)
+  assert.equal(calls, 2)
 })

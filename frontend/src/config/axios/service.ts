@@ -16,7 +16,7 @@ import errorCode from './errorCode'
 import { resetRouter } from '@/router'
 import { deleteUserCache } from '@/hooks/web/useCache'
 import { ApiEncrypt } from '@/utils/encrypt'
-import { ensureFileMediaSession } from '@/utils/fileMediaSession'
+import { ensureFileMediaSession, setFileMediaSessionTokenRefresh } from '@/utils/fileMediaSession'
 
 const tenantEnable = import.meta.env.VITE_APP_TENANT_ENABLE
 const { result_code, base_url, request_timeout } = config
@@ -29,10 +29,8 @@ const ignoreMsgs = [
 // 是否显示重新登录
 export const isRelogin = { show: false }
 // Axios 无感知刷新令牌，参考 https://www.dashingdog.cn/article/11 与 https://segmentfault.com/a/1190000020210980 实现
-// 请求队列
-let requestList: any[] = []
-// 是否正在刷新中
-let isRefreshToken = false
+// Share refresh work with business requests and the idle media-cookie renewal timer.
+let refreshing: Promise<void> | undefined
 // 请求白名单，无须 token 的接口
 const whiteList: string[] = ['/login', '/refresh-token']
 
@@ -156,49 +154,17 @@ service.interceptors.response.use(
       // 如果是忽略的错误码，直接返回 msg 异常
       return Promise.reject(msg)
     } else if (code === 401) {
-      // 如果未认证，并且未进行刷新令牌，说明可能是访问令牌过期了
-      if (!isRefreshToken) {
-        isRefreshToken = true
-        // 1. 如果获取不到刷新令牌，则只能执行登出操作
-        if (!getRefreshToken()) {
-          return handleAuthorized()
-        }
-        // 2. 进行刷新访问令牌
-        try {
-          const refreshTokenRes = await refreshToken()
-          // 2.1 刷新成功，则回放队列的请求 + 当前请求
-          setToken((await refreshTokenRes).data.data)
-          await ensureFileMediaSession(getAccessToken(), getTenantId()).catch(() => undefined)
-          config.headers!.Authorization = 'Bearer ' + getAccessToken()
-          requestList.forEach((cb: any) => {
-            cb()
-          })
-          requestList = []
-          if ((config!.headers || {}).isEncrypt) {
-            ;(config!.headers || {}).isEncrypted = true
-          }
-          return service(config)
-        } catch (e) {
-          // 为什么需要 catch 异常呢？刷新失败时，请求因为 Promise.reject 触发异常。
-          // 2.2 刷新失败，只回放队列的请求
-          requestList.forEach((cb: any) => {
-            cb()
-          })
-          // 提示是否要登出。即不回放当前请求！不然会形成递归
-          return handleAuthorized()
-        } finally {
-          requestList = []
-          isRefreshToken = false
-        }
-      } else {
-        // 添加到队列，等待刷新获取到新的令牌
-        return new Promise((resolve) => {
-          requestList.push(() => {
-            config.headers!.Authorization = 'Bearer ' + getAccessToken() // 让每个请求携带自定义token 请根据实际情况自行修改
-            resolve(service(config))
-          })
-        })
+      const retryConfig = config as typeof config & { authRetried?: boolean }
+      if (retryConfig.authRetried) return handleAuthorized()
+      try {
+        await refreshAccessToken()
+      } catch {
+        return handleAuthorized()
       }
+      await ensureFileMediaSession(getAccessToken(), getTenantId()).catch(() => undefined)
+      retryConfig.authRetried = true
+      if (config.headers?.isEncrypt) config.headers.isEncrypted = true
+      return service(retryConfig)
     } else if (code === 500) {
       ElMessage.error(t('sys.api.errMsg500'))
       return Promise.reject(new Error(msg))
@@ -232,10 +198,36 @@ service.interceptors.response.use(
   }
 )
 
-const refreshToken = async () => {
-  axios.defaults.headers.common['tenant-id'] = getTenantId()
-  return await axios.post(base_url + '/system/auth/refresh-token?refreshToken=' + getRefreshToken())
+const refreshAccessToken = (): Promise<void> => {
+  if (refreshing) return refreshing
+  const credential = getRefreshToken()
+  if (!credential) return Promise.reject(new Error('无可用刷新令牌'))
+  refreshing = (async () => {
+    const response = await axios.post(
+      base_url + '/system/auth/refresh-token?refreshToken=' + encodeURIComponent(credential),
+      undefined,
+      { headers: { 'tenant-id': getTenantId() } }
+    )
+    const result = response.data
+    if (
+      ![0, 200].includes(result.code ?? 0) ||
+      !result.data?.accessToken ||
+      !result.data?.refreshToken
+    ) {
+      throw new Error('登录续期失败')
+    }
+    // A response for a previous account must never revive that session after logout/switch.
+    if (getRefreshToken() !== credential) throw new Error('登录身份已变化')
+    setToken(result.data)
+  })().finally(() => {
+    refreshing = undefined
+  })
+  return refreshing
 }
+setFileMediaSessionTokenRefresh(async () => {
+  await refreshAccessToken()
+  return { accessToken: getAccessToken(), tenantId: getTenantId() }
+})
 const handleAuthorized = () => {
   const { t } = useI18n()
   if (!isRelogin.show) {

@@ -49,6 +49,9 @@ public class MesQcIndicatorResultServiceImpl implements MesQcIndicatorResultServ
     private MesQcIndicatorResultMapper resultMapper;
 
     @Resource
+    private MesQcResultEditGuard editGuard;
+
+    @Resource
     private MesQcIndicatorResultDetailService resultDetailService;
     @Resource
     private MesQcIndicatorService indicatorService;
@@ -70,6 +73,7 @@ public class MesQcIndicatorResultServiceImpl implements MesQcIndicatorResultServ
     @Override
     @Transactional(rollbackFor = Exception.class)
     public Long createIndicatorResult(MesQcIndicatorResultSaveReqVO createReqVO) {
+        editGuard.requireDraft(createReqVO.getQcId(), createReqVO.getQcType());
         // 1.1 根据 qcType 查询源质检单，获取 itemId
         Long itemId = getItemIdFromQcDoc(createReqVO.getQcId(), createReqVO.getQcType());
         // 1.2 校验明细数据（indicatorId 存在性 + 值格式）
@@ -77,12 +81,13 @@ public class MesQcIndicatorResultServiceImpl implements MesQcIndicatorResultServ
 
         // 2.1 插入主表
         MesQcIndicatorResultDO result = BeanUtils.toBean(createReqVO, MesQcIndicatorResultDO.class);
+        result.setId(null);
         result.setItemId(itemId);
         resultMapper.insert(result);
         // 2.2 批量插入明细
         List<MesQcIndicatorResultDetailDO> details = BeanUtils.toBean(createReqVO.getItems(),
                 MesQcIndicatorResultDetailDO.class);
-        details.forEach(detail -> detail.setResultId(result.getId()));
+        details.forEach(detail -> { detail.setId(null); detail.setResultId(result.getId()); });
         resultDetailService.createDetailList(details);
         return result.getId();
     }
@@ -91,7 +96,17 @@ public class MesQcIndicatorResultServiceImpl implements MesQcIndicatorResultServ
     @Transactional(rollbackFor = Exception.class)
     public void updateIndicatorResult(MesQcIndicatorResultSaveReqVO updateReqVO) {
         // 1.1 校验存在
-        validateIndicatorResultExists(updateReqVO.getId());
+        MesQcIndicatorResultDO existing = validateIndicatorResultExists(updateReqVO.getId());
+        editGuard.requireDraft(existing.getQcId(), existing.getQcType());
+        // A draft must not smuggle detail IDs belonging to a completed/different inspection.
+        Set<Long> ownedIds = convertSet(resultDetailService.getDetailListByResultId(existing.getId()),
+                MesQcIndicatorResultDetailDO::getId);
+        Set<Long> requestedIds = new HashSet<>();
+        for (MesQcIndicatorResultSaveReqVO.Item item : updateReqVO.getItems()) {
+            if (item.getId() != null && (!ownedIds.contains(item.getId()) || !requestedIds.add(item.getId()))) {
+                throw exception(QC_RESULT_DETAIL_INVALID);
+            }
+        }
         // 1.2 校验明细数据（indicatorId 存在性 + 值格式）
         validateItemsSaveData(updateReqVO.getItems());
 
@@ -102,6 +117,7 @@ public class MesQcIndicatorResultServiceImpl implements MesQcIndicatorResultServ
         // 2.2 批量更新明细
         List<MesQcIndicatorResultDetailDO> details = BeanUtils.toBean(updateReqVO.getItems(),
                 MesQcIndicatorResultDetailDO.class);
+        details.forEach(detail -> detail.setResultId(existing.getId()));
         resultDetailService.createOrUpdateDetailList(details);
     }
 
@@ -109,7 +125,8 @@ public class MesQcIndicatorResultServiceImpl implements MesQcIndicatorResultServ
     @Transactional(rollbackFor = Exception.class)
     public void deleteIndicatorResult(Long id) {
         // 1. 校验存在
-        validateIndicatorResultExists(id);
+        MesQcIndicatorResultDO existing = validateIndicatorResultExists(id);
+        editGuard.requireDraft(existing.getQcId(), existing.getQcType());
 
         // 2.1 级联删除明细
         resultDetailService.deleteDetailByResultId(id);

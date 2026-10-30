@@ -183,7 +183,10 @@ public class MesProSopServiceImpl implements MesProSopService {
         MesSopTaskSnapshotDO snapshot = snapshotMapper.findTask(req.getTaskId());
         MesSopStepRecordDO record = recordMapper.findStep(snapshot.getId(), step.getId());
         if (record != null && record.getConfirmedAt() != null) return; // retry never overwrites original evidence
-        if (record == null || record.getViewedAt() == null || Duration.between(record.getViewedAt(), LocalDateTime.now()).getSeconds() < step.getMinViewSeconds()) {
+        // DATETIME(0) may round a just-persisted timestamp into the next second. A zero-second
+        // step still requires a view record, but has no elapsed-time requirement.
+        if (record == null || record.getViewedAt() == null || (step.getMinViewSeconds() > 0
+                && Duration.between(record.getViewedAt(), LocalDateTime.now()).getSeconds() < step.getMinViewSeconds())) {
             throw exception(VIEW_TIME, step.getMinViewSeconds());
         }
         validateEvidence(step, req);

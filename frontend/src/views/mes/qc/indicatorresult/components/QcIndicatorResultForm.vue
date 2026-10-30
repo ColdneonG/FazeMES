@@ -1,12 +1,18 @@
 <!-- MES 检验结果表单弹窗（含动态检测值输入） -->
 <template>
-  <Dialog class="mes-qc-responsive" :title="dialogTitle" v-model="dialogVisible" width="min(900px, calc(100vw - 24px))">
+  <Dialog
+    class="mes-qc-responsive"
+    :title="dialogTitle"
+    v-model="dialogVisible"
+    width="min(900px, calc(100vw - 24px))"
+  >
     <el-form
       ref="formRef"
       :model="formData"
       :rules="formRules"
       label-width="100px"
       v-loading="formLoading"
+      :disabled="formType === 'detail'"
     >
       <el-row :gutter="16">
         <el-col :span="24">
@@ -86,7 +92,13 @@
     </el-form>
 
     <template #footer>
-      <el-button @click="submitForm" type="primary" :disabled="formLoading">确 定</el-button>
+      <el-button
+        v-if="formType !== 'detail'"
+        @click="submitForm"
+        type="primary"
+        :disabled="formLoading"
+        >确 定</el-button
+      >
       <el-button @click="dialogVisible = false">取 消</el-button>
     </template>
   </Dialog>
@@ -161,6 +173,7 @@ defineExpose({ open })
 /** 提交表单 */
 const emit = defineEmits(['success'])
 const submitForm = async () => {
+  if (formType.value === 'detail') return
   // 校验表单
   if (!formRef) return
   const valid = await formRef.value.validate()

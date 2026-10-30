@@ -153,6 +153,19 @@ class MesProSopServiceImplTest {
     }
 
     @Test
+    void zeroSecondsRequiresViewingButAllowsTimestampRoundedToNextSecond() {
+        step.setMinViewSeconds(0);
+        snapshot.setStepsJson(JsonUtils.toJsonString(List.of(step)));
+        when(snapshotMapper.findTask(10L)).thenReturn(snapshot);
+        SopExecutionReqVO req = new SopExecutionReqVO().setTaskId(10L).setStepId("tighten");
+        assertCode(SopErrorConstants.VIEW_TIME.getCode(), () -> service.confirmStep(req));
+        when(recordMapper.findStep(3L, "tighten")).thenReturn(new MesSopStepRecordDO().setId(9L)
+                .setViewedAt(LocalDateTime.now().plusSeconds(1)).setViewedBy(77L));
+        assertDoesNotThrow(() -> service.confirmStep(req));
+        verify(recordMapper).updateById(any(MesSopStepRecordDO.class));
+    }
+
+    @Test
     void viewRetriesKeepFirstServerTimestamp() {
         when(snapshotMapper.findTask(10L)).thenReturn(snapshot);
         SopExecutionReqVO req = new SopExecutionReqVO().setTaskId(10L).setStepId("tighten");

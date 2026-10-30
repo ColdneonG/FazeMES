@@ -33,7 +33,13 @@
               :disabled="isHeaderReadonly"
             >
               <template #append>
-                <el-button @click="generateCode" :disabled="isHeaderReadonly"> 生成 </el-button>
+                <el-button
+                  @click="generateCode"
+                  :disabled="isHeaderReadonly || generatingCode"
+                  :loading="generatingCode"
+                >
+                  生成
+                </el-button>
               </template>
             </el-input>
           </el-form-item>
@@ -177,10 +183,19 @@ const formRef = ref() // 表单 Ref
 const originalFormData = ref<string>('') // 原始表单数据快照，用于脏检查
 
 /** 生成领料单编号 */
+const generatingCode = ref(false)
 const generateCode = async () => {
-  formData.value.code = await AutoCodeRecordApi.generateAutoCode(
-    MesAutoCodeRuleCode.WM_PRODUCT_ISSUE_CODE
-  )
+  if (generatingCode.value || isHeaderReadonly.value) return
+  generatingCode.value = true
+  const current = formData.value
+  try {
+    const code = await AutoCodeRecordApi.generateAutoCode(MesAutoCodeRuleCode.WM_PRODUCT_ISSUE_CODE)
+    if (dialogVisible.value && current === formData.value) current.code = code
+  } catch {
+    // The HTTP interceptor displays the backend reason; keep the existing code on failure.
+  } finally {
+    generatingCode.value = false
+  }
 }
 
 /** 打开弹窗 */

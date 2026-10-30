@@ -404,6 +404,8 @@ public interface ErrorCodeConstants {
 
     // ========== MES 质量管理-检验结果（1-040-606-000） ==========
     ErrorCode QC_RESULT_NOT_EXISTS = new ErrorCode(1_040_606_000, "检验结果不存在");
+    ErrorCode QC_RESULT_READ_ONLY = new ErrorCode(1_040_606_002, "检验单不是草稿，不能新增、修改或删除检测结果");
+    ErrorCode QC_RESULT_DETAIL_INVALID = new ErrorCode(1_040_606_003, "检测明细不属于当前检验结果或明细编号重复");
     ErrorCode QC_RESULT_VALUE_FORMAT_INVALID = new ErrorCode(1_040_606_001, "检测值格式不正确：{}");
     ErrorCode QC_FINISH_INDICATOR_RESULT_REQUIRED = new ErrorCode(1_040_606_002, "完成检验单前，至少需要录入一条检测结果");
 

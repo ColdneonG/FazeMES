@@ -228,10 +228,10 @@
       "parent_id": 1322
     }
   ],
-  "auto_code_rule_count": 42,
+  "auto_code_rule_count": 43,
   "seed_rows_by_table": {
-    "mes_md_auto_code_part": 126,
-    "mes_md_auto_code_rule": 42,
+    "mes_md_auto_code_part": 129,
+    "mes_md_auto_code_rule": 43,
     "mes_md_client": 1,
     "mes_md_item": 3,
     "mes_md_item_batch_config": 3,

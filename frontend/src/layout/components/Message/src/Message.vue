@@ -26,9 +26,11 @@ const getList = async () => {
 
 // 获得未读消息数
 const getUnreadCount = async () => {
-  NotifyMessageApi.getUnreadNotifyMessageCount().then((data) => {
-    unreadCount.value = data
-  })
+  try {
+    unreadCount.value = await NotifyMessageApi.getUnreadNotifyMessageCount()
+  } catch {
+    // The interceptor handles authentication; a failed background poll must not leak a rejection.
+  }
 }
 
 // 跳转我的站内信

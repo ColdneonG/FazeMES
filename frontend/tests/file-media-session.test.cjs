@@ -24,6 +24,7 @@ function harness(fetchImpl) {
       module,
       exports: module.exports,
       AbortSignal,
+      Date,
       env: { VITE_BASE_URL: '', VITE_API_URL: '/admin-api' },
       setTimeout: (handler, delay) => {
         const id = ++nextTimer
@@ -109,8 +110,37 @@ test('an account switch serializes cookie writes and replaces the old tenant con
 
 test('failed media authentication stays private and schedules a bounded retry', async () => {
   const h = harness(() => ({ ok: true, json: async () => ({ code: 401 }) }))
-  await assert.rejects(h.ensureFileMediaSession('login', 1), /附件会话暂不可用/)
+  await assert.rejects(h.ensureFileMediaSession('login', 1), /附件会话需要续期/)
   assert.equal(h.requests.length, 1)
   assert.equal([...h.timers.values()][0].delay, 30_000)
   assert.ok(h.requests.every((r) => !r.url.includes('login')))
+})
+
+test('idle media renewal refreshes an expired access token and issues the cookie with the new token', async () => {
+  let expired = false
+  let refreshCount = 0
+  const h = harness((_url, options, ok) =>
+    expired && options.headers.Authorization === 'Bearer old'
+      ? { ok: true, json: async () => ({ code: 401 }) }
+      : ok()
+  )
+  h.setFileMediaSessionTokenRefresh(async () => {
+    refreshCount++
+    return { accessToken: 'renewed', tenantId: 1 }
+  })
+  await h.ensureFileMediaSession('old', 1)
+  expired = true
+  // Advance the cookie's local validity clock to its renewal window.
+  const originalNow = Date.now
+  Date.now = () => originalNow() + 600_000
+  try {
+    const timer = [...h.timers.values()][0]
+    timer.handler()
+    await new Promise(setImmediate)
+    await new Promise(setImmediate)
+    assert.equal(refreshCount, 1)
+    assert.equal(h.requests.at(-1).options.headers.Authorization, 'Bearer renewed')
+  } finally {
+    Date.now = originalNow
+  }
 })

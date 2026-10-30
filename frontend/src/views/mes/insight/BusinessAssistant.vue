@@ -61,11 +61,14 @@
                 : '业务规则答复'
         }}
       </el-tag>
-      <p class="answer-text">{{
-        turn.answer.executionReceipt
-          ? `业务操作已执行，异常编号 #${turn.answer.executionReceipt.businessId}。`
-          : turn.answer.answer
-      }}</p>
+      <MarkdownView
+        class="answer-text"
+        :content="
+          turn.answer.executionReceipt
+            ? `业务操作已执行，异常编号 #${turn.answer.executionReceipt.businessId}。`
+            : turn.answer.answer
+        "
+      />
       <p v-if="turn.answer.modelWarning" class="note">{{ turn.answer.modelWarning }}</p>
       <small class="note">查询时间 {{ formatTime(turn.answer.generatedAt) }}</small>
       <div v-if="turn.answer.status === 'CLARIFY'" class="clarification">
@@ -148,6 +151,7 @@ import { checkPermi } from '@/utils/permission'
 import InventoryEvidence from './InventoryEvidence.vue'
 import LegacyBusinessEvidence from './LegacyBusinessEvidence.vue'
 import AgentResult from './AgentResult.vue'
+import MarkdownView from '@/components/MarkdownView/index.vue'
 
 const props = defineProps<{ active: boolean }>()
 const emit = defineEmits<{ draft: [value: Draft]; navigate: [topic: string] }>()
@@ -455,7 +459,7 @@ defineExpose({ refresh })
 }
 
 .answer-text {
-  white-space: pre-wrap;
+  white-space: normal;
   overflow-wrap: anywhere;
 }
 

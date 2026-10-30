@@ -53,7 +53,8 @@ public enum MesMdAutoCodeRuleCodeEnum {
     PRO_WORK_ORDER_CODE("PRO_WORK_ORDER_CODE", "生产工单编码"),
     QC_DEFECT_CODE("QC_DEFECT_CODE", "缺陷类型编码"),
     QC_INDICATOR_RESULT_CODE("QC_INDICATOR_RESULT_CODE", "样品检验结果编码"),
-    WM_OUTSOURCE_RECEIPT_CODE("WM_OUTSOURCE_RECEIPT_CODE", "外协入库单编码");
+    WM_OUTSOURCE_RECEIPT_CODE("WM_OUTSOURCE_RECEIPT_CODE", "外协入库单编码"),
+    WM_PRODUCT_ISSUE_CODE("WM_PRODUCT_ISSUE_CODE", "生产领料出库单编码");
 
     /**
      * 规则代码

@@ -223,7 +223,11 @@
           <RqcLineList :rqc-id="formData.id" :form-type="formType" />
         </el-tab-pane>
         <el-tab-pane label="检测结果" name="result">
-          <QcIndicatorResultList :qc-id="formData.id!" :qc-type="MesQcTypeEnum.RQC" />
+          <QcIndicatorResultList
+            :qc-id="formData.id!"
+            :qc-type="MesQcTypeEnum.RQC"
+            :readonly="isDetail || formData.status !== MesQcStatusEnum.DRAFT"
+          />
         </el-tab-pane>
       </el-tabs>
     </template>

@@ -22,7 +22,7 @@
 
 <script setup lang="ts">
 import type { MesHomeSummaryVO } from '@/api/mes/home'
-import { quantityUnits } from '@/utils/mesQuantity'
+import { formatQuantity, quantityUnits } from '@/utils/mesQuantity'
 
 defineOptions({ name: 'HomeKpiCards' })
 
@@ -51,8 +51,8 @@ const cards = computed(() => {
       label: '今日产量',
       icon: 'ep:data-analysis',
       color: '#67c23a',
-      value: data.todayOutput + ' 件',
-      hint: '昨日产量 ' + data.yesterdayOutput + ' 件',
+      value: formatQuantity(data.todayOutput) + ' 件',
+      hint: '昨日产量 ' + formatQuantity(data.yesterdayOutput) + ' 件',
       path: props.destinations.MesProFeedback
     },
     {
@@ -65,7 +65,10 @@ const cards = computed(() => {
           : '—',
       hint:
         known && total > 0n
-          ? '今日合格 ' + data.todayQualifiedQuantity + ' · 不良 ' + data.todayUnqualifiedQuantity
+          ? '今日合格 ' +
+            formatQuantity(data.todayQualifiedQuantity) +
+            ' · 不良 ' +
+            formatQuantity(data.todayUnqualifiedQuantity)
           : '今日暂无报工质量数据',
       path: props.destinations.MesProFeedback
     },

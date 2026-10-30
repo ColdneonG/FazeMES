@@ -7,6 +7,11 @@ let pending: Promise<void> | undefined
 let validUntil = 0
 let generation = 0
 let serial: Promise<void> = Promise.resolve()
+let refreshCredentials: (() => Promise<{ accessToken: string; tenantId: unknown }>) | undefined
+
+export const setFileMediaSessionTokenRefresh = (handler: typeof refreshCredentials): void => {
+  refreshCredentials = handler
+}
 
 const endpoint = () =>
   `${import.meta.env.VITE_BASE_URL || ''}${import.meta.env.VITE_API_URL || '/admin-api'}/infra/file/media-session`
@@ -16,8 +21,21 @@ const schedule = (version: number, milliseconds: number) => {
   renewal = setTimeout(() => {
     if (version !== generation || !credentials) return
     const { accessToken, tenantId } = credentials
-    ensureFileMediaSession(accessToken, tenantId).catch(() => {
-      if (version === generation) schedule(version, 30_000)
+    ensureFileMediaSession(accessToken, tenantId).catch(async (error) => {
+      if (version !== generation) return
+      if (error?.code === 401 && refreshCredentials) {
+        try {
+          const renewed = await refreshCredentials()
+          if (version === generation)
+            await ensureFileMediaSession(renewed.accessToken, renewed.tenantId)
+          return
+        } catch {
+          // A failed login refresh must not keep polling the same expired access credential.
+          if (version === generation && renewal) clearTimeout(renewal)
+          return
+        }
+      }
+      schedule(version, 30_000)
     })
   }, milliseconds)
 }
@@ -48,6 +66,9 @@ export const ensureFileMediaSession = (accessToken: string, tenantId: unknown): 
         headers: { Authorization: `Bearer ${accessToken}`, 'tenant-id': tenant }
       })
       const result = await response.json()
+      if (response.status === 401 || result.code === 401) {
+        throw Object.assign(new Error('附件会话需要续期'), { code: 401 })
+      }
       if (!response.ok || result.code !== 0 || !result.data) throw new Error('附件会话暂不可用')
       if (version !== generation) return
       const expires = Date.parse(result.data)

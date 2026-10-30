@@ -42,6 +42,9 @@ import static org.mockito.Mockito.*;
 @Import(MesQcIndicatorResultServiceImpl.class)
 public class MesQcIndicatorResultServiceImplTest extends BaseDbUnitTest {
 
+    @MockitoBean
+    private MesQcResultEditGuard editGuard;
+
     @Resource
     private MesQcIndicatorResultServiceImpl indicatorResultService;
 
@@ -140,6 +143,40 @@ public class MesQcIndicatorResultServiceImplTest extends BaseDbUnitTest {
         // 调用，并断言异常
         assertServiceException(() -> indicatorResultService.updateIndicatorResult(reqVO),
                 QC_RESULT_NOT_EXISTS);
+    }
+
+    @Test
+    public void completedParentRejectsAllResultWritesWithoutChangingStoredEvidence() {
+        MesQcIndicatorResultDO saved = randomPojo(MesQcIndicatorResultDO.class, o -> {
+            o.setQcId(55L);
+            o.setQcType(MesQcTypeEnum.OQC.getType());
+        });
+        resultMapper.insert(saved);
+        doThrow(cn.iocoder.yudao.framework.common.exception.util.ServiceExceptionUtil.exception(QC_RESULT_READ_ONLY))
+                .when(editGuard).requireDraft(55L, MesQcTypeEnum.OQC.getType());
+        MesQcIndicatorResultSaveReqVO req = buildReqVO("blocked", MesQcResultValueTypeEnum.TEXT.getType());
+        req.setId(saved.getId());
+        req.setQcId(55L);
+        req.setQcType(MesQcTypeEnum.OQC.getType());
+        assertServiceException(() -> indicatorResultService.createIndicatorResult(req), QC_RESULT_READ_ONLY);
+        assertServiceException(() -> indicatorResultService.updateIndicatorResult(req), QC_RESULT_READ_ONLY);
+        assertServiceException(() -> indicatorResultService.deleteIndicatorResult(saved.getId()), QC_RESULT_READ_ONLY);
+        assertEquals(1L, resultMapper.selectCount());
+        assertEquals(saved.getCode(), resultMapper.selectById(saved.getId()).getCode());
+        verifyNoInteractions(resultDetailService);
+    }
+
+    @Test
+    public void draftCannotChangeAnotherSamplesDetail() {
+        MesQcIndicatorResultDO saved = randomPojo(MesQcIndicatorResultDO.class);
+        resultMapper.insert(saved);
+        MesQcIndicatorResultSaveReqVO req = buildReqVO("forged", MesQcResultValueTypeEnum.TEXT.getType());
+        req.setId(saved.getId());
+        req.getItems().get(0).setId(999999L);
+        when(resultDetailService.getDetailListByResultId(saved.getId())).thenReturn(java.util.List.of());
+        assertServiceException(() -> indicatorResultService.updateIndicatorResult(req), QC_RESULT_DETAIL_INVALID);
+        assertEquals(saved.getCode(), resultMapper.selectById(saved.getId()).getCode());
+        verify(resultDetailService, never()).createOrUpdateDetailList(anyList());
     }
 
     @Test

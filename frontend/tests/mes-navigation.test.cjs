@@ -360,7 +360,7 @@ function guardHarness(navigation, permissions = new Set()) {
     './router': router,
     '@/config/axios/service': { isRelogin: { show: false } },
     '@/utils/auth': { getAccessToken: () => 'test-token', getTenantId: () => 1 },
-    '@/utils/fileMediaSession': { ensureFileMediaSession: async () => {} },
+    '@/utils/fileMediaSession': { ensureFileMediaSession: async () => {}, setFileMediaSessionTokenRefresh: () => {} },
     '@/hooks/web/useTitle': { useTitle: noOp },
     '@/hooks/web/useNProgress': { useNProgress: () => ({ start: noOp, done: noOp }) },
     '@/hooks/web/usePageLoading': { usePageLoading: () => ({ loadStart: noOp, loadDone: noOp }) },
