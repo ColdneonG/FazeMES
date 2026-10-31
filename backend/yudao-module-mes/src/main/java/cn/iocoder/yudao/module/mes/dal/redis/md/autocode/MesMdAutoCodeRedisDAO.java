@@ -6,6 +6,8 @@ import org.springframework.data.redis.core.StringRedisTemplate;
 import org.springframework.stereotype.Repository;
 
 import java.time.Duration;
+import java.util.List;
+import org.springframework.data.redis.core.script.DefaultRedisScript;
 
 /**
  * MES 编码规则的 Redis DAO
@@ -14,6 +16,24 @@ import java.time.Duration;
  */
 @Repository
 public class MesMdAutoCodeRedisDAO {
+
+    // Do not rewind another caller's reservation or convert a cycling key to a permanent one.
+    // Compare positive integer strings without Lua floating point rounding.
+    private static final DefaultRedisScript<Long> ADVANCE = new DefaultRedisScript<>("""
+            local v = redis.call('GET', KEYS[1])
+            local floor = ARGV[1]
+            if v and (#v < #floor or (#v == #floor and v < floor)) then
+                local ttl = redis.call('PTTL', KEYS[1])
+                redis.call('SET', KEYS[1], floor)
+                if ttl >= 0 then redis.call('PEXPIRE', KEYS[1], math.max(1,ttl)) end
+                return 1
+            end
+            return 0
+            """, Long.class);
+
+    public void advanceIfBehind(String keySuffix, long floor) {
+        stringRedisTemplate.execute(ADVANCE, List.of(RedisKeyConstants.AUTO_CODE + keySuffix), Long.toString(floor));
+    }
 
     @Resource
     private StringRedisTemplate stringRedisTemplate;

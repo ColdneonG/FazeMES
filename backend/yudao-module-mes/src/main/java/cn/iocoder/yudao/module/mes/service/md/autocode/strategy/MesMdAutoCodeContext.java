@@ -34,5 +34,8 @@ public class MesMdAutoCodeContext {
      * 由流水号策略生成并设置，用于保存到生成记录表。例如：当规则包含流水号分段时，生成编码 "ITEM_20260304_0001"，此字段值为 1
      */
     private Long serialNo;
+    // Position of the serial field in the final formatted code; used only to recover a stale counter.
+    private Integer serialOffset;
+    private String serialKeySuffix;
 
 }

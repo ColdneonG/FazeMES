@@ -163,7 +163,15 @@ export interface ReturnSalesCost {
   issues: string[]
 }
 
+export interface ChildSettlement {
+  id: number
+  code: string
+  settled: boolean
+}
+
 export const CostApi = {
+  getChildSettlements: (workorderId: number): Promise<ChildSettlement[]> =>
+    request.get({ url: '/mes/cost/workorder/child-settlements', params: { workorderId } }),
   getReturnSales: (id: number): Promise<ReturnSalesCost> =>
     request.get({ url: '/mes/cost/return-sales', params: { id } }),
   getProduct: (itemId: number): Promise<ProductCost> =>

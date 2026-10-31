@@ -40,6 +40,7 @@ public class MesMdAutoCodeSerialNumberPartStrategy implements MesMdAutoCodePartS
         // 2. 获取流水号
         Integer step = part.getSerialStep() != null ? part.getSerialStep() : 1;
         Integer startNo = part.getSerialStartNo() != null ? part.getSerialStartNo() : 1;
+        context.setSerialKeySuffix(keySuffix);
         Long serialNo = redisDAO.increment(keySuffix, duration, startNo, step);
 
         // 3. 格式化输出（补零）

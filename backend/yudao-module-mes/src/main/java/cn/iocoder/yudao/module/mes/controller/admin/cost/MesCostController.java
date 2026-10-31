@@ -25,6 +25,8 @@ public class MesCostController {
     public CommonResult<Boolean> saveProfile(@Valid @RequestBody Profile req){service.saveProfile(req);return success(true);}
     @GetMapping("/workorder") @PreAuthorize("@ss.hasPermission('mes:cost:query')")
     public CommonResult<WorkorderCost> order(@RequestParam Long workorderId){return success(service.workorderCost(workorderId));}
+    @GetMapping("/workorder/child-settlements") @PreAuthorize("@ss.hasPermission('mes:cost:query')")
+    public CommonResult<List<ChildSettlement>> children(@RequestParam Long workorderId){return success(service.childSettlements(workorderId));}
     @PostMapping("/workorder/snapshot") @PreAuthorize("@ss.hasPermission('mes:cost:update')")
     public CommonResult<Boolean> snapshot(@RequestParam Long workorderId){service.capturePlan(workorderId);return success(true);}
     @PostMapping("/workorder/effort") @PreAuthorize("@ss.hasPermission('mes:cost:update')")

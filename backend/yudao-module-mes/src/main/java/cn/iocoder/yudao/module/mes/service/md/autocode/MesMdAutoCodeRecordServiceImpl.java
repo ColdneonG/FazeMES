@@ -11,6 +11,8 @@ import cn.iocoder.yudao.module.mes.dal.mysql.md.autocode.MesMdAutoCodeRecordMapp
 import cn.iocoder.yudao.module.mes.enums.md.autocode.MesMdAutoCodePaddedMethodEnum;
 import cn.iocoder.yudao.module.mes.service.md.autocode.strategy.MesMdAutoCodeContext;
 import cn.iocoder.yudao.module.mes.service.md.autocode.strategy.MesMdAutoCodePartStrategy;
+import cn.iocoder.yudao.module.mes.dal.redis.md.autocode.MesMdAutoCodeRedisDAO;
+import cn.iocoder.yudao.module.mes.enums.md.autocode.MesMdAutoCodePartTypeEnum;
 import jakarta.annotation.PostConstruct;
 import jakarta.annotation.Resource;
 import org.springframework.stereotype.Service;
@@ -36,6 +38,8 @@ public class MesMdAutoCodeRecordServiceImpl implements MesMdAutoCodeRecordServic
 
     @Resource
     private MesMdAutoCodeRecordMapper recordMapper;
+    @Resource
+    private MesMdAutoCodeRedisDAO redisDAO;
 
     @Resource
     private MesMdAutoCodeRuleService ruleService;
@@ -74,6 +78,7 @@ public class MesMdAutoCodeRecordServiceImpl implements MesMdAutoCodeRecordServic
             // 2.2 二次校验（防止重复）
             MesMdAutoCodeRecordDO existRecord = recordMapper.selectByResult(result);
             if (existRecord != null) {
+                recoverCounter(rule, parts, context, result);
                 continue;
             }
             // 2.3 保存生成记录
@@ -88,6 +93,23 @@ public class MesMdAutoCodeRecordServiceImpl implements MesMdAutoCodeRecordServic
         throw exception(AUTO_CODE_GENERATE_FAILED);
     }
 
+    private void recoverCounter(MesMdAutoCodeRuleDO rule, List<MesMdAutoCodePartDO> parts,
+                                MesMdAutoCodeContext context, String result) {
+        if (context.getSerialKeySuffix() == null || context.getSerialOffset() == null) return;
+        List<MesMdAutoCodePartDO> serials = parts.stream()
+                .filter(p -> MesMdAutoCodePartTypeEnum.SERIAL_NUMBER.getType().equals(p.getType())).toList();
+        if (serials.size() != 1) return;
+        MesMdAutoCodePartDO part = serials.get(0);
+        int start = context.getSerialOffset(), end = start + part.getLength();
+        if (end > result.length()) return; // The final padding rule truncated the serial field.
+        Long high = recordMapper.highestIssued(rule.getId(), result.substring(0, start),
+                part.getLength(), result.substring(end));
+        long current = context.getSerialNo(), step = part.getSerialStep() == null ? 1 : part.getSerialStep();
+        if (high != null && high > current && step > 0) {
+            redisDAO.advanceIfBehind(context.getSerialKeySuffix(), high - (high - current) % step);
+        }
+    }
+
     /**
      * 生成编码
      */
@@ -98,6 +120,9 @@ public class MesMdAutoCodeRecordServiceImpl implements MesMdAutoCodeRecordServic
             MesMdAutoCodePartStrategy strategy = strategyMap.get(part.getType());
             Assert.notNull(strategy, () -> exception(AUTO_CODE_GENERATE_FAILED));
             // 生成分段编码
+            if (MesMdAutoCodePartTypeEnum.SERIAL_NUMBER.getType().equals(part.getType())) {
+                context.setSerialOffset(codeBuilder.length());
+            }
             String partCode = strategy.generate(part, context);
             // 统一截取指定长度
             partCode = StrUtil.sub(partCode, 0, part.getLength());
@@ -107,6 +132,10 @@ public class MesMdAutoCodeRecordServiceImpl implements MesMdAutoCodeRecordServic
         // 补齐处理
         String result = codeBuilder.toString();
         if (Boolean.TRUE.equals(rule.getPadded()) && rule.getMaxLength() != null) {
+            if (context.getSerialOffset() != null && result.length() < rule.getMaxLength()
+                    && !MesMdAutoCodePaddedMethodEnum.RIGHT.getMethod().equals(rule.getPaddedMethod())) {
+                context.setSerialOffset(context.getSerialOffset() + rule.getMaxLength() - result.length());
+            }
             result = padCode(result, rule);
         }
         return result;

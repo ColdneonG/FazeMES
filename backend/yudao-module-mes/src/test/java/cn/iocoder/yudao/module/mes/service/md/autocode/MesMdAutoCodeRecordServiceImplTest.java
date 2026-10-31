@@ -38,6 +38,9 @@ public class MesMdAutoCodeRecordServiceImplTest {
     private MesMdAutoCodeRecordMapper recordMapper;
 
     @Mock
+    private cn.iocoder.yudao.module.mes.dal.redis.md.autocode.MesMdAutoCodeRedisDAO redisDAO;
+
+    @Mock
     private MesMdAutoCodeRuleService ruleService;
     @Mock
     private MesMdAutoCodePartService partService;
@@ -132,6 +135,30 @@ public class MesMdAutoCodeRecordServiceImplTest {
         assertEquals(5L, record.getRuleId());
         assertEquals("M00003", record.getResult());
         assertEquals(3L, record.getSerialNo());
+    }
+
+    @Test
+    public void coldCounterRecoversInOneRequestAndKeepsStepAndFormatting() {
+        var rule = new MesMdAutoCodeRuleDO().setId(5L).setCode("TASK").setPadded(true)
+                .setPaddedMethod(1).setMaxLength(8).setPaddedChar("X");
+        var prefix = new MesMdAutoCodePartDO().setType(3).setLength(2);
+        var serial = new MesMdAutoCodePartDO().setType(4).setLength(3).setSerialStep(5);
+        when(ruleService.getAutoCodeRuleByCode("TASK")).thenReturn(rule);
+        when(partService.getAutoCodePartListByRuleId(5L)).thenReturn(List.of(prefix, serial));
+        when(fixedCharStrategy.generate(eq(prefix),any())).thenReturn("A-");
+        long[] counter = { -4 };
+        when(serialNumberStrategy.generate(eq(serial),any())).thenAnswer(inv -> {
+            var ctx = inv.getArgument(1, MesMdAutoCodeContext.class);
+            counter[0] += 5;
+            ctx.setSerialKeySuffix("5:today").setSerialNo(counter[0]);
+            return String.format("%03d", counter[0]);
+        });
+        when(recordMapper.selectByResult("XXXA-001")).thenReturn(new MesMdAutoCodeRecordDO());
+        when(recordMapper.highestIssued(5L,"XXXA-",3,"")).thenReturn(152L);
+        doAnswer(inv -> { counter[0] = Math.max(counter[0],151L); return null; })
+                .when(redisDAO).advanceIfBehind("5:today",151L);
+        assertEquals("XXXA-156",recordService.generateAutoCode("TASK",null));
+        verify(recordMapper,times(2)).selectByResult(anyString());
     }
 
     @Test

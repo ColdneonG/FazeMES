@@ -10,6 +10,7 @@ import java.util.List;
 /** All monetary values are CNY, exclusive of tax. Null always means unavailable. */
 public final class MesCostVO {
     private MesCostVO() {}
+    public record ChildSettlement(long id, String code, boolean settled) {}
     @Data public static class Profile {
         private Long id;
         @NotNull private Long itemId;

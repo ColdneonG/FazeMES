@@ -53,7 +53,7 @@ class MesCostServiceTest {
         jdbc.execute("CREATE TABLE mes_md_item(id BIGINT PRIMARY KEY,tenant_id BIGINT,code VARCHAR(64),name VARCHAR(100),item_type_id BIGINT,deleted INT DEFAULT 0)");
         jdbc.execute("CREATE TABLE mes_md_item_type(id BIGINT PRIMARY KEY,tenant_id BIGINT,item_or_product VARCHAR(20),deleted INT DEFAULT 0)");
         jdbc.execute("CREATE TABLE mes_md_product_bom(id BIGINT AUTO_INCREMENT PRIMARY KEY,tenant_id BIGINT,item_id BIGINT,bom_item_id BIGINT,quantity DECIMAL(18,6),status INT DEFAULT 0,deleted INT DEFAULT 0)");
-        jdbc.execute("CREATE TABLE mes_pro_work_order(id BIGINT PRIMARY KEY,tenant_id BIGINT,product_id BIGINT,quantity DECIMAL(18,6),status INT,deleted INT DEFAULT 0)");
+        jdbc.execute("CREATE TABLE mes_pro_work_order(id BIGINT PRIMARY KEY,parent_id BIGINT DEFAULT 0,code VARCHAR(80),tenant_id BIGINT,product_id BIGINT,quantity DECIMAL(18,6),status INT,deleted INT DEFAULT 0)");
         jdbc.execute("CREATE TABLE mes_pro_work_order_bom(id BIGINT AUTO_INCREMENT PRIMARY KEY,tenant_id BIGINT,work_order_id BIGINT,item_id BIGINT,quantity DECIMAL(18,6),deleted INT DEFAULT 0)");
         jdbc.execute("CREATE TABLE mes_pro_task(id BIGINT PRIMARY KEY,tenant_id BIGINT,work_order_id BIGINT,process_id BIGINT,status INT,deleted INT DEFAULT 0)");
         jdbc.execute("CREATE TABLE mes_pro_feedback(id BIGINT PRIMARY KEY,tenant_id BIGINT,work_order_id BIGINT,status INT,deleted INT DEFAULT 0)");
@@ -157,11 +157,15 @@ class MesCostServiceTest {
         service.recordTransaction(tx(4,60,2,"-1",117,10L,null,94),stock(60,"1"));
         service.recordTransaction(tx(5,61,2,"1",117,10L,4L,94),stock(61,"0"));
         MesWmTransactionDO early=tx(6,61,2,"-1",122,11L,null,95);
-        assertThrows(ServiceException.class,()->service.recordTransaction(early,stock(61,"1")));
+        jdbc.update("UPDATE mes_pro_work_order SET parent_id=11,code='HEAD-10' WHERE id=10");
+        assertEquals(List.of(new ChildSettlement(10L,"HEAD-10",false)), service.childSettlements(11L));
+        assertTrue(service.workorderCost(10L).getIssues().stream().anyMatch(s -> s.contains("工序 ID：30")));
+        assertTrue(assertThrows(ServiceException.class,()->service.recordTransaction(early,stock(61,"1"))).getMessage().contains("HEAD-10"));
         equal("1",jdbc.queryForObject("SELECT remaining_quantity FROM mes_cost_stock_layer WHERE material_stock_id=61",BigDecimal.class));
         jdbc.update("DELETE FROM mes_wm_transaction WHERE id=6");
         Effort effort=new Effort();effort.setWorkorderId(10L);effort.setProcessId(30L);effort.setHours(b("2"));effort.setHourlyRate(b("2"));effort.setOverheadAmount(b("1"));effort.setRemark("实际工时登记");effort.setRequestId("settle-10");service.addEffort(effort);
         jdbc.update("UPDATE mes_pro_work_order SET status=2 WHERE id=10");service.settle(10L);service.settle(10L);
+        assertEquals(List.of(new ChildSettlement(10L,"HEAD-10",true)), service.childSettlements(11L));
         equal("35",service.workorderCost(10L).getActualUnitCost());assertEquals("SETTLED",service.workorderCost(10L).getStatus());
         equal("35",jdbc.queryForObject("SELECT unit_cost FROM mes_cost_stock_layer WHERE material_stock_id=61",BigDecimal.class));
         assertThrows(ServiceException.class,()->service.addEffort(effort));

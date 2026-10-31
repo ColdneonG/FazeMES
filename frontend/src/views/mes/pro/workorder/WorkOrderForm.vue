@@ -9,6 +9,12 @@
       :closable="false"
       class="mb-15px"
     />
+    <ChildSettlementNotice
+      v-if="dialogVisible && formData.id && checkPermi(['mes:cost:query'])"
+      :key="formData.id"
+      :workorder-id="formData.id"
+      @navigate="dialogVisible = false"
+    />
     <el-form
       ref="formRef"
       :model="formData"
@@ -242,6 +248,8 @@ import MdItemSelect from '@/views/mes/md/item/components/MdItemSelect.vue'
 import MdClientSelect from '@/views/mes/md/client/components/MdClientSelect.vue'
 import MdVendorSelect from '@/views/mes/md/vendor/components/MdVendorSelect.vue'
 import WorkOrderBomList from './WorkOrderBomList.vue'
+import ChildSettlementNotice from './ChildSettlementNotice.vue'
+import { checkPermi } from '@/utils/permission'
 import WorkOrderItemList from './WorkOrderItemList.vue'
 import {
   MesProWorkOrderSourceTypeEnum,

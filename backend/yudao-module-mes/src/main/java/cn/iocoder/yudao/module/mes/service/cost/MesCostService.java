@@ -52,6 +52,15 @@ public class MesCostService {
         if(row==null) throw invalid("物料不存在或无权访问");
         return row;
     }
+    /** Advisory only: consumption still checks the actual FIFO layer, not just this parent/child list. */
+    public List<ChildSettlement> childSettlements(long workorderId) {
+        workorder(workorderId, false);
+        return jdbc.query("""
+                SELECT w.id, w.code, c.status FROM mes_pro_work_order w
+                LEFT JOIN mes_cost_workorder c ON c.workorder_id=w.id AND c.tenant_id=w.tenant_id AND c.deleted=0
+                WHERE w.parent_id=? AND w.tenant_id=? AND w.deleted=0 AND w.status<>3 ORDER BY w.id
+                """, (rs,i) -> new ChildSettlement(rs.getLong(1), rs.getString(2), "SETTLED".equals(rs.getString(3))), workorderId, tenant());
+    }
     public Profile profile(Long itemId) {
         return profile(itemId,false);
     }
@@ -209,7 +218,9 @@ public class MesCostService {
         if(activeEfforts==0)result.getIssues().add("未录入实际工时及制造费用（零费用也须明确记录）");
         Set<Long> recordedProcesses=new HashSet<>();for(Effort e:result.getEfforts())if(!Boolean.TRUE.equals(e.getVoided()))recordedProcesses.add(e.getProcessId());
         List<Map<String,Object>> processes=jdbc.queryForList("SELECT process_id FROM mes_pro_task WHERE tenant_id=? AND work_order_id=? AND deleted=0 AND status<>5 ORDER BY id"+readLock(current),tenant(),workorderId);
-        if(processes.stream().anyMatch(p->!recordedProcesses.contains(id(p.get("process_id")))))result.getIssues().add("仍有工序未明确录入实际工时及制造费用");
+        List<String> missing = processes.stream().map(p -> id(p.get("process_id")))
+                .filter(p -> !recordedProcesses.contains(p)).distinct().map(String::valueOf).toList();
+        if (!missing.isEmpty()) result.getIssues().add("请点“记录实际工时与费用”，补录工序 ID：" + String.join("、", missing));
         List<Map<String,Object>> consumed=jdbc.queryForList("SELECT id,quantity FROM mes_wm_transaction WHERE tenant_id=? AND work_order_id=? AND biz_type=? AND quantity<0 AND deleted=0 ORDER BY id"+readLock(current),tenant(),workorderId,MesBizTypeConstants.WM_ITEM_CONSUME);
         BigDecimal material=BigDecimal.ZERO;boolean complete=!consumed.isEmpty();
         for(Map<String,Object> row:consumed) {
@@ -332,7 +343,11 @@ public class MesCostService {
             for(Map<String,Object> layer:layers) {
                 if(remaining.signum()==0)break;
                 BigDecimal take=remaining.min(decimal(layer.get("remaining_quantity")));
-                if(Objects.equals(transaction.getBizType(),MesBizTypeConstants.WM_ITEM_CONSUME) && layer.get("origin_workorder_id")!=null && !"FINAL".equals(layer.get("status")))throw invalid("自制半成品须先完成成本结算，才能投入下一工单");
+                if(Objects.equals(transaction.getBizType(),MesBizTypeConstants.WM_ITEM_CONSUME) && layer.get("origin_workorder_id")!=null && !"FINAL".equals(layer.get("status"))){
+                    Long originId = id(layer.get("origin_workorder_id"));
+                    String originCode = Objects.toString(workorder(originId,false).get("code"), "#" + originId);
+                    throw invalid("半成品来源工单 " + originCode + " 尚未结算。请打开该工单的“成本”，逐工序登记实际工时与制造费用，确认工单完工后点“结算并锁定”，再重试当前报工审批。");
+                }
                 BigDecimal materialAmount=null,laborAmount=null,overheadAmount=null;
                 String allocationStatus=(String)layer.get("status");BigDecimal allocationUnit=decimal(layer.get("unit_cost"));
                 var basis=returnCosts.allocateFromLayer(layer,take);
