@@ -1,229 +1,257 @@
 <template>
   <div ref="screen" class="production-screen">
-    <div class="ambient-flylines" aria-hidden="true"><i v-for="n in 7" :key="n"></i></div>
-    <div class="header-light-beam" aria-hidden="true"></div>
-    <header class="screen-header"
-      ><div class="brand"
-        ><img class="brand-mark" src="/fazemes-logo.svg" alt="FazeMES标识" /><div
-          ><span class="brand-name">FazeMES</span
-          ><span class="brand-caption">制造运营指挥中心</span></div
-        ></div
-      ><div class="screen-heading"><h1>生产实时大屏</h1><span>PRODUCTION CONTROL CENTER</span></div
-      ><div class="screen-clock"
+    <header class="screen-header">
+      <div class="brand"><img src="/fazemes-logo.svg" alt="FazeMES标识" /><span>FazeMES</span></div>
+      <div class="screen-heading"><h1>生产实时大屏</h1></div>
+      <div class="screen-clock"
         ><strong>{{ clock }}</strong
         ><span>{{ dateLabel }}</span></div
-      ></header
-    >
-    <div class="screen-controls"
-      ><div class="filter-controls"
-        ><el-select
+      >
+    </header>
+    <div class="screen-controls">
+      <div class="filter-controls">
+        <el-select
           v-model="filters.workshopId"
           placeholder="全部车间"
+          aria-label="车间"
           clearable
+          popper-class="production-screen-popper"
+          :teleported="false"
           @change="changeWorkshop"
-          ><el-option
-            v-for="w in data?.workshops || []"
-            :key="w.id"
-            :label="w.name"
-            :value="w.id" /></el-select
-        ><el-select
+        >
+          <el-option v-for="w in data?.workshops || []" :key="w.id" :label="w.name" :value="w.id" />
+        </el-select>
+        <el-select
           v-model="filters.workstationId"
           placeholder="全部工作站"
+          aria-label="工作站"
           clearable
+          popper-class="production-screen-popper"
+          :teleported="false"
           @change="load"
-          ><el-option
+        >
+          <el-option
             v-for="w in data?.workstations || []"
             :key="w.id"
             :label="w.name"
-            :value="w.id" /></el-select
-        ><el-date-picker
+            :value="w.id"
+          />
+        </el-select>
+        <el-date-picker
           v-model="filters.date"
           type="date"
+          aria-label="生产日期"
           value-format="YYYY-MM-DD"
           :clearable="false"
-          @change="load" /></div
-      ><div class="refresh-controls"
-        ><span :class="['live-state', { failed: error }]">{{
-          error ? '刷新失败' : loading ? '同步中' : '业务数据已连接'
-        }}</span
-        ><el-switch v-model="autoRefresh" active-text="30秒刷新" /><el-button
-          :loading="loading"
-          @click="load"
-          >刷新</el-button
-        ><el-button @click="toggleFullscreen">全屏</el-button
-        ><el-button @click="router.back()">返回</el-button></div
-      ></div
-    >
-    <div v-if="error" class="screen-error"
+          popper-class="production-screen-popper"
+          :teleported="false"
+          @change="load"
+        />
+      </div>
+      <div class="refresh-controls">
+        <span :class="['live-state', { failed: error }]" role="status">{{
+          error ? '刷新失败' : loading ? '同步中' : '已连接'
+        }}</span>
+        <el-switch v-model="autoRefresh" active-text="30秒刷新" aria-label="自动刷新" />
+        <el-button :loading="loading" @click="load">刷新</el-button>
+        <el-button @click="toggleFullscreen">全屏</el-button>
+        <el-button @click="router.back()">返回</el-button>
+      </div>
+    </div>
+    <div v-if="error" class="screen-error" role="alert"
       >{{ error }}{{ data ? ` · 保留上次成功数据 ${formatDate(data.updatedAt)}` : '' }}</div
     >
     <main v-if="data" class="screen-main">
-      <section class="kpi-grid"
-        ><article v-for="k in kpis" :key="k.label" class="kpi-card" :class="k.tone"
-          ><span>{{ k.label }}</span
-          ><strong>{{ k.value }}</strong
-          ><small>{{ k.note }}</small></article
-        ></section
-      >
-      <div class="overview-grid">
+      <div class="analytics-column">
+        <section class="screen-panel production-panel">
+          <div class="panel-heading"><h2>生产运行概况</h2></div>
+          <div class="production-metrics">
+            <article
+              v-for="(k, index) in kpis.slice(0, 3)"
+              :key="k.label"
+              class="metric-row"
+              :class="k.tone"
+            >
+              <span class="metric-symbol" aria-hidden="true">{{ ['产', '成', '质'][index] }}</span>
+              <span>{{ k.label }}</span
+              ><strong>{{ k.value }}</strong>
+            </article>
+          </div>
+          <div class="production-counts"
+            ><span
+              >任务 <b>{{ data.taskCount }}</b></span
+            ><span
+              >报工 <b>{{ data.feedbackCount }}</b></span
+            ><span
+              >合格 <b>{{ format(data.qualified) }}</b></span
+            ></div
+          >
+        </section>
+        <section class="screen-panel trend-panel">
+          <div class="panel-heading"><h2>近7日产量趋势</h2></div>
+          <div class="chart-body"
+            ><Echart v-if="data.trend.length" :options="trendOptions" height="100%" /><div
+              v-else
+              class="screen-empty"
+              >暂无报工记录</div
+            ></div
+          >
+        </section>
+        <section class="screen-panel ranking-panel">
+          <div class="panel-heading"
+            ><h2>城市排行</h2><span v-if="mapExample" class="example-badge">示例</span></div
+          >
+          <ChinaDistributionMap
+            :cities="mapCities"
+            :metric-label="mapExample ? '销售示例' : '当日关联工单数'"
+            :unit="mapExample ? '示例值' : '单'"
+            :is-example="mapExample"
+            view="ranking"
+          />
+        </section>
+      </div>
+      <div class="production-column">
         <section class="screen-panel map-panel">
           <div class="panel-heading">
             <h2>{{ mapExample ? '产品销售市场 · 示例' : '客户区域工单分布' }}</h2>
-            <el-switch v-model="mapExample" active-text="示例" aria-label="切换地图示例数据" />
+            <div class="map-controls"
+              ><span v-if="!mapExample" class="map-count"
+                >已定位
+                <b
+                  >{{ regionData?.locatedOrderCount || 0 }}/{{
+                    regionData?.totalOrderCount || 0
+                  }}</b
+                >
+                · 待定位 <b>{{ regionData?.unlocatedOrderCount || 0 }}</b></span
+              ><el-switch v-model="mapExample" active-text="示例" aria-label="切换地图示例数据"
+            /></div>
           </div>
           <ChinaDistributionMap
             :cities="mapCities"
-            :metric-label="mapExample ? '云枢销售展示示例' : '当日关联工单数'"
+            :metric-label="mapExample ? '销售示例' : '当日关联工单数'"
             :unit="mapExample ? '示例值' : '单'"
-            :source-label="
-              mapExample
-                ? '云枢原图示例值，与本系统业务统计无关'
-                : regionData?.basis || '客户城市分布尚未加载'
-            "
             :is-example="mapExample"
-            empty-text="暂无可定位工单，可切换示例查看城市涟漪与排行"
+            view="map"
+            empty-text="暂无可定位工单"
           />
-          <p v-if="!mapExample" class="map-coverage">
-            已定位 {{ regionData?.locatedOrderCount || 0 }} /
-            {{ regionData?.totalOrderCount || 0 }} 单 ·
-            {{ regionData?.unlocatedOrderCount || 0 }} 单城市信息待完善
-          </p>
         </section>
-        <div class="production-column">
-          <section class="screen-panel hero-summary" data-aero-panel>
-            <span class="hero-scan" aria-hidden="true"></span>
-            <div class="hero-copy"
-              ><span>当日完成报工产量</span><strong>{{ format(data.produced) }}</strong
-              ><small>{{ filters.date }} · {{ data.feedbackCount }} 笔已完成报工</small></div
-            >
-            <div class="hero-orbit" aria-hidden="true"
-              ><span class="orbit-satellite one"></span><span class="orbit-satellite two"></span
-              ><div class="orbit-core"><span>生产数据</span><b>已连接</b></div></div
-            >
-          </section>
-          <section class="screen-panel trend-panel">
-            <div class="panel-heading"
-              ><h2>近7日产量趋势</h2><span>已完成报工 · 与当前筛选一致</span></div
-            >
-            <Echart v-if="data.trend.length" :options="trendOptions" :height="265" />
-            <div v-else class="screen-empty">近7日暂无已完成报工</div>
-          </section>
-          <section class="screen-panel flow-panel">
-            <div class="panel-heading"><h2>工位生产动态</h2><span>当前筛选 · 任务台账</span></div>
-            <div v-if="!stationTasks.length" class="screen-empty">暂无匹配工位任务</div>
-            <div v-else class="flow-strip">
-              <template v-for="(station, index) in flowStations" :key="station.id">
-                <button class="topology-station" @click="openStation(station.id)">
-                  <span class="station-node" aria-hidden="true"
-                    ><span class="node-glow"></span><Icon icon="ep:setting"
-                  /></span>
-                  <strong>{{ station.name }}</strong
-                  ><small>{{ format(station.produced) }} / {{ format(station.target) }}</small>
-                </button>
-                <div v-if="index < flowStations.length - 1" class="topology-link" aria-hidden="true"
-                  ><i></i><i></i><i></i
-                ></div>
-              </template>
-              <span class="wip-carrier carrier-one" aria-hidden="true"></span
-              ><span class="wip-carrier carrier-two" aria-hidden="true"></span>
-            </div>
-            <p v-if="stationTasks.length" class="flow-note"
-              >仅展示前 {{ flowStations.length }} 个工位，连线用于动态展示；点击查看任务。</p
-            >
-          </section>
-        </div>
-        <div class="operations-column">
-          <section class="screen-panel equipment-panel">
-            <div class="panel-heading"><h2>设备状态</h2><span>设备台账当前状态</span></div>
-            <Echart v-if="deviceCount" :options="deviceOptions" :height="245" />
-            <div v-else class="screen-empty">暂无匹配设备</div>
-            <div class="device-legend"
-              ><span v-for="d in data.devices" :key="d.status"
-                >{{ deviceStatus(d.status) }} <b>{{ d.count }}</b></span
-              ></div
-            >
-          </section>
-          <section class="screen-panel andon-panel">
-            <div class="panel-heading"><h2>现场异常态势</h2><span>当前尚未处置</span></div>
-            <div v-if="Number(data.activeAndon) === 0" class="safe-monitor">
-              <div class="safe-radar" aria-hidden="true"><i></i><i></i><i></i><b></b></div>
-              <div class="safe-copy"
-                ><strong>当前无活动安灯</strong><span>以当前筛选范围内的安灯记录为准</span></div
+        <section class="screen-panel flow-panel">
+          <div class="panel-heading"><h2>工位生产动态</h2></div>
+          <div v-if="!stationTasks.length" class="screen-empty">暂无匹配工位任务</div>
+          <div v-else class="flow-strip">
+            <template v-for="(station, index) in flowStations" :key="station.id">
+              <button class="topology-station" @click="openStation(station.id)"
+                ><span class="station-node" aria-hidden="true"><Icon icon="ep:setting" /></span
+                ><span
+                  ><strong>{{ station.name }}</strong
+                  ><small
+                    >{{ format(station.produced) }} / {{ format(station.target) }}</small
+                  ></span
+                ></button
               >
-            </div>
-            <div v-else class="andon-alert-summary"
-              ><span class="alert-code"><i></i>活动安灯</span
-              ><strong>{{ format(data.activeAndon) }}</strong
-              ><span>请进入现场安灯处理</span></div
-            >
-            <div class="exception-totals"
-              ><span
-                >待过程检验 <b>{{ format(data.pendingInspection) }}</b></span
-              ><span
-                >全厂缺料工单
-                <b>{{
-                  data.shortageAvailable ? format(data.shortageWorkOrderCount) : '—'
-                }}</b></span
-              ></div
-            >
-          </section>
-        </div>
+              <div
+                v-if="index < flowStations.length - 1"
+                class="topology-link"
+                aria-hidden="true"
+              ></div>
+            </template>
+          </div>
+        </section>
+        <section class="screen-panel orders-panel">
+          <div class="panel-heading"
+            ><h2>工单执行进度</h2><span class="panel-total">{{ data.workOrders.length }}</span></div
+          >
+          <div class="panel-scroll" tabindex="0" aria-label="工单执行进度列表">
+            <div v-if="!data.workOrders.length" class="screen-empty">暂无当日关联工单</div>
+            <table v-else class="order-table">
+              <thead
+                ><tr><th>工单编码</th><th>工单名称</th><th>已产 / 目标</th><th>进度</th></tr></thead
+              >
+              <tbody
+                ><tr v-for="w in data.workOrders" :key="w.id"
+                  ><td>{{ w.code }}</td
+                  ><td :title="w.name">{{ w.name }}</td
+                  ><td>{{ format(w.producedQuantity) }} / {{ format(w.quantity) }}</td
+                  ><td
+                    ><el-progress
+                      :percentage="progress(w.producedQuantity, w.quantity)"
+                      :stroke-width="5"
+                      color="#32cddd" /></td></tr
+              ></tbody>
+            </table>
+          </div>
+        </section>
       </div>
-      <div class="screen-grid lower-grid"
-        ><section class="screen-panel"
-          ><div class="panel-heading"><h2>工单执行进度</h2><span>关联当日任务 · 最多30项</span></div
-          ><div v-if="!data.workOrders.length" class="screen-empty">暂无当日关联工单</div
-          ><div v-for="w in data.workOrders" :key="w.id" class="order-row"
-            ><div
-              ><strong>{{ w.code }}</strong
-              ><small>{{ w.name }}</small></div
-            ><div class="order-progress"
-              ><el-progress
-                :percentage="progress(w.producedQuantity, w.quantity)"
-                :stroke-width="7"
-                color="#35d5c0"
-              /><span>{{ format(w.producedQuantity) }} / {{ format(w.quantity) }}</span></div
+      <div class="operations-column">
+        <section class="screen-panel equipment-panel">
+          <div class="panel-heading"
+            ><h2>设备状态</h2><span class="panel-total">{{ deviceCount }}</span></div
+          >
+          <div class="device-chart chart-body"
+            ><Echart v-if="deviceCount" :options="deviceOptions" height="100%" /><div
+              v-if="deviceCount"
+              class="device-total"
+              ><strong>{{ deviceCount }}</strong
+              ><span>设备总数</span></div
+            ><div v-else class="screen-empty">暂无匹配设备</div></div
+          >
+          <div class="device-legend"
+            ><span v-for="d in data.devices" :key="d.status"
+              ><i :class="`device-status-${d.status}`"></i>{{ deviceStatus(d.status) }}
+              <b>{{ d.count }}</b></span
             ></div
-          ></section
-        ><section class="screen-panel"
-          ><div class="panel-heading"
-            ><h2>工位任务</h2><span>点击工位查看任务 · 最多100项</span></div
-          ><div v-if="!stationTasks.length" class="screen-empty">暂无匹配工位任务</div
-          ><button
-            v-for="s in stationTasks"
-            :key="s.id"
-            class="station-row"
-            @click="openStation(s.id)"
-            ><div
-              ><strong>{{ s.name }}</strong
-              ><small
-                >{{ s.count }} 项任务 · {{ format(s.produced) }} / {{ format(s.target) }}</small
-              ></div
-            ><el-progress
-              :percentage="progress(s.produced, s.target)"
-              :stroke-width="7"
-              color="#62a5ff"
-            /><span>查看 →</span></button
-          ></section
-        ></div
-      >
-      <footer class="screen-footer"
-        ><span>{{ data.basis }}</span
-        ><strong>最近成功刷新 {{ formatDate(data.updatedAt) }}</strong></footer
-      >
+          >
+        </section>
+        <section class="screen-panel andon-panel">
+          <div class="panel-heading"><h2>现场异常态势</h2></div>
+          <div :class="['andon-state', { alert: Number(data.activeAndon) > 0 }]"
+            ><i></i>{{ Number(data.activeAndon) === 0 ? '当前无活动安灯' : '当前有活动安灯' }}</div
+          >
+          <div class="exception-metrics"
+            ><article v-for="k in kpis.slice(3)" :key="k.label" :class="['exception-ring', k.tone]"
+              ><span>{{ k.label }}</span
+              ><strong>{{ k.value }}</strong></article
+            ></div
+          >
+        </section>
+        <section class="screen-panel tasks-panel">
+          <div class="panel-heading"
+            ><h2>工位任务</h2><span class="panel-total">{{ stationTasks.length }}</span></div
+          >
+          <div class="panel-scroll" tabindex="0" aria-label="工位任务列表">
+            <div v-if="!stationTasks.length" class="screen-empty">暂无匹配工位任务</div>
+            <button
+              v-for="s in stationTasks"
+              :key="s.id"
+              class="station-row"
+              @click="openStation(s.id)"
+              ><div
+                ><strong>{{ s.name }}</strong
+                ><span>{{ s.count }} 项任务</span></div
+              ><el-progress
+                :percentage="progress(s.produced, s.target)"
+                :stroke-width="5"
+                color="#32cddd"
+              /><div class="station-quantity"
+                ><span>{{ format(s.produced) }} / {{ format(s.target) }}</span
+                ><span>查看 →</span></div
+              ></button
+            >
+          </div>
+        </section>
+      </div>
     </main>
-    <div v-else-if="loading" class="screen-empty">正在读取生产业务数据…</div
-    ><div v-else class="screen-empty">数据尚未加载，请点击刷新重试。</div>
+    <div v-else-if="loading" class="screen-empty">正在读取生产业务数据…</div>
+    <div v-else class="screen-empty">数据尚未加载，请点击刷新重试。</div>
     <el-drawer
       v-model="drawer"
       :title="`${selectedStationName} · 当日任务`"
       size="min(900px, 90vw)"
+      class="production-screen-drawer"
+      :append-to="screen"
       append-to-body
-      ><el-alert
-        title="以下为当前筛选日期交叠的生产工序任务，数据来自任务台账。"
-        type="info"
-        :closable="false"
-      /><el-table :data="selectedTasks" class="mt-16px" empty-text="暂无任务"
+    >
+      <el-table :data="selectedTasks" empty-text="暂无任务"
         ><el-table-column prop="code" label="任务编码" min-width="150" /><el-table-column
           prop="name"
           label="任务名称"
@@ -231,11 +259,10 @@
           prop="producedQuantity"
           label="已产" /><el-table-column label="状态"
           ><template #default="{ row }">{{ orderStatus(row.status) }}</template></el-table-column
-        ><el-table-column prop="startTime" label="计划开始" min-width="165" /></el-table
-      ><el-button class="mt-16px" type="primary" @click="enterWorkbench"
-        >进入工位工作台</el-button
-      ></el-drawer
-    >
+        ><el-table-column prop="startTime" label="计划开始" min-width="165"
+      /></el-table>
+      <el-button class="mt-16px" type="primary" @click="enterWorkbench">进入工位工作台</el-button>
+    </el-drawer>
   </div>
 </template>
 
@@ -248,14 +275,9 @@ import type { EChartsOption } from 'echarts'
 import { DashboardApi, type ProductionDashboard } from '@/api/mes/dashboard'
 import ChinaDistributionMap from './components/ChinaDistributionMap.vue'
 import { YUNSHU_EXAMPLE_CITIES } from './components/chinaDistribution'
-import { useAeroThreeEffects } from './effects/useAeroThreeEffects'
-import { useAeroAmbientEffects } from './effects/useAeroAmbientEffects'
-import './effects/aero-effects.scss'
 defineOptions({ name: 'MesProductionDashboard' })
 const router = useRouter()
 const screen = ref<HTMLElement>()
-useAeroThreeEffects(screen)
-useAeroAmbientEffects(screen)
 const data = ref<ProductionDashboard>()
 const mapExample = ref(false)
 const regionData = computed(() => data.value?.regionalDistribution)
@@ -285,37 +307,31 @@ const kpis = computed(() => [
   {
     label: '工序任务目标',
     value: format(data.value?.target),
-    note: `${data.value?.taskCount || 0} 项当日交叠任务`,
     tone: ''
   },
   {
     label: '完成报工产量',
     value: format(data.value?.produced),
-    note: `${data.value?.feedbackCount || 0} 笔已完成报工`,
     tone: 'teal'
   },
   {
     label: '报工合格率',
     value: ratio.value,
-    note: `合格 ${format(data.value?.qualified)} / 报工 ${format(data.value?.produced)}`,
     tone: 'teal'
   },
   {
     label: '过程待检单',
     value: format(data.value?.pendingInspection),
-    note: 'IPQC草稿待处理',
     tone: 'amber'
   },
   {
     label: '活动安灯',
     value: format(data.value?.activeAndon),
-    note: '尚未处置的安灯事件',
     tone: 'rose'
   },
   {
-    label: '缺料工单',
+    label: '全厂缺料工单',
     value: data.value?.shortageAvailable ? format(data.value.shortageWorkOrderCount) : '—',
-    note: data.value?.shortageAvailable ? '全厂当前 · 不受日期/工位筛选' : '齐套分析暂不可用',
     tone: 'amber'
   }
 ])
@@ -338,6 +354,7 @@ const changeWorkshop = () => {
   load()
 }
 const deviceLabels: Record<number, string> = { 1: '停机', 2: '生产中', 3: '维护中' }
+const deviceColors: Record<number, string> = { 1: '#74849b', 2: '#35d5c0', 3: '#f3b85f' }
 const orderLabels: Record<number, string> = {
   0: '草稿',
   1: '已确认',
@@ -358,12 +375,14 @@ const deviceOptions = computed<EChartsOption>(() => ({
   series: [
     {
       type: 'pie',
-      radius: ['45%', '72%'],
-      label: { color: '#c6d8ec' },
+      radius: ['61%', '82%'],
+      label: { show: false },
+      itemStyle: { borderColor: '#050e16', borderWidth: 3 },
       data:
         data.value?.devices.map((d) => ({
           name: deviceStatus(d.status),
-          value: Number(d.count)
+          value: Number(d.count),
+          itemStyle: { color: deviceColors[d.status] || '#74849b' }
         })) || []
     }
   ]
@@ -376,10 +395,10 @@ const trendOptions = computed<EChartsOption>(() => {
   )
   return {
     backgroundColor: 'transparent',
-    color: ['#62a5ff', '#35d5c0'],
+    color: ['#32cddd', '#40e0b5'],
     tooltip: { trigger: 'axis' },
     legend: { top: 0, textStyle: { color: '#a5bbd4' } },
-    grid: { left: 65, right: 30, top: 45, bottom: 40 },
+    grid: { left: 12, right: 12, top: 36, bottom: 8, containLabel: true },
     xAxis: {
       type: 'category',
       data: days.map((d) => d.slice(5)),
@@ -471,118 +490,99 @@ onBeforeUnmount(() => {
 
 <style scoped lang="scss">
 .production-screen {
+  --screen-cyan: #47d9f5;
+  --screen-muted: #83a9bc;
+  --screen-line: #173744;
+  --el-color-primary: #23bcd4;
+  --el-text-color-primary: #d8f4ff;
+  --el-text-color-regular: #a3c9d9;
+  --el-text-color-placeholder: #83a9bc;
+  --el-fill-color-blank: #081923;
+  --el-border-color: #245064;
+  --el-switch-on-color: #148a9a;
+
   position: fixed;
   z-index: 2000;
-  min-width: 760px;
-  padding: 22px 30px;
+  display: flex;
+  padding: 16px 24px 20px;
   overflow: auto;
-  font-family: Inter, 'Microsoft YaHei', sans-serif;
-  color: #dce8f6;
-  background: radial-gradient(ellipse at 50% 0, #142c49 0, #0b182a 50%, #07111f 100%);
+  font-family: 'Microsoft YaHei', 'PingFang SC', sans-serif;
+  color: #c6e6ef;
+  background: #02090d;
   inset: 0;
+  flex-direction: column;
+  gap: 14px;
+  color-scheme: dark;
 }
 
-.screen-header,
-.screen-controls,
-.screen-main,
-.screen-error {
-  position: relative;
-  z-index: 1;
-}
-
-.production-screen :deep(.aero-ambient-canvas) {
-  position: fixed;
-  z-index: 0;
-  width: 100%;
-  height: 100%;
-  pointer-events: none;
-  opacity: 0.32;
-  inset: 0;
-}
-
-.header-light-beam {
-  position: absolute;
-  top: 0;
-  left: 20%;
-  width: 60%;
-  height: 2px;
-  pointer-events: none;
-  background: linear-gradient(90deg, transparent, #67edff, transparent);
-  box-shadow: 0 0 22px #20cfff;
+.production-screen * {
+  box-sizing: border-box;
 }
 
 .screen-header {
+  flex-shrink: 0;
   display: grid;
-  grid-template-columns: 1fr 1fr 1fr;
+  grid-template-columns: 1fr auto 1fr;
   align-items: center;
-  padding-bottom: 20px;
-  border-bottom: 1px solid #26405e;
+  min-height: 56px;
+  gap: 32px;
 }
 
 .brand {
   display: flex;
-  gap: 12px;
   align-items: center;
-}
-
-.brand-mark {
-  width: 42px;
-  height: 42px;
-  object-fit: contain;
-}
-
-.brand-name,
-.brand-caption {
-  display: block;
-}
-
-.brand-name {
-  font-size: 23px;
-  font-weight: 750;
+  gap: 12px;
+  font-size: 24px;
+  font-weight: 700;
   letter-spacing: 1px;
 }
 
-.brand-caption {
-  margin-top: 4px;
-  font-size: 11px;
-  letter-spacing: 2px;
-  color: #92a9c3;
+.brand img {
+  width: 36px;
+  height: 36px;
 }
 
 .screen-heading {
-  text-align: center;
+  display: flex;
+  align-items: center;
+  gap: 24px;
+}
+
+.screen-heading::before,
+.screen-heading::after {
+  width: clamp(30px, 8vw, 180px);
+  height: 1px;
+  background: linear-gradient(90deg, transparent, #238ca4);
+  content: '';
+}
+
+.screen-heading::after {
+  transform: rotate(180deg);
 }
 
 .screen-heading h1 {
-  margin: 0 0 8px;
-  font-size: 27px;
+  margin: 0;
+  font-size: clamp(24px, 2vw, 38px);
+  font-weight: 700;
   letter-spacing: 6px;
-}
-
-.screen-heading > span {
-  font-size: 10px;
-  letter-spacing: 3px;
-  color: #6d92b7;
+  color: #d9f8ff;
+  text-shadow: 0 0 18px #28c5ed85;
+  white-space: nowrap;
 }
 
 .screen-clock {
   text-align: right;
 }
 
-.screen-clock strong,
-.screen-clock span {
-  display: block;
-}
-
 .screen-clock strong {
-  font-size: 26px;
+  display: block;
+  font-size: 24px;
   font-variant-numeric: tabular-nums;
 }
 
 .screen-clock span {
-  margin-top: 4px;
   font-size: 12px;
-  color: #92a9c3;
+  color: var(--screen-muted);
 }
 
 .screen-controls,
@@ -590,521 +590,717 @@ onBeforeUnmount(() => {
 .refresh-controls {
   display: flex;
   align-items: center;
-  flex-wrap: wrap;
   gap: 10px;
+  flex-wrap: wrap;
 }
 
 .screen-controls {
+  flex-shrink: 0;
   justify-content: space-between;
-  margin: 20px 0;
+  padding-bottom: 12px;
+  border-bottom: 1px solid var(--screen-line);
 }
 
 .filter-controls .el-select {
-  width: 160px;
+  width: 146px;
 }
 
 .filter-controls :deep(.el-date-editor) {
-  width: 150px;
+  width: 146px;
 }
 
-.live-state {
-  font-size: 11px;
-  color: #35d5c0;
-}
-
-.live-state.failed {
-  color: #ff8095;
+.refresh-controls :deep(.el-button + .el-button) {
+  margin-left: 0;
 }
 
 .refresh-controls :deep(.el-switch__label) {
-  color: #a3b8d0;
+  color: var(--screen-muted);
+}
+
+.production-screen :deep(.el-select__wrapper),
+.production-screen :deep(.el-input__wrapper) {
+  background: #081923;
+  box-shadow: 0 0 0 1px #245064 inset;
+}
+
+.production-screen :deep(.el-input__inner) {
+  color: #c6e6ef;
+}
+
+.live-state {
+  display: inline-flex;
+  align-items: center;
+  gap: 7px;
+  margin-right: 6px;
+  font-size: 12px;
+  color: #41dcb3;
+}
+
+.live-state::before {
+  width: 6px;
+  height: 6px;
+  background: currentcolor;
+  border-radius: 50%;
+  content: '';
+  box-shadow: 0 0 8px currentcolor;
+}
+
+.live-state.failed {
+  color: #ff6485;
 }
 
 .screen-error {
-  padding: 12px;
-  margin-bottom: 16px;
+  padding: 10px 14px;
   color: #ff9cac;
-  background: #381d30;
-  border: 1px solid #693449;
-  border-radius: 7px;
+  background: #311524;
+  border: 1px solid #663043;
 }
 
-.kpi-grid {
+.screen-main {
   display: grid;
-  grid-template-columns: repeat(6, 1fr);
-  gap: 14px;
-  margin-bottom: 18px;
+  flex: 1;
+  min-height: 560px;
+  grid-template-columns: minmax(240px, 1fr) minmax(440px, 2.25fr) minmax(250px, 1fr);
+  gap: 20px;
 }
 
-.kpi-card {
-  padding: 20px;
-  background: linear-gradient(130deg, #17314b, #102137);
-  border: 1px solid #2b4866;
-  border-radius: 9px;
-}
-
-.kpi-card > span {
-  font-size: 12px;
-  color: #a6bdd6;
-}
-
-.kpi-card strong {
-  display: block;
-  margin: 14px 0 10px;
-  font-size: clamp(24px, 2.5vw, 38px);
-  line-height: 1;
-  font-variant-numeric: tabular-nums;
-}
-
-.kpi-card small {
-  font-size: 10px;
-  color: #7895b3;
-}
-
-.kpi-card.teal strong {
-  color: #35d5c0;
-}
-
-.kpi-card.amber strong {
-  color: #f3b85f;
-}
-
-.kpi-card.rose strong {
-  color: #fb819c;
-}
-
-.screen-grid {
-  display: grid;
-  grid-template-columns: 1.65fr 1fr;
-  gap: 18px;
-  margin-bottom: 18px;
-}
-
-.overview-grid {
-  display: grid;
-  grid-template-columns: minmax(250px, 0.95fr) minmax(380px, 1.65fr) minmax(230px, 0.9fr);
-  gap: 16px;
-  margin-bottom: 18px;
-}
-
+.analytics-column,
 .production-column,
 .operations-column {
-  display: flex;
+  display: grid;
   min-width: 0;
-  flex-direction: column;
+  min-height: 0;
   gap: 16px;
 }
 
-.map-panel {
+.analytics-column {
+  grid-template-rows: auto minmax(170px, 1fr) minmax(180px, 1fr);
+  padding-right: 16px;
+  border-right: 1px solid var(--screen-line);
+}
+
+.production-column {
+  grid-template-rows: minmax(300px, 1fr) 84px 150px;
+}
+
+.operations-column {
+  grid-template-rows: minmax(180px, 1fr) auto minmax(150px, 1fr);
+  padding-left: 16px;
+  border-left: 1px solid var(--screen-line);
+}
+
+.screen-panel {
   display: flex;
+  min-width: 0;
+  min-height: 0;
   flex-direction: column;
 }
 
-.map-panel :deep(.china-distribution) {
-  flex: 1;
-}
-
-.map-panel .panel-heading {
-  flex-wrap: wrap;
-  gap: 8px;
-}
-
-.map-panel :deep(.el-switch__label) {
-  color: #f3b85f;
-}
-
-.map-coverage,
-.flow-note {
-  margin: 10px 0 0;
-  font-size: 10px;
-  line-height: 1.7;
-  color: #7895b3;
-}
-
-.hero-summary {
+.panel-heading {
   display: flex;
-  min-height: 158px;
+  min-height: 38px;
+  padding: 0 12px;
+  margin-bottom: 10px;
   align-items: center;
   justify-content: space-between;
-  overflow: hidden;
-  gap: 18px;
+  gap: 8px;
+  background: #071c27;
+  border-left: 2px solid #21c8ee;
 }
 
-.hero-copy {
-  position: relative;
-  z-index: 1;
-  min-width: 0;
+.panel-heading h2 {
+  margin: 0;
+  font-size: 15px;
+  font-weight: 500;
+  color: #7ee0f4;
 }
 
-.hero-copy > span,
-.hero-copy strong,
-.hero-copy small {
-  display: block;
-}
-
-.hero-copy > span {
-  font-size: 12px;
-  color: #a6bdd6;
-}
-
-.hero-copy strong {
-  margin: 12px 0;
-  font-size: clamp(28px, 3vw, 44px);
-  line-height: 1;
-  color: #62efff;
+.panel-total {
+  font-size: 16px;
   font-variant-numeric: tabular-nums;
-  text-shadow: 0 0 18px #1b9ec16b;
+  color: #c6f5ff;
 }
 
-.hero-copy small {
-  font-size: 10px;
-  line-height: 1.7;
-  color: #7895b3;
-}
-
-.hero-orbit {
-  --aero-orbit-size: 86px;
-
-  margin-right: 16px;
-}
-
-.orbit-core {
-  font-size: 9px;
-  line-height: 1.6;
-}
-
-.orbit-core b {
-  color: #d0ffff;
-}
-
-.flow-strip {
-  position: relative;
-  display: flex;
-  min-height: 112px;
-  padding: 10px 0 6px;
-  align-items: flex-start;
-  justify-content: space-around;
-}
-
-.topology-station {
+.production-metrics {
   display: grid;
-  width: 64px;
-  min-width: 0;
-  padding: 4px 0;
-  color: inherit;
-  text-align: center;
-  cursor: pointer;
-  background: transparent;
-  border: 0;
-  border-radius: 5px;
-  justify-items: center;
+  gap: 12px;
+  padding: 4px 4px 10px;
+}
+
+.metric-row {
+  display: grid;
+  grid-template-columns: 32px 1fr auto;
+  align-items: center;
   gap: 10px;
 }
 
-.topology-station:focus-visible {
-  outline: 2px solid #62a5ff;
-  outline-offset: 3px;
-}
-
-.station-node {
-  position: relative;
+.metric-symbol {
   display: grid;
   width: 30px;
   height: 30px;
-  font-size: 21px;
-  color: #55e5ff;
-  background: #10354f;
-  border: 1px solid #207c99;
+  font-size: 12px;
+  color: #47d9f5;
+  border: 1px solid #199aba;
   border-radius: 50%;
+  box-shadow: inset 0 0 10px #0e7e9a55;
   place-items: center;
 }
 
-.topology-station strong {
-  max-width: 64px;
-  overflow: hidden;
-  font-size: 10px;
+.metric-row > span:nth-child(2) {
+  font-size: 13px;
+  color: var(--screen-muted);
+}
+
+.metric-row strong {
+  font-size: clamp(22px, 1.7vw, 32px);
   font-weight: 500;
+  font-variant-numeric: tabular-nums;
+  color: #dcf8ff;
+}
+
+.metric-row.teal strong {
+  color: #51dfc8;
+}
+
+.production-counts {
+  display: flex;
+  padding: 10px 4px 0;
+  font-size: 11px;
+  color: var(--screen-muted);
+  border-top: 1px solid #102b38;
+  gap: 10px;
+  justify-content: space-between;
+}
+
+.production-counts b {
+  margin-left: 4px;
+  font-weight: 500;
+  color: #d1f2fb;
+}
+
+.chart-body {
+  position: relative;
+  flex: 1;
+  min-height: 0;
+}
+
+.ranking-panel :deep(.china-distribution) {
+  flex: 1;
+  min-height: 0;
+}
+
+.example-badge {
+  font-size: 12px;
+  color: #f5bf61;
+}
+
+.map-panel {
+  padding: 0;
+  background: radial-gradient(ellipse at center, #1c293b, #101925 75%);
+}
+
+.map-panel .panel-heading {
+  padding: 10px 16px 0;
+  margin-bottom: 0;
+  background: transparent;
+  border-left: 0;
+}
+
+.map-panel .panel-heading h2 {
+  font-size: 14px;
+  color: #c3e1eb;
+}
+
+.map-controls {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+}
+
+.map-count {
+  font-size: 11px;
+  color: #83a9bc;
+}
+
+.map-count b {
+  font-weight: 500;
+  color: #b2dce9;
+}
+
+.map-controls :deep(.el-switch__label) {
+  color: #f5bf61;
+}
+
+.map-panel :deep(.china-distribution) {
+  min-height: 0;
+  flex: 1;
+}
+
+.flow-panel .panel-heading {
+  min-height: 30px;
+  margin-bottom: 4px;
+}
+
+.flow-strip {
+  display: flex;
+  flex: 1;
+  align-items: center;
+  padding: 0 8px;
+}
+
+.topology-station {
+  display: flex;
+  min-width: 0;
+  padding: 6px 3px;
+  color: #b8dce7;
+  cursor: pointer;
+  background: transparent;
+  border: 0;
+  align-items: center;
+  gap: 8px;
+}
+
+.station-node {
+  display: grid;
+  width: 28px;
+  height: 28px;
+  flex-shrink: 0;
+  place-items: center;
+  color: #47d9f5;
+  background: #0c2935;
+  border: 1px solid #21617b;
+  border-radius: 50%;
+}
+
+.topology-station strong,
+.topology-station small {
+  display: block;
+  max-width: 90px;
+  overflow: hidden;
+  font-size: 11px;
+  font-weight: 400;
+  text-align: left;
   text-overflow: ellipsis;
   white-space: nowrap;
 }
 
 .topology-station small {
-  font-size: 9px;
-  color: #7895b3;
+  margin-top: 5px;
+  color: var(--screen-muted);
 }
 
 .topology-link {
-  margin-top: 8px;
-  border-bottom: 1px solid #216482;
+  height: 1px;
+  min-width: 8px;
+  margin: 0 8px;
+  background: #21617b;
+  flex: 1;
 }
 
-.safe-monitor {
-  position: relative;
-  display: flex;
-  min-height: 148px;
-  padding: 18px 10px;
-  align-items: center;
-  gap: 18px;
+.panel-scroll {
+  flex: 1;
+  min-height: 0;
+  overflow: auto;
+  scrollbar-width: thin;
+  scrollbar-color: #225164 transparent;
 }
 
-.safe-copy strong,
-.safe-copy span {
-  display: block;
-}
-
-.safe-copy strong {
-  font-size: 13px;
-  color: #75f5c7;
-}
-
-.safe-copy span {
-  margin-top: 8px;
-  font-size: 10px;
-  line-height: 1.8;
-  color: #7895b3;
-}
-
-.andon-alert-summary {
-  display: grid;
-  min-height: 148px;
-  padding: 12px 0;
-  text-align: center;
-  place-content: center;
-  gap: 8px;
-}
-
-.alert-code {
-  display: flex;
+.order-table {
+  width: 100%;
   font-size: 12px;
-  color: #f3b85f;
-  align-items: center;
-  justify-content: center;
-  gap: 8px;
+  border-collapse: collapse;
+  table-layout: fixed;
 }
 
-.andon-alert-summary strong {
-  font-size: 38px;
-  line-height: 1;
-  color: #fb819c;
+.order-table th {
+  position: sticky;
+  top: 0;
+  z-index: 1;
+  padding: 8px 10px;
+  font-weight: 400;
+  color: #49c7e8;
+  text-align: left;
+  background: #07202d;
 }
 
-.andon-alert-summary > span:last-child {
-  font-size: 10px;
-  color: #92a9c3;
+.order-table td {
+  padding: 9px 10px;
+  overflow: hidden;
+  color: #a3c9d9;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  border-bottom: 1px solid #14303b;
 }
 
-.exception-totals {
-  display: flex;
-  padding-top: 16px;
-  margin-top: 12px;
-  font-size: 10px;
-  color: #92a9c3;
-  border-top: 1px solid #1c314a;
-  justify-content: space-between;
-  gap: 12px;
+.order-table tbody tr:nth-child(even) {
+  background: #06141c;
 }
 
-.exception-totals b {
-  margin-left: 6px;
-  font-size: 15px;
-  color: #f3b85f;
+.order-table th:last-child {
+  width: 26%;
 }
 
-.screen-panel {
-  min-width: 0;
-  padding: 20px;
-  background: #0d1d31e8;
-  border: 1px solid #253d59;
-  border-radius: 9px;
+.screen-panel :deep(.el-progress__text) {
+  min-width: 34px;
+  font-size: 11px !important;
+  color: #a3c9d9;
 }
 
-.panel-heading {
-  display: flex;
-  justify-content: space-between;
-  align-items: center;
-  margin-bottom: 15px;
-}
-
-.panel-heading h2 {
-  padding-left: 10px;
-  margin: 0;
-  font-size: 15px;
-  border-left: 3px solid #35d5c0;
-}
-
-.panel-heading > span {
-  font-size: 10px;
-  color: #7895b3;
+.screen-panel :deep(.el-progress-bar__outer) {
+  background: #17313f;
 }
 
 .screen-empty {
   display: grid;
-  min-height: 220px;
-  font-size: 14px;
-  color: #7895b3;
+  height: 100%;
+  min-height: 0;
+  padding: 16px;
+  font-size: 13px;
+  color: #6d96aa;
+  text-align: center;
+  flex: 1;
   place-items: center;
+}
+
+.device-total {
+  position: absolute;
+  display: grid;
+  inset: 0;
+  place-content: center;
+  text-align: center;
+  pointer-events: none;
+}
+
+.device-total strong {
+  font-size: 30px;
+  font-weight: 500;
+  color: #d6f4ff;
+  font-variant-numeric: tabular-nums;
+}
+
+.device-total span {
+  margin-top: 5px;
+  font-size: 11px;
+  color: var(--screen-muted);
 }
 
 .device-legend {
   display: flex;
-  font-size: 12px;
-  color: #92a9c3;
+  padding: 8px 0;
+  align-items: center;
   justify-content: center;
-  gap: 20px;
+  flex-wrap: wrap;
+  gap: 12px;
+}
+
+.device-legend span {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  font-size: 11px;
+  color: var(--screen-muted);
 }
 
 .device-legend b {
-  margin-left: 8px;
-  color: #dce8f6;
+  color: #dcf8ff;
 }
 
-.order-row,
+.device-legend i {
+  width: 6px;
+  height: 6px;
+  background: #74849b;
+  border-radius: 50%;
+}
+
+.device-legend .device-status-2 {
+  background: #35d5c0;
+}
+
+.device-legend .device-status-3 {
+  background: #f3b85f;
+}
+
+.andon-state {
+  display: flex;
+  padding: 3px 4px 12px;
+  font-size: 12px;
+  color: #51dfb7;
+  align-items: center;
+  gap: 8px;
+}
+
+.andon-state i {
+  width: 5px;
+  height: 5px;
+  background: currentcolor;
+  border-radius: 50%;
+  box-shadow: 0 0 7px currentcolor;
+}
+
+.andon-state.alert {
+  color: #ff6485;
+}
+
+.exception-metrics {
+  display: flex;
+  justify-content: space-around;
+  gap: 8px;
+  padding-bottom: 4px;
+}
+
+.exception-ring {
+  display: flex;
+  width: 30%;
+  aspect-ratio: 1;
+  align-items: center;
+  justify-content: center;
+  flex-direction: column;
+  gap: 8px;
+  border: 1px solid currentcolor;
+  border-radius: 50%;
+}
+
+.exception-ring.amber {
+  color: #e9b858;
+}
+
+.exception-ring.rose {
+  color: #f65b82;
+}
+
+.exception-ring span {
+  font-size: clamp(9px, 0.68vw, 12px);
+}
+
+.exception-ring strong {
+  font-size: clamp(21px, 1.8vw, 32px);
+  font-weight: 500;
+  color: #d6f4ff;
+  font-variant-numeric: tabular-nums;
+}
+
 .station-row {
   display: grid;
-  grid-template-columns: 1fr 1fr;
-  align-items: center;
-  gap: 20px;
-  padding: 13px 0;
-  border-bottom: 1px solid #1c314a;
-}
-
-.order-row strong,
-.order-row small,
-.station-row strong,
-.station-row small {
-  display: block;
-}
-
-.order-row strong,
-.station-row strong {
-  font-size: 12px;
-  font-weight: 500;
-  color: #dce8f6;
-}
-
-.order-row small,
-.station-row small {
-  margin-top: 5px;
-  font-size: 10px;
-  color: #7895b3;
-}
-
-.order-progress > span {
-  font-size: 10px;
-  color: #92a9c3;
-}
-
-.screen-panel :deep(.el-progress__text) {
-  font-size: 11px !important;
-  color: #a6bdd6;
-}
-
-.screen-panel :deep(.el-progress-bar__outer) {
-  background: #233c58;
-}
-
-.station-row {
   width: 100%;
+  padding: 12px 4px;
+  gap: 8px;
+  color: #b8dce7;
   text-align: left;
   cursor: pointer;
   background: transparent;
   border: 0;
-  border-bottom: 1px solid #1c314a;
-  grid-template-columns: 1.2fr 1fr 50px;
+  border-bottom: 1px solid #14303b;
 }
 
-.station-row:hover {
-  background: #142c45;
-}
-
-.station-row > span {
-  font-size: 10px;
-  color: #62a5ff;
-}
-
-.screen-footer {
+.station-row > div {
   display: flex;
-  padding-bottom: 10px;
-  font-size: 10px;
-  line-height: 1.8;
-  color: #6c89a6;
   justify-content: space-between;
-  gap: 24px;
+  gap: 8px;
 }
 
-.screen-footer strong {
-  flex-shrink: 0;
-  font-weight: 400;
+.station-row strong {
+  font-size: 12px;
+  font-weight: 500;
 }
 
-@media (width <= 1200px) {
-  .kpi-grid {
-    grid-template-columns: repeat(3, 1fr);
+.station-row span {
+  font-size: 11px;
+  color: var(--screen-muted);
+}
+
+.station-row .station-quantity > span:last-child {
+  color: #47d9f5;
+}
+
+.station-row:hover,
+.topology-station:hover {
+  background: #0c2632;
+}
+
+.production-screen button:focus-visible,
+.panel-scroll:focus-visible {
+  outline: 2px solid #47d9f5;
+  outline-offset: 2px;
+}
+
+@media (width >= 1800px) and (height >= 950px) {
+  .production-screen {
+    padding: 24px 32px;
+    gap: 20px;
   }
 
-  .screen-grid {
-    grid-template-columns: 1fr;
+  .screen-main {
+    gap: 24px;
   }
 
-  .screen-heading h1 {
-    font-size: 21px;
+  .production-column {
+    grid-template-rows: minmax(400px, 1fr) 96px 180px;
   }
 
-  .screen-footer {
-    flex-direction: column;
-    gap: 6px;
+  .panel-heading {
+    min-height: 44px;
+  }
+
+  .panel-heading h2 {
+    font-size: 18px;
+  }
+
+  .production-metrics {
+    gap: 18px;
+    padding: 12px 4px 18px;
+  }
+
+  .metric-row > span:nth-child(2),
+  .order-table {
+    font-size: 14px;
   }
 }
 
-@media (width <= 1100px) {
-  .overview-grid {
-    grid-template-columns: minmax(250px, 0.9fr) minmax(380px, 1.4fr);
+@media (width <= 1150px) {
+  .screen-main {
+    flex: none;
+    min-height: 0;
+    grid-template-columns: minmax(250px, 1fr) minmax(400px, 1.8fr);
+  }
+
+  .analytics-column {
+    grid-template-rows: auto 220px 240px;
+  }
+
+  .production-column {
+    grid-template-rows: minmax(330px, 1fr) 108px 190px;
   }
 
   .operations-column {
-    display: grid;
-    grid-template-columns: 1fr 1fr;
     grid-column: 1 / -1;
+    grid-template-columns: repeat(3, minmax(0, 1fr));
+    grid-template-rows: 250px;
+    padding: 0;
+    border-left: 0;
+  }
+
+  .screen-heading::before,
+  .screen-heading::after {
+    display: none;
+  }
+
+  .screen-controls {
+    row-gap: 12px;
   }
 }
 
-@media (width <= 800px) {
+@media (width <= 720px) {
   .production-screen {
-    min-width: 0;
-    padding: 16px;
+    padding: 12px;
   }
 
   .screen-header {
     grid-template-columns: 1fr auto;
-    gap: 18px;
+    gap: 12px;
+  }
+
+  .brand {
+    font-size: 20px;
   }
 
   .screen-heading {
-    order: 3;
     grid-column: 1 / -1;
+    grid-row: 2;
+    justify-content: center;
   }
 
-  .overview-grid,
+  .screen-heading h1 {
+    font-size: 24px;
+  }
+
+  .filter-controls {
+    width: 100%;
+    gap: 6px;
+  }
+
+  .filter-controls .el-select,
+  .filter-controls :deep(.el-date-editor) {
+    width: 0;
+    flex: 1;
+    min-width: 0;
+  }
+
+  .refresh-controls {
+    gap: 8px;
+  }
+
+  .screen-main {
+    display: flex;
+    flex-direction: column;
+  }
+
+  .production-column {
+    order: -1;
+    grid-template-rows: 360px auto 240px;
+  }
+
+  .analytics-column {
+    padding-right: 0;
+    border-right: 0;
+    grid-template-rows: auto 240px 260px;
+  }
+
   .operations-column {
+    display: grid;
     grid-template-columns: 1fr;
+    grid-template-rows: 270px auto 260px;
   }
 
-  .kpi-grid {
-    grid-template-columns: repeat(2, minmax(0, 1fr));
-  }
-
-  .kpi-card,
-  .screen-panel {
-    padding: 16px;
-  }
-
-  .panel-heading {
-    gap: 10px;
+  .map-panel .panel-heading {
     flex-wrap: wrap;
   }
 
-  .device-legend {
-    flex-wrap: wrap;
+  .map-controls {
+    width: 100%;
+    justify-content: space-between;
   }
+
+  .flow-strip {
+    padding: 10px 4px;
+    overflow-x: auto;
+  }
+
+  .topology-station {
+    flex-shrink: 0;
+  }
+
+  .exception-ring {
+    width: 28%;
+    max-width: 120px;
+  }
+
+  .exception-ring span {
+    font-size: 12px;
+  }
+
+  .exception-ring strong {
+    font-size: 28px;
+  }
+
+  .order-table {
+    min-width: 530px;
+  }
+}
+</style>
+
+<style lang="scss">
+.production-screen-popper,
+.production-screen-drawer {
+  --el-color-primary: #23bcd4;
+  --el-bg-color: #091923;
+  --el-bg-color-overlay: #091923;
+  --el-fill-color-blank: #091923;
+  --el-fill-color-light: #12303e;
+  --el-text-color-primary: #d8f4ff;
+  --el-text-color-regular: #a3c9d9;
+  --el-text-color-secondary: #83a9bc;
+  --el-border-color: #245064;
+  --el-border-color-light: #173744;
+  --el-border-color-lighter: #173744;
 }
 </style>

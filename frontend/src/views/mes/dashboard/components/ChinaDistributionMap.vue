@@ -40,17 +40,16 @@ const props = withDefaults(
     cities?: readonly CityDistributionPoint[]
     metricLabel?: string
     unit?: string
-    sourceLabel?: string
     emptyText?: string
     /** Must be true whenever the caller supplies demonstration data. */
     isExample?: boolean
+    view?: 'map' | 'ranking'
     rankingLimit?: number
   }>(),
   {
     cities: () => [],
     metricLabel: '客户数',
     unit: '家',
-    sourceLabel: '城市分布数据尚未接入',
     emptyText: '暂无可定位的城市数据',
     isExample: false,
     rankingLimit: 8
@@ -78,7 +77,6 @@ const rankingCities = computed(() => {
 const motionEnabled = computed(
   () => !reducedMotion.value && pageVisible.value && componentVisible.value && active.value
 )
-const unlocatedCount = computed(() => validCities.value.length - locatedCities.value.length)
 const formatValue = (value: number) => value.toLocaleString('zh-CN', { maximumFractionDigits: 2 })
 const mapName = 'fazemes-china-provinces'
 let mapChart: echarts.EChartsType | undefined
@@ -107,7 +105,7 @@ const chartTooltip = {
   trigger: 'item' as const,
   confine: true,
   backgroundColor: 'rgba(4, 20, 33, 0.96)',
-  borderColor: 'rgba(6, 182, 212, 0.5)',
+  borderColor: '#3c9db9',
   textStyle: { color: '#e6f7ff', fontSize: 12 },
   formatter: tooltipFormatter
 }
@@ -120,18 +118,18 @@ const mapBaseOption = (): EChartsOption => ({
     roam: true,
     zoom: 1,
     scaleLimit: { min: 0.8, max: 5 },
-    layoutCenter: ['50%', '48%'],
-    layoutSize: '90%',
-    label: { show: true, color: 'rgba(230, 247, 255, 0.53)', fontSize: 9 },
+    layoutCenter: ['50%', '50%'],
+    layoutSize: '94%',
+    label: { show: false },
     itemStyle: {
-      areaColor: 'rgba(6, 182, 212, 0.085)',
-      borderColor: 'rgba(6, 182, 212, 0.5)',
+      areaColor: '#233247',
+      borderColor: '#3c9db9',
       borderWidth: 0.9,
-      shadowColor: 'rgba(6, 182, 212, 0.12)',
+      shadowColor: 'rgba(20, 174, 226, 0.55)',
       shadowBlur: 10
     },
     emphasis: {
-      label: { color: '#ecfeff' },
+      label: { show: true, color: '#ecfeff' },
       itemStyle: { areaColor: 'rgba(6, 182, 212, 0.23)', borderColor: '#67e8f9' }
     }
   }
@@ -159,6 +157,17 @@ const renderMapData = () => {
             name: city.name,
             value: [...city.coordinate!, city.value]
           })),
+          label: {
+            show: true,
+            formatter: '{b}',
+            position: 'right',
+            color: '#def7ff',
+            fontSize: 11,
+            padding: [3, 5],
+            backgroundColor: 'rgba(3, 20, 30, 0.85)',
+            borderRadius: 2
+          },
+          labelLayout: { hideOverlap: true },
           symbolSize: (value: number[]) => 6 + 11 * Math.sqrt(value[2] / largestValue),
           itemStyle: { color: '#06b6d4', shadowBlur: 10, shadowColor: 'rgba(6, 182, 212, 0.5)' },
           rippleEffect: { brushType: 'stroke', scale: 2.5, period: 4 },
@@ -336,7 +345,7 @@ onMounted(() => {
     intersectionObserver.observe(rootRef.value)
   }
   ensureCharts()
-  void loadMap()
+  if (props.view !== 'ranking') void loadMap()
 })
 onActivated(() => {
   active.value = true
@@ -361,13 +370,12 @@ onBeforeUnmount(() => {
 </script>
 
 <template>
-  <div ref="rootRef" class="china-distribution">
-    <div class="distribution-caption">
-      <span><i></i>{{ metricLabel }}分布</span>
-      <strong v-if="isExample" class="example-label">示例数据</strong>
-      <span v-else>{{ locatedCities.length }} 个已定位城市</span>
-    </div>
-    <div class="distribution-map">
+  <div
+    ref="rootRef"
+    class="china-distribution"
+    :class="view ? `distribution-${view}-only` : undefined"
+  >
+    <div v-if="view !== 'ranking'" class="distribution-map">
       <div
         ref="mapRef"
         class="map-canvas"
@@ -381,12 +389,10 @@ onBeforeUnmount(() => {
       </div>
       <div v-else-if="!locatedCities.length" class="map-message map-empty" role="status">
         <span>{{ emptyText }}</span>
-        <small>省级底图已就绪 · 待接入城市与坐标</small>
       </div>
-      <span v-if="mapStatus === 'ready'" class="map-interaction">滚轮缩放 · 拖动平移</span>
     </div>
-    <div class="distribution-ranking">
-      <div class="ranking-heading">
+    <div v-if="view !== 'map'" class="distribution-ranking">
+      <div v-if="!view" class="ranking-heading">
         <span>城市排行</span><span>{{ metricLabel }}{{ unit ? ` / ${unit}` : '' }}</span>
       </div>
       <div
@@ -403,10 +409,6 @@ onBeforeUnmount(() => {
         </li>
       </ol>
     </div>
-    <div class="distribution-source">
-      <span>{{ sourceLabel }}</span>
-      <span v-if="unlocatedCount">{{ unlocatedCount }} 个城市待定位，仅计入排行</span>
-    </div>
   </div>
 </template>
 
@@ -416,50 +418,11 @@ onBeforeUnmount(() => {
   height: 100%;
   min-height: 520px;
   color: #e6f7ff;
-  background:
-    radial-gradient(ellipse at 50% 30%, rgb(6 182 212 / 5%), transparent 65%),
-    linear-gradient(180deg, rgb(0 5 10 / 12%), rgb(0 5 10 / 25%));
   flex-direction: column;
 }
 
 .distribution-caption,
 .ranking-heading,
-.distribution-source {
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-  gap: 8px;
-}
-
-.distribution-caption {
-  padding: 4px 10px;
-  font-size: 10px;
-  color: rgb(230 247 255 / 48%);
-}
-
-.distribution-caption > span:first-child {
-  display: flex;
-  align-items: center;
-  gap: 6px;
-}
-
-.distribution-caption i {
-  width: 5px;
-  height: 5px;
-  background: #06b6d4;
-  border-radius: 50%;
-  box-shadow: 0 0 8px rgb(6 182 212 / 60%);
-}
-
-.example-label {
-  padding: 2px 7px;
-  font-size: 10px;
-  font-weight: 400;
-  color: #fde68a;
-  border: 1px solid rgb(250 204 21 / 28%);
-  border-radius: 3px;
-}
-
 .distribution-map {
   position: relative;
   min-height: 260px;
@@ -494,11 +457,6 @@ onBeforeUnmount(() => {
   border-radius: 3px;
 }
 
-.map-message small {
-  font-size: 10px;
-  color: #7894a4;
-}
-
 .map-error button {
   padding: 3px 12px;
   color: #8edeea;
@@ -506,15 +464,6 @@ onBeforeUnmount(() => {
   background: rgb(6 182 212 / 8%);
   border: 1px solid rgb(6 182 212 / 40%);
   border-radius: 3px;
-}
-
-.map-interaction {
-  position: absolute;
-  right: 10px;
-  bottom: 0;
-  font-size: 9px;
-  color: rgb(230 247 255 / 32%);
-  pointer-events: none;
 }
 
 .distribution-ranking {
@@ -557,14 +506,6 @@ onBeforeUnmount(() => {
   place-items: center;
 }
 
-.distribution-source {
-  padding: 5px 10px 8px;
-  font-size: 9px;
-  line-height: 1.5;
-  color: rgb(230 247 255 / 35%);
-  flex-wrap: wrap;
-}
-
 .accessible-ranking {
   position: absolute;
   width: 1px;
@@ -573,5 +514,33 @@ onBeforeUnmount(() => {
   overflow: hidden;
   clip-path: inset(50%);
   white-space: nowrap;
+}
+
+.distribution-map-only,
+.distribution-ranking-only {
+  min-height: 0;
+}
+
+.distribution-map-only .distribution-map {
+  min-height: 0;
+}
+
+.distribution-ranking-only .distribution-ranking {
+  min-height: 0;
+  margin: 0;
+  border-top: 0;
+}
+
+.distribution-ranking-only .ranking-canvas {
+  min-height: 0;
+}
+
+.distribution-ranking-only .ranking-empty {
+  inset: 0;
+}
+
+.distribution-map-only .map-empty {
+  justify-content: flex-end;
+  padding-bottom: 16px;
 }
 </style>
