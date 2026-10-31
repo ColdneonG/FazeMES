@@ -1,5 +1,4 @@
 <template>
-
   <ContentWrap>
     <el-form
       class="-mb-15px"
@@ -118,7 +117,7 @@
             v-hasPermi="['mes:wm-sales-notice:update']"
             v-if="scope.row.status === MesWmSalesNoticeStatusEnum.APPROVED"
           >
-            执行出库
+            办理销售出库
           </el-button>
         </template>
       </el-table-column>

@@ -1,4 +1,21 @@
 <template>
+  <ContentWrap v-if="route.query.noticeId !== undefined">
+    <el-alert
+      :title="
+        noticeContextError ||
+        (noticeContext ? `发货通知：${noticeContext.code}` : '正在加载发货通知…')
+      "
+      :description="
+        noticeContextError
+          ? '请返回发货通知重新选择，或查看全部销售出库单。'
+          : '先继续办理已有出库单；需要分批发货时再新增。新建后保存单头、选择通知物料并填写数量。提交后如需出货检验，先完成检验，再拣货、填写运单、执行出库。'
+      "
+      :type="noticeContextError ? 'error' : 'info'"
+      :closable="false"
+      show-icon
+    />
+    <el-button class="mt-10px" @click="clearNoticeContext">查看全部销售出库单</el-button>
+  </ContentWrap>
   <ContentWrap>
     <el-form
       class="-mb-15px"
@@ -70,6 +87,11 @@
           type="primary"
           plain
           @click="openForm('create')"
+          :disabled="
+            noticeContextLoading ||
+            !!noticeContextError ||
+            (!!noticeContext && noticeContext.status !== MesWmSalesNoticeStatusEnum.APPROVED)
+          "
           v-hasPermi="['mes:wm-product-sales:create']"
         >
           <Icon icon="ep:plus" class="mr-5px" /> 新增
@@ -211,21 +233,31 @@ import { dateFormatter2 } from '@/utils/formatTime'
 import { DICT_TYPE, getIntDictOptions } from '@/utils/dict'
 import download from '@/utils/download'
 import { WmProductSalesApi, WmProductSalesVO } from '@/api/mes/wm/productsales'
+import { WmSalesNoticeApi, WmSalesNoticeVO } from '@/api/mes/wm/salesnotice'
 import { openCostCenter } from '@/views/mes/cost/navigation'
 import MdClientSelect from '@/views/mes/md/client/components/MdClientSelect.vue'
 import ProductSalesForm from './ProductSalesForm.vue'
-import { MesWmProductSalesStatusEnum } from '@/views/mes/utils/constants'
+import {
+  MesWmProductSalesStatusEnum,
+  MesWmSalesNoticeStatusEnum
+} from '@/views/mes/utils/constants'
 
 defineOptions({ name: 'MesWmProductSales' })
 
 const message = useMessage() // 消息弹窗
 const router = useRouter()
+const route = useRoute()
 const { t } = useI18n() // 国际化
 
 const loading = ref(true) // 列表的加载中
 const list = ref<WmProductSalesVO[]>([]) // 列表的数据
 const total = ref(0) // 列表的总页数
 const exportLoading = ref(false) // 导出的加载中
+const noticeContext = ref<WmSalesNoticeVO>()
+const noticeContextLoading = ref(false)
+const noticeContextError = ref('')
+let contextVersion = 0
+let listVersion = 0
 const queryParams = reactive({
   pageNo: 1,
   pageSize: 10,
@@ -233,6 +265,7 @@ const queryParams = reactive({
   name: undefined,
   salesOrderCode: undefined,
   clientId: undefined,
+  noticeId: undefined as number | undefined,
   shipmentDate: undefined,
   status: undefined
 })
@@ -241,13 +274,16 @@ const formRef = ref() // 表单弹窗
 
 /** 查询列表 */
 const getList = async () => {
+  if (noticeContextLoading.value || noticeContextError.value) return
+  const version = ++listVersion
   loading.value = true
   try {
-    const data = await WmProductSalesApi.getProductSalesPage(queryParams)
+    const data = await WmProductSalesApi.getProductSalesPage({ ...queryParams })
+    if (version !== listVersion) return
     list.value = data.list
     total.value = data.total
   } finally {
-    loading.value = false
+    if (version === listVersion) loading.value = false
   }
 }
 
@@ -265,7 +301,74 @@ const resetQuery = () => {
 
 /** 添加/修改操作 */
 const openForm = (type: string, id?: number) => {
-  formRef.value.open(type, id)
+  if (noticeContextLoading.value || noticeContextError.value) return
+  if (
+    type === 'create' &&
+    noticeContext.value?.status !== undefined &&
+    noticeContext.value.status !== MesWmSalesNoticeStatusEnum.APPROVED
+  ) {
+    message.warning('仅待出库的发货通知可以新建销售出库单')
+    return
+  }
+  formRef.value.open(
+    type,
+    id,
+    queryParams.noticeId ? { noticeId: queryParams.noticeId } : undefined
+  )
+}
+
+const clearNoticeContext = () => {
+  const query = { ...route.query }
+  delete query.noticeId
+  router.push({ path: route.path, query })
+}
+
+/** 通知入口只显示该通知的单据，异常参数或无权读取时不退回全部数据。 */
+const loadNoticeContext = async (value: unknown) => {
+  const version = ++contextVersion
+  ++listVersion
+  list.value = []
+  total.value = 0
+  noticeContext.value = undefined
+  noticeContextError.value = ''
+  noticeContextLoading.value = value !== undefined
+  loading.value = true
+  queryParams.noticeId = undefined
+  queryParams.pageNo = 1
+  // 切换通知时清除上一页面的搜索条件，避免已有单据被旧条件隐藏。
+  Object.assign(queryParams, {
+    code: undefined,
+    name: undefined,
+    salesOrderCode: undefined,
+    clientId: undefined,
+    shipmentDate: undefined,
+    status: undefined
+  })
+  try {
+    if (value !== undefined) {
+      if (
+        typeof value !== 'string' ||
+        !/^[1-9]\d*$/.test(value) ||
+        !Number.isSafeInteger(Number(value))
+      ) {
+        throw new Error('invalid notice id')
+      }
+      const noticeId = Number(value)
+      const notice = await WmSalesNoticeApi.getSalesNotice(noticeId)
+      if (version !== contextVersion) return
+      if (!notice || notice.id !== noticeId) throw new Error('notice unavailable')
+      noticeContext.value = notice
+      queryParams.noticeId = noticeId
+    }
+  } catch {
+    if (version === contextVersion) noticeContextError.value = '发货通知无效或无法读取'
+  } finally {
+    if (version === contextVersion) {
+      noticeContextLoading.value = false
+      loading.value = false
+    }
+  }
+  if (version === contextVersion) await getList()
 }
 
 /** 取消按钮操作 */
@@ -290,6 +393,7 @@ const handleDelete = async (id: number) => {
 
 /** 导出按钮操作 */
 const handleExport = async () => {
+  if (noticeContextLoading.value || noticeContextError.value) return
   try {
     await message.exportConfirm()
     exportLoading.value = true
@@ -301,8 +405,5 @@ const handleExport = async () => {
   }
 }
 
-/** 初始化 */
-onMounted(() => {
-  getList()
-})
+watch(() => route.query.noticeId, loadNoticeContext, { immediate: true })
 </script>

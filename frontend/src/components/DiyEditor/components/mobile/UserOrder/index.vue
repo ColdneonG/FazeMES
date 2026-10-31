@@ -1,5 +1,5 @@
 <template>
-  <el-image src="/placeholder-image.svg" />
+  <el-image src="/shop-member.webp" />
 </template>
 <script setup lang="ts">
 import { UserOrderProperty } from './config'

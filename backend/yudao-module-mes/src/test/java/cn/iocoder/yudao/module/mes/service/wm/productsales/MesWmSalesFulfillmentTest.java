@@ -32,6 +32,7 @@ import cn.iocoder.yudao.framework.tenant.core.context.TenantContextHolder;
 import cn.iocoder.yudao.framework.common.util.object.BeanUtils;
 import cn.iocoder.yudao.module.mes.controller.admin.wm.productsales.vo.MesWmProductSalesSaveReqVO;
 import cn.iocoder.yudao.module.mes.controller.admin.wm.productsales.vo.MesWmProductSalesShippingReqVO;
+import cn.iocoder.yudao.module.mes.controller.admin.wm.productsales.vo.MesWmProductSalesPageReqVO;
 import cn.iocoder.yudao.module.mes.controller.admin.wm.productsales.vo.detail.MesWmProductSalesDetailSaveReqVO;
 import cn.iocoder.yudao.module.mes.controller.admin.wm.salesnotice.vo.line.MesWmSalesNoticeLineSaveReqVO;
 import cn.iocoder.yudao.module.mes.service.wm.transaction.dto.MesWmTransactionSaveReqDTO;
@@ -90,6 +91,28 @@ class MesWmSalesFulfillmentTest extends BaseDbUnitTest {
     }
     MesWmProductSalesLineSaveReqVO request(MesWmProductSalesDO s,MesWmSalesNoticeLineDO n,String qty) {
         var r=new MesWmProductSalesLineSaveReqVO();r.setSalesId(s.getId());r.setNoticeLineId(n.getId());r.setItemId(7L);r.setQuantity(new BigDecimal(qty));r.setOqcCheckFlag(false);return r;
+    }
+    @Test void noticeEntryListsOnlyItsOwnDocumentsAndKeepsNormalSearchAvailable() {
+        var firstNotice = notice("10");
+        var secondNotice = notice("20");
+        var first = sale(firstNotice, 0);
+        var second = sale(firstNotice, 4);
+        sale(secondNotice, 0);
+        var query = new MesWmProductSalesPageReqVO();
+        query.setNoticeId(firstNotice.getNoticeId());
+        var page = salesMapper.selectPage(query);
+        assertEquals(2L, page.getTotal());
+        assertEquals(List.of(second.getId(), first.getId()),
+                page.getList().stream().map(MesWmProductSalesDO::getId).toList());
+        query.setStatus(0);
+        assertEquals(first.getId(), salesMapper.selectPage(query).getList().get(0).getId());
+        query.setNoticeId(secondNotice.getNoticeId());
+        assertEquals(1L, salesMapper.selectPage(query).getTotal());
+        query.setNoticeId(Long.MAX_VALUE);
+        assertEquals(0L, salesMapper.selectPage(query).getTotal());
+        query.setNoticeId(null);
+        query.setStatus(null);
+        assertEquals(3L, salesMapper.selectPage(query).getTotal());
     }
     @Test void twoDocumentsCannotEachReserveTheEntireSameNotice() {
         var n=notice("10");lines.createProductSalesLine(request(sale(n,0),n,"10"));

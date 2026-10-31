@@ -19,7 +19,7 @@
             enter-active-class="animate__animated animate__bounceInLeft"
             tag="div"
           >
-            <img key="1" alt="" class="w-350px" src="/placeholder-image.svg" />
+            <img key="1" alt="" class="w-350px max-w-full rounded-2xl mb-6" src="/login-manufacturing.webp" />
             <div key="2" class="text-3xl text-white">
               {{ localMes ? '欢迎使用 FazeMES' : t('login.welcome') }}
             </div>

@@ -23,6 +23,7 @@ public interface MesWmProductSalesMapper extends BaseMapperX<MesWmProductSalesDO
                 .likeIfPresent(MesWmProductSalesDO::getName, reqVO.getName())
                 .likeIfPresent(MesWmProductSalesDO::getSalesOrderCode, reqVO.getSalesOrderCode())
                 .eqIfPresent(MesWmProductSalesDO::getClientId, reqVO.getClientId())
+                .eqIfPresent(MesWmProductSalesDO::getNoticeId, reqVO.getNoticeId())
                 .eqIfPresent(MesWmProductSalesDO::getStatus, reqVO.getStatus())
                 .betweenIfPresent(MesWmProductSalesDO::getSalesDate, reqVO.getShipmentDate())
                 .orderByDesc(MesWmProductSalesDO::getId));

@@ -4,7 +4,7 @@
   >
     <!-- 歌曲信息 -->
     <div class="flex gap-[10px]">
-      <el-image src="/placeholder-image.svg" class="w-[45px]" />
+      <el-image :src="currentSong.imageUrl || '/music-cover.webp'" class="w-[45px]" />
       <div>
         <div>{{ currentSong.title || '暂无音乐' }}</div>
         <div class="text-[12px] text-gray-400">{{ currentSong.singer || currentSong.desc }}</div>

@@ -35,7 +35,7 @@
           <el-form-item label="发货通知单" prop="noticeId">
             <WmSalesNoticeSelect
               v-model="formData.noticeId"
-              :disabled="isHeaderReadonly"
+              :disabled="isHeaderReadonly || noticeContextId !== undefined"
               :status="MesWmSalesNoticeStatusEnum.APPROVED"
               @change="handleNoticeChange"
             />
@@ -209,13 +209,14 @@ import {
 } from '@/views/mes/utils/constants'
 import MdClientSelect from '@/views/mes/md/client/components/MdClientSelect.vue'
 import WmSalesNoticeSelect from '@/views/mes/wm/salesnotice/components/WmSalesNoticeSelect.vue'
-import { WmSalesNoticeVO } from '@/api/mes/wm/salesnotice'
+import { WmSalesNoticeApi, WmSalesNoticeVO } from '@/api/mes/wm/salesnotice'
 import ProductSalesLineList from './ProductSalesLineList.vue'
 
 defineOptions({ name: 'ProductSalesForm' })
 const emit = defineEmits(['success'])
 
 const message = useMessage() // 消息弹窗
+const noticeContextId = ref<number>()
 
 const dialogVisible = ref(false) // 弹窗的是否展示
 const formLoading = ref(false) // 表单的加载中
@@ -248,7 +249,7 @@ const formData = ref({
   noticeId: undefined as number | undefined,
   oqcId: undefined as number | undefined,
   salesOrderCode: undefined as string | undefined,
-  salesDate: undefined,
+  salesDate: undefined as string | number | undefined,
   contactName: undefined as string | undefined,
   contactTelephone: undefined as string | undefined,
   contactAddress: undefined as string | undefined,
@@ -301,21 +302,40 @@ watch(
 )
 
 /** 打开弹窗 */
-const open = async (type: string, id?: number) => {
+let openVersion = 0
+const open = async (type: string, id?: number, context?: { noticeId: number }) => {
+  const version = ++openVersion
   dialogVisible.value = true
   formType.value = type
   resetForm()
-  // 修改/拣货/详情时，加载数据
-  if (id) {
-    formLoading.value = true
-    try {
-      formData.value = await WmProductSalesApi.getProductSales(id)
-    } finally {
-      formLoading.value = false
+  noticeContextId.value = context?.noticeId
+  formLoading.value = true
+  try {
+    if (id) {
+      const data = await WmProductSalesApi.getProductSales(id)
+      if (version !== openVersion || !dialogVisible.value) return
+      formData.value = data
+    } else if (type === 'create' && context?.noticeId) {
+      const notice = await WmSalesNoticeApi.getSalesNotice(context.noticeId)
+      if (version !== openVersion || !dialogVisible.value) return
+      if (!notice || notice.status !== MesWmSalesNoticeStatusEnum.APPROVED) {
+        message.warning('该发货通知已不处于待出库状态，请刷新列表')
+        dialogVisible.value = false
+        return
+      }
+      formData.value.noticeId = notice.id
+      handleNoticeChange(notice)
+      formData.value.salesDate = notice.salesDate
     }
+    originalFormData.value = JSON.stringify(formData.value)
+  } catch {
+    if (version === openVersion) {
+      message.error('出库单或发货通知加载失败，请重试')
+      dialogVisible.value = false
+    }
+  } finally {
+    if (version === openVersion) formLoading.value = false
   }
-  // 保存原始数据快照
-  originalFormData.value = JSON.stringify(formData.value)
 }
 
 /** 提交表单（create/update 模式） */

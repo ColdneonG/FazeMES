@@ -120,7 +120,7 @@
         提 交
       </el-button>
       <el-button v-if="isFinish" @click="handleFinish" type="success" :disabled="formLoading">
-        执行出库
+        办理销售出库
       </el-button>
       <el-button @click="dialogVisible = false">关 闭</el-button>
     </template>
@@ -133,11 +133,13 @@ import { AutoCodeRecordApi } from '@/api/mes/md/autocode/record'
 import SalesNoticeLineList from './SalesNoticeLineList.vue'
 import MdClientSelect from '@/views/mes/md/client/components/MdClientSelect.vue'
 import { MesAutoCodeRuleCode, MesWmSalesNoticeStatusEnum } from '@/views/mes/utils/constants'
+import { checkPermi } from '@/utils/permission'
 
 defineOptions({ name: 'SalesNoticeForm' })
 const emit = defineEmits(['success'])
 
 const message = useMessage() // 消息弹窗
+const router = useRouter()
 const dialogVisible = ref(false) // 弹窗的是否展示
 const formLoading = ref(false) // 表单的加载中
 const formType = ref<string>('create') // 表单的类型：create / update / finish / detail
@@ -149,7 +151,7 @@ const dialogTitle = computed(() => {
   const titles: Record<string, string> = {
     create: '新增发货通知单',
     update: '编辑发货通知单',
-    finish: '执行出库',
+    finish: '办理销售出库',
     detail: '发货通知单详情'
   }
   return titles[formType.value] || formType.value
@@ -252,9 +254,29 @@ const handleSubmit = async () => {
   }
 }
 
-/** 执行出库操作（暂未实现） */
-const handleFinish = () => {
-  message.info('执行出库功能暂时不支持，敬请期待！')
+/** 进入关联销售出库单，按已有流程完成拣货、运单和出库。 */
+const handleFinish = async () => {
+  if (formLoading.value || !formData.value.id) return
+  if (formData.value.status !== MesWmSalesNoticeStatusEnum.APPROVED) {
+    message.warning('仅待出库的发货通知可以办理销售出库')
+    return
+  }
+  if (!checkPermi(['mes:wm-product-sales:query'])) {
+    message.warning('缺少销售出库查询权限，请联系管理员分配权限')
+    return
+  }
+  formLoading.value = true
+  try {
+    const failure = await router.push({
+      path: '/mes/wm/product-sales',
+      query: { noticeId: formData.value.id }
+    })
+    if (!failure) dialogVisible.value = false
+  } catch {
+    message.error('销售出库页面打开失败，请重试')
+  } finally {
+    formLoading.value = false
+  }
 }
 
 /** 重置表单 */

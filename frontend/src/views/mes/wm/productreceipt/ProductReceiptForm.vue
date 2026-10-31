@@ -17,7 +17,12 @@
               :disabled="isHeaderReadonly"
             >
               <template #append>
-                <el-button @click="generateCode" :disabled="isHeaderReadonly"> 生成 </el-button>
+                <el-button
+                  @click="generateCode"
+                  :disabled="isHeaderReadonly || generatingCode"
+                  :loading="generatingCode"
+                  >生成</el-button
+                >
               </template>
             </el-input>
           </el-form-item>
@@ -68,6 +73,14 @@
         </el-col>
       </el-row>
     </el-form>
+    <el-alert
+      v-if="isEditable"
+      title="入库需先有本工单的可用成品线边库存"
+      description="请先完成末序报工审批及所需质检，再选择对应工单的成品库存。已产出的合格部分可分批入库，无需等待整单生产完毕；已入库的数量不会再次显示。"
+      type="info"
+      show-icon
+      :closable="false"
+    />
     <!-- 非新建模式展示行项目信息（收货物料） -->
     <template v-if="formData.id">
       <el-divider content-position="center">物料信息</el-divider>
@@ -135,7 +148,7 @@ const dialogTitle = computed(() => {
 })
 const formData = ref({
   id: undefined as number | undefined,
-  code: undefined,
+  code: undefined as string | undefined,
   name: undefined,
   status: undefined as number | undefined,
   workOrderId: undefined,
@@ -151,10 +164,19 @@ const formRef = ref() // 表单 Ref
 const originalFormData = ref<string>('') // 原始表单数据快照，用于脏检查
 
 /** 生成入库单编号 */
+const generatingCode = ref(false)
 const generateCode = async () => {
-  formData.value.code = await AutoCodeRecordApi.generateAutoCode(
-    MesAutoCodeRuleCode.PRODUCTRECPT_CODE
-  )
+  if (generatingCode.value || isHeaderReadonly.value) return
+  const current = formData.value
+  generatingCode.value = true
+  try {
+    const code = await AutoCodeRecordApi.generateAutoCode(MesAutoCodeRuleCode.PRODUCTRECPT_CODE)
+    if (dialogVisible.value && current === formData.value) current.code = code
+  } catch {
+    // 请求拦截器已显示具体错误，保留用户当前输入。
+  } finally {
+    generatingCode.value = false
+  }
 }
 
 /** 打开弹窗 */

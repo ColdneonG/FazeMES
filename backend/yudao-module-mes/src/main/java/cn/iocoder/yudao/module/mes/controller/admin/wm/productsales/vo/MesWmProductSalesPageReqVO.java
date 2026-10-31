@@ -2,6 +2,7 @@ package cn.iocoder.yudao.module.mes.controller.admin.wm.productsales.vo;
 
 import cn.iocoder.yudao.framework.common.pojo.PageParam;
 import io.swagger.v3.oas.annotations.media.Schema;
+import jakarta.validation.constraints.Positive;
 import lombok.Data;
 import lombok.EqualsAndHashCode;
 import lombok.ToString;
@@ -28,6 +29,10 @@ public class MesWmProductSalesPageReqVO extends PageParam {
 
     @Schema(description = "客户编号", example = "1")
     private Long clientId;
+
+    @Schema(description = "发货通知单编号", example = "1")
+    @Positive
+    private Long noticeId;
 
     @Schema(description = "状态", example = "0")
     private Integer status;

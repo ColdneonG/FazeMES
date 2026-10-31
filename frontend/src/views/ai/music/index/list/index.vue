@@ -63,7 +63,7 @@ function generateMusic(formData: Recordable) {
         audioUrl: '',
         videoUrl: '',
         title: '我走后' + index,
-        imageUrl: '/placeholder-image.svg',
+        imageUrl: '/music-cover.webp',
         desc: 'Metal, symphony, film soundtrack, grand, majesticMetal, dtrack, grand, majestic',
         date: '2024年04月30日 14:02:57',
         lyric: `<div class="_words_17xen_66"><div>大江东去，浪淘尽，千古风流人物。
