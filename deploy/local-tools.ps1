@@ -113,7 +113,7 @@ function Protect-LocalBackupPath {
         } else { [Security.AccessControl.FileSystemAccessRule]::new($sid,'FullControl','Allow') }
         $acl.AddAccessRule($rule)
     }
-    Set-Acl -LiteralPath $Path -AclObject $acl
+    [IO.FileSystemAclExtensions]::SetAccessControl($item,$acl)
 }
 
 function Start-LocalBackupScheduler {
@@ -183,4 +183,22 @@ function Stop-LocalBackupScheduler {
         Write-Host 'Stopped operational backup scheduler.'
     }
     Remove-Item -LiteralPath $pidPath
+}
+
+# Some Windows providers return state 0 for an active loopback listener.
+# Pair a successful connection with the listening endpoint (remote port zero).
+function Get-LocalPortOwner([int]$Port) {
+    $rows = @(Get-NetTCPConnection -LocalPort $Port -State Listen -ErrorAction SilentlyContinue | Where-Object { $_.RemotePort -eq 0 -and $_.OwningProcess -gt 0 })
+    if ($rows.Count) { return $rows }
+    $probe = [Net.Sockets.TcpClient]::new()
+    try {
+        try { if (-not $probe.ConnectAsync('127.0.0.1',$Port).Wait(5000)) { throw "Port probe timed out on $Port" } }
+        catch [System.AggregateException] {
+            if ($_.Exception.GetBaseException().SocketErrorCode -eq 'ConnectionRefused') { return }
+            throw
+        }
+        $rows = @(Get-NetTCPConnection -LocalPort $Port -ErrorAction Stop | Where-Object { $_.RemotePort -eq 0 -and $_.OwningProcess -gt 0 })
+        if (-not $rows.Count) { throw "Cannot identify the owner of active port $Port." }
+        return $rows
+    } finally { $probe.Dispose() }
 }

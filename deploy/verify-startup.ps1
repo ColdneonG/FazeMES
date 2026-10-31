@@ -87,6 +87,7 @@ function Build-LocalBackend {
     Add-Content -LiteralPath (Join-Path $ProjectRoot 'events.txt') -Value 'build'
     if (Test-Path -LiteralPath (Join-Path $ProjectRoot 'fail-build')) { throw 'Simulated compiler failure' }
 }
+function Get-LocalPortOwner([int]$Port) { Get-FixturePortOwner }
 '@ | Add-Content -LiteralPath (Join-Path $fixtureDeploy 'local-tools.ps1')
         @'
 $fixtureProject = Split-Path -Parent $PSScriptRoot
@@ -97,7 +98,7 @@ if (Test-Path -LiteralPath (Join-Path $fixtureProject 'fail-migration')) { throw
         function Invoke-FixtureRestart {
             param([bool]$Rebuild = $true)
             & {
-                function Get-NetTCPConnection {
+                function Get-FixturePortOwner {
                     $events = @(Get-Content -LiteralPath $eventsPath -ErrorAction SilentlyContinue)
                     if ($events -contains 'start') { [pscustomobject]@{ OwningProcess=4242 } }
                     elseif ($events -notcontains 'stop') { [pscustomobject]@{ OwningProcess=1000 } }

@@ -13,7 +13,7 @@ the latest three are kept after successful validation. The double-click launcher
 defers retention until its final service readiness checks have also succeeded.
 #>
 [CmdletBinding()]
-param([switch]$VerifyOnly,[switch]$DeferBackupRetention,[switch]$FinalizeBackups)
+param([switch]$VerifyOnly,[switch]$DeferBackupRetention,[switch]$FinalizeBackups,[switch]$KeepManualConfig)
 $ErrorActionPreference = 'Stop'
 if (($VerifyOnly -and ($DeferBackupRetention -or $FinalizeBackups)) -or ($DeferBackupRetention -and $FinalizeBackups)) { throw 'VerifyOnly, DeferBackupRetention and FinalizeBackups cannot be combined.' }
 $projectRoot = Split-Path -Parent $PSScriptRoot
@@ -52,7 +52,7 @@ try {
     # Inspect actual listeners, including stale recorded launcher PID scenarios.
     $jar = Join-Path $projectRoot 'backend\yudao-server\target\yudao-server.jar'
     $owned = [Collections.Generic.HashSet[int]]::new()
-    foreach ($listener in @(Get-NetTCPConnection -LocalPort 48080 -State Listen -ErrorAction SilentlyContinue)) {
+    foreach ($listener in @(Get-LocalPortOwner 48080)) {
         $process = Get-CimInstance Win32_Process -Filter "ProcessId=$($listener.OwningProcess)" -ErrorAction Stop
         if (-not ($process.Name -eq 'java.exe' -and $process.CommandLine -and $process.CommandLine.Contains($jar))) {
             throw 'Backend port belongs to an unrelated process; nothing was stopped.'
@@ -60,7 +60,7 @@ try {
         [void]$owned.Add([int]$process.ProcessId)
     }
     # Cache invalidation later uses only this project's Redis DB0.
-    foreach ($listener in @(Get-NetTCPConnection -LocalPort 6381 -State Listen -ErrorAction Stop)) {
+    foreach ($listener in @(Get-LocalPortOwner 6381)) {
         $process = Get-CimInstance Win32_Process -Filter "ProcessId=$($listener.OwningProcess)" -ErrorAction Stop
         if (-not ($process.CommandLine -and $process.CommandLine.Contains($runtimeRoot))) {
             throw 'Redis ownership does not match this project.'
@@ -70,7 +70,9 @@ try {
         Stop-Process -Id $backendId
         Wait-Process -Id $backendId -Timeout 20 -ErrorAction SilentlyContinue
     }
-    & $python -X utf8 $script reset
+    $resetOptions = @()
+    if ($KeepManualConfig) { $resetOptions += '--keep-manual' }
+    & $python -X utf8 $script reset @resetOptions
     if ($LASTEXITCODE -ne 0) { throw 'Database fixture reset failed. Backend remains stopped; inspect state and the backup before recovery.' }
     & (Join-Path $PSScriptRoot 'restart-backend.ps1')
     & $python -X utf8 $script api

@@ -30,7 +30,7 @@ if(Test-Path -LiteralPath $pidPath) {
  }
 }
 # The recorded launcher may exit or be replaced; verify the actual listening process too.
-foreach($listener in @(Get-NetTCPConnection -LocalPort 48080 -State Listen -ErrorAction SilentlyContinue)) {
+foreach($listener in @(Get-LocalPortOwner 48080)) {
  $actual=Get-CimInstance Win32_Process -Filter "ProcessId=$($listener.OwningProcess)" -ErrorAction SilentlyContinue
  if(-not ($actual -and $actual.Name -eq 'java.exe' -and $actual.CommandLine -and $actual.CommandLine.Contains($jar))) {throw 'Backend port is owned by another application; it has not been stopped.'}
  [void]$backendIds.Add([int]$actual.ProcessId)
@@ -40,10 +40,10 @@ foreach($backendId in $backendIds) {
  Wait-Process -Id $backendId -Timeout 20 -ErrorAction SilentlyContinue
 }
 for($attempt=0;$attempt -lt 20;$attempt++) {
- if(@(Get-NetTCPConnection -LocalPort 48080 -State Listen -ErrorAction SilentlyContinue).Count -eq 0){break}
+ if(@(Get-LocalPortOwner 48080).Count -eq 0){break}
  Start-Sleep -Milliseconds 250
 }
-if(@(Get-NetTCPConnection -LocalPort 48080 -State Listen -ErrorAction SilentlyContinue).Count -gt 0){throw 'Backend port is still occupied; no new application was started.'}
+if(@(Get-LocalPortOwner 48080).Count -gt 0){throw 'Backend port is still occupied; no new application was started.'}
 # Old application code must not write new unguarded returns while quality holds
 # and source-evidence migrations inspect historical rows.
 try { & (Join-Path $PSScriptRoot 'apply-migrations.ps1') }
@@ -61,7 +61,7 @@ for($attempt=0;$attempt -lt 120;$attempt++) {
  try {
   $response=Invoke-RestMethod -Uri 'http://127.0.0.1:48080/admin-api/system/tenant/get-by-website?website=127.0.0.1:5173' -TimeoutSec 2
   if($response.code -eq 0){
-   $listener=Get-NetTCPConnection -LocalPort 48080 -State Listen -ErrorAction Stop | Select-Object -First 1
+   $listener=Get-LocalPortOwner 48080 | Select-Object -First 1
    $actual=Get-CimInstance Win32_Process -Filter "ProcessId=$($listener.OwningProcess)" -ErrorAction Stop
    if(-not ($actual.Name -eq 'java.exe' -and $actual.CommandLine.Contains($jar))){throw 'Unexpected backend listener after restart.'}
    Set-Content -LiteralPath $pidPath -Value $actual.ProcessId

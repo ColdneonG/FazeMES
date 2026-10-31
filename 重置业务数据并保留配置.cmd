@@ -1,7 +1,7 @@
 @echo off
 setlocal EnableExtensions DisableDelayedExpansion
 chcp 65001 >nul
-title FazeMES - Reset database and start
+title FazeMES - Reset business data and retain face and model settings
 cd /d "%~dp0"
 if errorlevel 1 goto directory_error
 
@@ -11,7 +11,7 @@ if not defined FAZEMES_PWSH if exist "%ProgramFiles%\PowerShell\7\pwsh.exe" set 
 if not defined FAZEMES_PWSH if exist "%USERPROFILE%\.cache\codex-runtimes\codex-primary-runtime\dependencies\native\powershell\pwsh.exe" set "FAZEMES_PWSH=%USERPROFILE%\.cache\codex-runtimes\codex-primary-runtime\dependencies\native\powershell\pwsh.exe"
 if not defined FAZEMES_PWSH goto powershell_error
 
-"%FAZEMES_PWSH%" -NoLogo -NoProfile -ExecutionPolicy Bypass -File "%~dp0deploy\reinitialize-and-start.ps1" %*
+"%FAZEMES_PWSH%" -NoLogo -NoProfile -ExecutionPolicy Bypass -File "%~dp0deploy\reinitialize-and-start.ps1" -KeepManualConfig %*
 set "FAZEMES_EXIT=%ERRORLEVEL%"
 echo.
 if "%FAZEMES_EXIT%"=="0" (echo Command completed successfully.) else (echo FAILED. Read the error and the log path shown above.)

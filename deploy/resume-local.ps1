@@ -43,7 +43,7 @@ function Start-Managed([string]$Name,[int]$Port,[string]$Executable,[string[]]$P
     }
     if (Test-Port $Port) {
         # Check the actual listener, since Windows may reuse a stale PID after reboot.
-        $listeners = @(Get-NetTCPConnection -LocalPort $Port -State Listen -ErrorAction SilentlyContinue)
+        $listeners = @(Get-LocalPortOwner $Port)
         if ($listeners.Count -eq 0) { throw "Cannot verify listener on port $Port; no process has been stopped." }
         foreach ($listener in $listeners) {
             $existing = Get-CimInstance Win32_Process -Filter "ProcessId=$($listener.OwningProcess)" -ErrorAction SilentlyContinue
@@ -91,7 +91,7 @@ try {
     # when resuming without a build. Never migrate underneath an old live writer.
     if ($ReuseBackend) {
         if (-not (Test-Port 48080)) { throw 'The initialized backend is not running; no duplicate backend was started.' }
-        foreach ($listener in @(Get-NetTCPConnection -LocalPort 48080 -State Listen -ErrorAction Stop)) {
+        foreach ($listener in @(Get-LocalPortOwner 48080)) {
             $existing = Get-CimInstance Win32_Process -Filter "ProcessId=$($listener.OwningProcess)" -ErrorAction Stop
             if (-not ($existing.Name -eq 'java.exe' -and $existing.CommandLine -and $existing.CommandLine.Contains($jarPath))) {
                 throw 'Backend port belongs to an unrelated application; it was not reused.'

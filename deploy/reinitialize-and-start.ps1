@@ -3,11 +3,11 @@
 .SYNOPSIS
 Prepare the local runtime, rebuild comprehensive test data, then start FazeMES.
 .DESCRIPTION
-Explorer entry point: the repository-root 重建数据库并启动.cmd. No confirmation
+Explorer entry point: the repository-root 重置业务数据并保留配置.cmd. No confirmation
 is required. Uses the existing local-only backup/reset and managed startup paths.
 #>
 [CmdletBinding()]
-param([switch]$CheckOnly,[switch]$NoBrowser,[switch]$Build)
+param([switch]$CheckOnly,[switch]$NoBrowser,[switch]$Build,[switch]$KeepManualConfig)
 $ErrorActionPreference = 'Stop'
 $projectRoot = Split-Path -Parent $PSScriptRoot
 $runtimeRoot = Join-Path $projectRoot '.runtime'
@@ -102,7 +102,8 @@ try {
     Start-Transcript -LiteralPath $logPath -Force | Out-Null
     $transcribing = $true
     Write-Host 'FazeMES 一键重建数据库并启动' -ForegroundColor Cyan
-    Write-Host '将先备份本机数据库，再重新生成完整测试数据。管理员密码和系统配置保留。'
+    Write-Host '将先备份本机数据库，再重新生成完整测试数据。'
+    if ($KeepManualConfig) { Write-Host '保留本地管理员人脸、业务助手及 JEV 配置。' }
     Write-Host "运行日志：$logPath"
     Write-Host '[1/4] 检查运行环境'
     $null = Test-LauncherPrerequisites
@@ -118,7 +119,9 @@ try {
         & (Join-Path $PSScriptRoot 'resume-local.ps1') -DependenciesOnly
     }
     Write-Host '[3/4] 备份、重建测试数据并执行验收（需要数分钟）'
-    & (Join-Path $PSScriptRoot 'reset-test-data.ps1') -DeferBackupRetention
+    $resetOptions = @{}
+    if ($KeepManualConfig) { $resetOptions.KeepManualConfig = $true }
+    & (Join-Path $PSScriptRoot 'reset-test-data.ps1') -DeferBackupRetention @resetOptions
     Write-Host '[4/4] 启动前端、人脸服务并确认全部服务就绪'
     & (Join-Path $PSScriptRoot 'resume-local.ps1') -ReuseBackend
     $report = Get-Content -LiteralPath (Join-Path $runtimeRoot 'testdata-verification.json') -Raw | ConvertFrom-Json

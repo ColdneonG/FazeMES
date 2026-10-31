@@ -125,7 +125,7 @@ class Context:
     def save(self, phase, **extra):
         payload = dict(suite=MARKER, phase=phase, anchor=self.now.isoformat(), ids=self.ids,
                        counts=dict(self.counts), checks=self.checks, scenarios=self.scenarios,
-                       apiEvidence=self.api_evidence, **extra)
+                       apiEvidence=self.api_evidence, retainedConfig=getattr(self,'retained_config',None), **extra)
         STATE.write_text(json.dumps(payload,ensure_ascii=False,indent=2,default=serial)+'\n',encoding='utf8')
 
     def restore_state(self):
@@ -138,6 +138,7 @@ class Context:
         self.checks = state.get('checks',[])
         self.scenarios = state.get('scenarios',[])
         self.api_evidence = state.get('apiEvidence',[])
+        self.retained_config = state.get('retainedConfig')
         return state
 
 
@@ -307,9 +308,24 @@ def normalize_master_snapshots(ctx):
                     'SET p.value_code=m.code,p.value_name=m.name WHERE p.deleted=0 AND p.type=%s',(kind,))
 
 
-def reset(ctx):
+MANUAL_CONFIG = ('mes_face_credential','mes_assistant_model_config','mes_insight_jev_config')
+
+def retained_counts(ctx):
+    counts = {}
+    for table in MANUAL_CONFIG:
+        if table not in ctx.meta:
+            raise RuntimeError(f'Missing manual configuration table: {table}')
+        # Only tenant 1 and its existing admin account survive the standard reset.
+        unsupported = 'tenant_id<>1' + (' OR user_id<>1' if table=='mes_face_credential' else '')
+        if ctx.scalar(f'SELECT COUNT(*) FROM `{table}` WHERE {unsupported}'):
+            raise RuntimeError(f'Cannot safely retain {table}: its owner may be replaced. No business rows deleted.')
+        counts[table] = int(ctx.scalar(f'SELECT COUNT(*) FROM `{table}`'))
+    return counts
+
+def reset(ctx, keep_manual=False):
     modules=[importlib.import_module(x) for x in MODULES]
     info=backup(ctx)
+    ctx.retained_config = retained_counts(ctx) if keep_manual else None
     # DELETE remains transactional; unlike TRUNCATE it does not auto-commit each table.
     cleanup=['system_user_post','system_user_role','system_role_menu','system_dept','system_post','system_notice',
              'system_login_log','system_operate_log','system_notify_message','system_notify_template',
@@ -318,6 +334,8 @@ def reset(ctx):
              'infra_api_access_log','infra_api_error_log','infra_job_log','infra_file','infra_file_content']
     try:
         for table in sorted(ctx.meta):
+            if keep_manual and table in MANUAL_CONFIG:
+                continue
             if table.startswith(('mes_','yudao_demo')) or table in cleanup:
                 ctx.execute(f'DELETE FROM `{table}`')
         ctx.execute('DELETE FROM system_users WHERE id<>1')
@@ -564,10 +582,15 @@ def checks_sql(ctx):
             FROM mes_cost_workorder c JOIN mes_pro_work_order w ON w.id=c.workorder_id
             WHERE c.deleted=0 AND w.deleted=0 AND w.code='TST-MFG-H07' AND c.status='SETTLED' '''),
         ('sole_local_tenant','SELECT COUNT(*) FROM system_tenant WHERE id<>1'),
-        ('no_saved_biometric_secrets','SELECT COUNT(*) FROM mes_face_credential'),
-        ('no_external_model_credentials','SELECT COUNT(*) FROM mes_assistant_model_config'),
         ('no_legacy_work_orders',"SELECT COUNT(*) FROM mes_pro_work_order WHERE deleted=0 AND code NOT LIKE 'TST-%' AND code<>'BROKY-WO-FG-100' AND code<>'DEMO-WO-001'"),
     ]
+    if ctx.retained_config is None:
+        result.extend([('no_saved_biometric_secrets','SELECT COUNT(*) FROM mes_face_credential'),
+                       ('no_external_model_credentials','SELECT COUNT(*) FROM mes_assistant_model_config')])
+    else:
+        for table in MANUAL_CONFIG:
+            expected=int(ctx.retained_config[table])
+            result.append(('retained_'+table,f'SELECT ABS(CAST(COUNT(*) AS SIGNED)-{expected}) FROM `{table}`'))
     # Enforce references for every populated table where a column has one
     # unambiguous MES meaning. Polymorphic source IDs have dedicated module checks.
     refs={'item_id':'mes_md_item','product_id':'mes_md_item','bom_item_id':'mes_md_item','item_type_id':'mes_md_item_type',
@@ -630,13 +653,17 @@ def verify(ctx):
 def main():
     p=argparse.ArgumentParser(description=__doc__)
     p.add_argument('phase',choices=['reset','api','verify','retain-backups'])
+    p.add_argument('--keep-manual',action='store_true')
     args=p.parse_args()
     if args.phase == 'retain-backups':
         print(json.dumps({'backupRetention':finalize_backups(RUNTIME)}, ensure_ascii=False), flush=True)
         return
     ctx=Context()
     try:
-        {'reset':reset,'api':api_seed,'verify':verify}[args.phase](ctx)
+        if args.phase=='reset':
+            reset(ctx,keep_manual=args.keep_manual)
+        else:
+            {'api':api_seed,'verify':verify}[args.phase](ctx)
     finally:
         ctx.conn.close()
 
