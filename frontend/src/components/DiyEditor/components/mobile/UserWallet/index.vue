@@ -1,5 +1,5 @@
 <template>
-  <el-image src="/shop-member.webp" />
+  <el-image src="/placeholder-image.svg" />
 </template>
 <script setup lang="ts">
 import { UserWalletProperty } from './config'

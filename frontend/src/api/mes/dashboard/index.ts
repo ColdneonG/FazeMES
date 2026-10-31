@@ -13,6 +13,7 @@ export interface ProductionDashboard {
   updatedAt: string
   date: string
   basis: string
+  availability?: { latestActivityDate: string | null }
   regionalDistribution: {
     cities: { name: string; value: number; coordinate: [number, number] }[]
     totalOrderCount: number

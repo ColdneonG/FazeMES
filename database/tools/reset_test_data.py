@@ -501,6 +501,16 @@ def api_seed(ctx):
         production_quality=importlib.import_module('testdata_production_quality')
         production_quality.seed_api(api,ctx)
         ctx.scenarios.extend(production_quality.SCENARIOS)
+        # Independent stable-code replay; do not mix conditional additive calls
+        # with the ordered checkpoint of the original manufacturing portfolio.
+        dashboard=importlib.import_module('testdata_dashboard')
+        dashboard_api=Api(ctx)
+        try:
+            dashboard.seed_api(dashboard_api,ctx)
+            ctx.api_evidence.extend(dashboard.verify_api(dashboard_api,ctx))
+            ctx.scenarios.extend(dashboard.SCENARIOS)
+        finally:
+            dashboard_api.post('/system/auth/logout',{})
         warehouse=importlib.import_module('testdata_warehouse_ops')
         warehouse_api=Api(ctx)
         warehouse.seed_api(warehouse_api,ctx)

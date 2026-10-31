@@ -31,9 +31,9 @@
           @change="load"
         >
           <el-option
-            v-for="w in data?.workstations || []"
+            v-for="w in workstationOptions"
             :key="w.id"
-            :label="w.name"
+            :label="`${w.name} · ${w.scheduleLabel}`"
             :value="w.id"
           />
         </el-select>
@@ -43,13 +43,14 @@
           aria-label="生产日期"
           value-format="YYYY-MM-DD"
           :clearable="false"
+          :shortcuts="dateShortcuts"
           popper-class="production-screen-popper"
           :teleported="false"
           @change="load"
         />
       </div>
       <div class="refresh-controls">
-        <span :class="['live-state', { failed: error }]" role="status">{{
+        <span :class="['live-state', { failed: error }]" :title="productionContext" role="status">{{
           error ? '刷新失败' : loading ? '同步中' : '已连接'
         }}</span>
         <el-switch v-model="autoRefresh" active-text="30秒刷新" aria-label="自动刷新" />
@@ -63,7 +64,7 @@
     >
     <main v-if="data" class="screen-main">
       <div class="analytics-column">
-        <section class="screen-panel production-panel">
+        <section class="screen-panel production-panel" :title="productionContext">
           <div class="panel-heading"><h2>生产运行概况</h2></div>
           <div class="production-metrics">
             <article
@@ -89,13 +90,11 @@
         </section>
         <section class="screen-panel trend-panel">
           <div class="panel-heading"><h2>近7日产量趋势</h2></div>
-          <div class="chart-body"
-            ><Echart v-if="data.trend.length" :options="trendOptions" height="100%" /><div
-              v-else
-              class="screen-empty"
-              >暂无报工记录</div
-            ></div
-          >
+          <div
+            class="chart-body"
+            :title="data.trend.length ? '' : '近7日无已完成报工，零值表示当日没有完成记录。'"
+            ><Echart :options="trendOptions" height="100%"
+          /></div>
         </section>
         <section class="screen-panel ranking-panel">
           <div class="panel-heading"
@@ -111,7 +110,10 @@
         </section>
       </div>
       <div class="production-column">
-        <section class="screen-panel map-panel">
+        <section
+          class="screen-panel map-panel"
+          :title="mapExample ? '示例值，与本系统业务统计无关' : regionData?.basis"
+        >
           <div class="panel-heading">
             <h2>{{ mapExample ? '产品销售市场 · 示例' : '客户区域工单分布' }}</h2>
             <div class="map-controls"
@@ -132,21 +134,29 @@
             :unit="mapExample ? '示例值' : '单'"
             :is-example="mapExample"
             view="map"
-            empty-text="暂无可定位工单"
+            :empty-text="
+              regionData?.totalOrderCount
+                ? '已有工单，需完善客户的标准城市地址。'
+                : '所选日期及范围暂无关联工单，可调整日期或筛选。'
+            "
           />
         </section>
         <section class="screen-panel flow-panel">
           <div class="panel-heading"><h2>工位生产动态</h2></div>
-          <div v-if="!stationTasks.length" class="screen-empty">暂无匹配工位任务</div>
+          <div v-if="!stationTasks.length" class="screen-empty"
+            >当前范围尚未建立工位，请先完善工作站资料。</div
+          >
           <div v-else class="flow-strip">
             <template v-for="(station, index) in flowStations" :key="station.id">
               <button class="topology-station" @click="openStation(station.id)"
                 ><span class="station-node" aria-hidden="true"><Icon icon="ep:setting" /></span
                 ><span
                   ><strong>{{ station.name }}</strong
-                  ><small
-                    >{{ format(station.produced) }} / {{ format(station.target) }}</small
-                  ></span
+                  ><small>{{
+                    station.count
+                      ? `${format(station.produced)} / ${format(station.target)}`
+                      : '所选日期未排产'
+                  }}</small></span
                 ></button
               >
               <div
@@ -162,7 +172,9 @@
             ><h2>工单执行进度</h2><span class="panel-total">{{ data.workOrders.length }}</span></div
           >
           <div class="panel-scroll" tabindex="0" aria-label="工单执行进度列表">
-            <div v-if="!data.workOrders.length" class="screen-empty">暂无当日关联工单</div>
+            <div v-if="!data.workOrders.length" class="screen-empty"
+              >所选日期没有关联排产工单，可调整日期或车间查看。</div
+            >
             <table v-else class="order-table">
               <thead
                 ><tr><th>工单编码</th><th>工单名称</th><th>已产 / 目标</th><th>进度</th></tr></thead
@@ -193,7 +205,11 @@
               class="device-total"
               ><strong>{{ deviceCount }}</strong
               ><span>设备总数</span></div
-            ><div v-else class="screen-empty">暂无匹配设备</div></div
+            ><div v-else class="screen-empty">{{
+              filters.workstationId
+                ? '该工位尚未绑定设备，请完善工位设备资源。'
+                : '当前车间范围尚无设备台账，请完善设备所属车间。'
+            }}</div></div
           >
           <div class="device-legend"
             ><span v-for="d in data.devices" :key="d.status"
@@ -216,18 +232,27 @@
         </section>
         <section class="screen-panel tasks-panel">
           <div class="panel-heading"
-            ><h2>工位任务</h2><span class="panel-total">{{ stationTasks.length }}</span></div
+            ><h2>工位任务</h2
+            ><span
+              class="panel-total"
+              :title="`${activeStationCount} 个已排产 / ${stationTasks.length} 个工位 · 展示前8项`"
+              >{{ stationTasks.length }}</span
+            ></div
           >
           <div class="panel-scroll" tabindex="0" aria-label="工位任务列表">
-            <div v-if="!stationTasks.length" class="screen-empty">暂无匹配工位任务</div>
+            <div v-if="!stationTasks.length" class="screen-empty"
+              >当前范围尚未建立工位，请先完善工作站资料。</div
+            >
             <button
-              v-for="s in stationTasks"
+              v-for="s in visibleStationTasks"
               :key="s.id"
               class="station-row"
               @click="openStation(s.id)"
               ><div
                 ><strong>{{ s.name }}</strong
-                ><span>{{ s.count }} 项任务</span></div
+                ><span>{{
+                  s.count ? `${s.count} 项任务` : '工位已建档 · 所选日期未排产'
+                }}</span></div
               ><el-progress
                 :percentage="progress(s.produced, s.target)"
                 :stroke-width="5"
@@ -245,7 +270,7 @@
     <div v-else class="screen-empty">数据尚未加载，请点击刷新重试。</div>
     <el-drawer
       v-model="drawer"
-      :title="`${selectedStationName} · 当日任务`"
+      :title="`${selectedStationName} · ${data?.date || filters.date} 任务`"
       size="min(900px, 90vw)"
       class="production-screen-drawer"
       :append-to="screen"
@@ -293,6 +318,46 @@ const filters = reactive<{ workshopId?: number; workstationId?: number; date: st
 const now = ref(new Date())
 const clock = computed(() => dayjs(now.value).format('HH:mm:ss'))
 const dateLabel = computed(() => dayjs(now.value).format('YYYY年MM月DD日'))
+const today = computed(() => dayjs(now.value).format('YYYY-MM-DD'))
+const hasProduction = computed(() => Boolean(data.value?.taskCount || data.value?.feedbackCount))
+const latestActivityDate = computed(() => data.value?.availability?.latestActivityDate)
+const workstationOptions = computed(() => {
+  const scheduled = new Set(data.value?.tasks.map((task) => task.workstationId))
+  const completeList = (data.value?.taskCount || 0) <= (data.value?.tasks.length || 0)
+  return (data.value?.workstations || [])
+    .map((station) => ({
+      ...station,
+      scheduled: scheduled.has(station.id),
+      scheduleLabel: scheduled.has(station.id)
+        ? '有排产'
+        : completeList && (!filters.workstationId || filters.workstationId === station.id)
+          ? '未排产'
+          : '待查看'
+    }))
+    .sort((left, right) => Number(right.scheduled) - Number(left.scheduled))
+})
+// Keep the remote layout: date actions live in the existing picker's popover.
+const dateShortcuts = computed(() => [
+  { text: '今天', value: () => dayjs(today.value).toDate() },
+  ...(latestActivityDate.value && latestActivityDate.value !== today.value
+    ? [
+        {
+          text: `最近有数据日期 ${latestActivityDate.value}`,
+          value: () => dayjs(latestActivityDate.value).toDate()
+        }
+      ]
+    : [])
+])
+const productionContext = computed(() => {
+  if (!data.value) return '正在读取生产业务数据'
+  const date = data.value.date
+  const period =
+    date === today.value ? '当日生产' : date > today.value ? '计划日期' : '历史生产数据'
+  const activity = hasProduction.value
+    ? `${data.value.taskCount} 项任务 · ${data.value.feedbackCount} 笔完成报工`
+    : '所选范围当日暂无排产和已完成报工；可从日期选择器查看最近有数据日期'
+  return `${date} · ${period} · ${activity}。${data.value.basis}`
+})
 const format = (n: unknown) => formatQuantity(n ?? '0')
 const progress = (produced: number | string, target: number | string) =>
   Number(target) > 0
@@ -426,6 +491,17 @@ const stationTasks = computed(() => {
     number,
     { id: number; name: string; count: number; producedUnits: bigint; targetUnits: bigint }
   >()
+  data.value?.workstations
+    .filter((station) => !filters.workstationId || station.id === filters.workstationId)
+    .forEach((station) => {
+      result.set(station.id, {
+        id: station.id,
+        name: station.name,
+        count: 0,
+        producedUnits: 0n,
+        targetUnits: 0n
+      })
+    })
   data.value?.tasks.forEach((t) => {
     const s = result.get(t.workstationId) || {
       id: t.workstationId,
@@ -441,13 +517,19 @@ const stationTasks = computed(() => {
     s.targetUnits += quantityUnits(t.quantity ?? '0') ?? 0n
     result.set(t.workstationId, s)
   })
-  return [...result.values()].map((station) => ({
-    ...station,
-    produced: quantityText(station.producedUnits),
-    target: quantityText(station.targetUnits)
-  }))
+  return [...result.values()]
+    .sort((left, right) => right.count - left.count || left.id - right.id)
+    .map((station) => ({
+      ...station,
+      produced: quantityText(station.producedUnits),
+      target: quantityText(station.targetUnits)
+    }))
 })
+const activeStationCount = computed(
+  () => stationTasks.value.filter((station) => station.count > 0).length
+)
 const flowStations = computed(() => stationTasks.value.slice(0, 5))
+const visibleStationTasks = computed(() => stationTasks.value.slice(0, 8))
 const drawer = ref(false)
 const selectedStation = ref<number>()
 const selectedStationName = computed(
@@ -476,7 +558,12 @@ let refreshTimer: ReturnType<typeof setInterval>
 onMounted(() => {
   load()
   clockTimer = setInterval(() => {
+    const wasToday = filters.date === today.value
     now.value = new Date()
+    if (wasToday && filters.date !== today.value) {
+      filters.date = today.value
+      load()
+    }
   }, 1000)
   refreshTimer = setInterval(() => {
     if (autoRefresh.value && !document.hidden && !loading.value) load()

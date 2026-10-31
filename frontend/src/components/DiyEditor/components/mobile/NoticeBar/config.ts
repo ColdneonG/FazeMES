@@ -28,7 +28,7 @@ export const component = {
   name: '公告栏',
   icon: 'ep:bell',
   property: {
-    iconUrl: '/diy-icons/notice.svg',
+    iconUrl: '/placeholder-image.svg',
     contents: [
       {
         text: '',

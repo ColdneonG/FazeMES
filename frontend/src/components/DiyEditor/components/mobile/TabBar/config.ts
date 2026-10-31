@@ -53,26 +53,26 @@ export const component = {
       {
         text: '首页',
         url: '/pages/index/index',
-        iconUrl: '/diy-icons/home.svg',
-        activeIconUrl: '/diy-icons/home-active.svg'
+        iconUrl: '/placeholder-image.svg',
+        activeIconUrl: '/placeholder-image.svg'
       },
       {
         text: '分类',
         url: '/pages/index/category?id=3',
-        iconUrl: '/diy-icons/category.svg',
-        activeIconUrl: '/diy-icons/category-active.svg'
+        iconUrl: '/placeholder-image.svg',
+        activeIconUrl: '/placeholder-image.svg'
       },
       {
         text: '购物车',
         url: '/pages/index/cart',
-        iconUrl: '/diy-icons/cart.svg',
-        activeIconUrl: '/diy-icons/cart-active.svg'
+        iconUrl: '/placeholder-image.svg',
+        activeIconUrl: '/placeholder-image.svg'
       },
       {
         text: '我的',
         url: '/pages/index/user',
-        iconUrl: '/diy-icons/user.svg',
-        activeIconUrl: '/diy-icons/user-active.svg'
+        iconUrl: '/placeholder-image.svg',
+        activeIconUrl: '/placeholder-image.svg'
       }
     ]
   }

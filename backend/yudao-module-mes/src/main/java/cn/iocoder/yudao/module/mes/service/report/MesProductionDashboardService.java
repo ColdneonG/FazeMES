@@ -25,6 +25,18 @@ public class MesProductionDashboardService {
         return jdbc.query(sql,(r,n)->{var md=r.getMetaData();Map<String,Object> row=new LinkedHashMap<>();for(int i=1;i<=md.getColumnCount();i++){Object v=r.getObject(i);row.put(md.getColumnLabel(i),v instanceof java.sql.Timestamp ts?ts.toLocalDateTime():v);}return row;},args.toArray());
     }
     private List<Object> args(Object...values){return new ArrayList<>(Arrays.asList(values));}
+    /** Scoped date hints never silently change the selected day or include future activity. */
+    Map<String,Object> availability(Long workshop,Long station,LocalDate today) {
+        long tenant=TenantContextHolder.getRequiredTenantId();
+        var f=scope("f",workshop,station,tenant);
+        var t=scope("t",workshop,station,tenant);
+        List<Object> values=args(tenant,today.plusDays(1).atStartOfDay());values.addAll(f.args());
+        values.addAll(args(tenant,today.plusDays(1).atStartOfDay()));values.addAll(t.args());
+        return rows("SELECT MAX(activity_day) AS latestActivityDate FROM ("
+                +"SELECT MAX(DATE(f.feedback_time)) AS activity_day FROM mes_pro_feedback f WHERE f.tenant_id=? AND f.deleted=0 AND f.status=4 AND f.feedback_time<?"+f.sql()
+                +" UNION ALL SELECT MAX(DATE(t.start_time)) AS activity_day FROM mes_pro_task t WHERE t.tenant_id=? AND t.deleted=0 AND t.status<>5 AND t.start_time<?"+t.sql()
+                +") activity",values).get(0);
+    }
     public Map<String,Object> production(Long workshop,Long station,LocalDate date) {
         if(date==null)date=LocalDate.now();long tenant=TenantContextHolder.getRequiredTenantId();
         LocalDateTime from=date.atStartOfDay(),until=date.plusDays(1).atStartOfDay();var s=scope("f",workshop,station,tenant);
@@ -52,6 +64,7 @@ public class MesProductionDashboardService {
         Map<String,Object> result=new LinkedHashMap<>();result.putAll(production);result.putAll(target);result.putAll(pending);result.putAll(andon);
         result.put("tasks",tasks);result.put("workOrders",workOrders);result.put("trend",trend);result.put("devices",devices);result.put("workstations",stations);result.put("workshops",workshops);
         result.put("date",date);result.put("updatedAt",LocalDateTime.now());
+        result.put("availability",availability(workshop,station,LocalDate.now()));
         result.put("regionalDistribution",regionService.distribution(workshop,station,date));
         result.put("shortageAvailable",true);result.put("shortageWorkOrderCount",kittingService.board(null,true).size());
         result.put("basis","产量与合格率：所选日期已完成报工（feedback_time，状态4）；目标：当日交叠工序任务数量；待检/安灯：该日结束前创建且当前未关闭记录；设备：当前台账状态。缺料：全厂当前未结工单齐套分析，与日期、车间、工位筛选无关。数量跨产品时不统一计量单位。");

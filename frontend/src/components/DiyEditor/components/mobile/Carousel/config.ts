@@ -41,8 +41,8 @@ export const component = {
     interval: 3,
     height: 174,
     items: [
-      { type: 'img', imgUrl: '/shop-banner.webp', videoUrl: '' },
-      { type: 'img', imgUrl: '/shop-member.webp', videoUrl: '' }
+      { type: 'img', imgUrl: '/placeholder-image.svg', videoUrl: '' },
+      { type: 'img', imgUrl: '/placeholder-image.svg', videoUrl: '' }
     ] as CarouselItemProperty[],
     style: {
       bgType: 'color',

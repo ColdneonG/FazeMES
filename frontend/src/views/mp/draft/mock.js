@@ -15,7 +15,7 @@ export default {
             needOpenComment: 0,
             onlyFansCanComment: 0,
             url: 'https://example.com',
-            thumbUrl: '/shop-banner.webp'
+            thumbUrl: '/placeholder-image.svg'
           },
           {
             title: '示例图文标题',
@@ -28,7 +28,7 @@ export default {
             needOpenComment: 0,
             onlyFansCanComment: 0,
             url: 'https://example.com',
-            thumbUrl: '/shop-banner.webp'
+            thumbUrl: '/placeholder-image.svg'
           }
         ]
       },
@@ -49,7 +49,7 @@ export default {
             needOpenComment: 0,
             onlyFansCanComment: 0,
             url: 'https://example.com',
-            thumbUrl: '/shop-banner.webp'
+            thumbUrl: '/placeholder-image.svg'
           }
         ]
       },
@@ -70,7 +70,7 @@ export default {
             needOpenComment: 0,
             onlyFansCanComment: 0,
             url: 'https://example.com',
-            thumbUrl: '/shop-banner.webp'
+            thumbUrl: '/placeholder-image.svg'
           }
         ]
       },
@@ -91,7 +91,7 @@ export default {
             needOpenComment: 0,
             onlyFansCanComment: 0,
             url: 'https://example.com',
-            thumbUrl: '/shop-banner.webp'
+            thumbUrl: '/placeholder-image.svg'
           }
         ]
       },
@@ -112,7 +112,7 @@ export default {
             needOpenComment: 0,
             onlyFansCanComment: 0,
             url: 'https://example.com',
-            thumbUrl: '/shop-banner.webp'
+            thumbUrl: '/placeholder-image.svg'
           }
         ]
       },
@@ -133,7 +133,7 @@ export default {
             needOpenComment: 0,
             onlyFansCanComment: 0,
             url: 'https://example.com',
-            thumbUrl: '/shop-banner.webp'
+            thumbUrl: '/placeholder-image.svg'
           }
         ]
       },
