@@ -37,6 +37,9 @@ public interface MesDvMachineryService {
      */
     void updateMachinery(@Valid MesDvMachinerySaveReqVO updateReqVO);
 
+    /** Change only the reviewed equipment status, preserving its other master data. */
+    void updateMachineryStatus(Long id, Integer expectedStatus, Integer status);
+
     /**
      * 删除设备
      *

@@ -22,10 +22,10 @@ public class MesAgentBusinessController {
     private final MesAgentBusinessTools tools;
     private final MesInsightConversationStore conversations;
     public MesAgentBusinessController(MesAgentBusinessTools tools,MesInsightConversationStore conversations){this.tools=tools;this.conversations=conversations;}
-    @PostMapping("/prepare") @PreAuthorize("@ss.hasPermission('mes:insight:query') && @ss.hasPermission('mes:insight:chat') && @ss.hasPermission('mes:insight:manage')")
+    @PostMapping("/prepare") @PreAuthorize("@ss.hasPermission('mes:insight:query') && @ss.hasPermission('mes:insight:chat')")
     @ApiAccessLog(requestEnable=false,responseEnable=false)
     public CommonResult<?> prepare(@RequestParam long turnId,@RequestBody MesAgentBusinessTools.Operation request){return success(tools.prepare(request,turnId));}
-    @PostMapping("/execute") @PreAuthorize("@ss.hasPermission('mes:insight:query') && @ss.hasPermission('mes:insight:chat') && @ss.hasPermission('mes:insight:manage')")
+    @PostMapping("/execute") @PreAuthorize("@ss.hasPermission('mes:insight:query') && @ss.hasPermission('mes:insight:chat')")
     @ApiAccessLog(requestEnable=false,responseEnable=false)
     public CommonResult<?> execute(@RequestBody MesAgentBusinessTools.Confirmation request){return success(tools.execute(request));}
     @GetMapping("/report")

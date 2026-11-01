@@ -15,6 +15,8 @@ import org.springframework.jdbc.datasource.init.ResourceDatabasePopulator;
 import org.springframework.mock.web.MockHttpServletRequest;
 import org.springframework.security.core.context.SecurityContextHolder;
 import org.springframework.transaction.support.TransactionSynchronizationManager;
+import org.springframework.test.util.ReflectionTestUtils;
+import cn.iocoder.yudao.module.mes.service.assistant.MesAssistantModelGateway;
 import java.util.*;
 import java.util.concurrent.*;
 import java.util.concurrent.atomic.AtomicInteger;
@@ -44,6 +46,19 @@ class MesInsightBusinessAssistantTest {
     private Question ask(String q){return new Question(q,false);}
     private Question next(Map<String,Object> a,String q){return new Question(q,false,((Number)a.get("conversationId")).longValue(),((Number)a.get("version")).intValue(),null);}
     @SuppressWarnings("unchecked") private Map<String,Object> evidenceOf(Map<String,Object> answer){return (Map<String,Object>)answer.get("evidence");}
+    @Test void realCommandRoutingInterruptsPendingInventoryAndNeverReturnsQueryFacts(){
+        var models=mock(MesAssistantModelGateway.class);
+        var realTools=new MesAgentBusinessTools(jdbc,new ObjectMapper(),security,mock(MesInsightWorkflow.class),models,manager);
+        ReflectionTestUtils.setField(assistant,"tools",realTools);
+        for(String q:List.of("确认工单 WO-001","取消工单 WO-001","完成工单 WO-001","结算工单 WO-001 的实际成本","把设备 DV-001 的状态改成维护中")){
+            var pending=assistant.ask(ask("9月份库存"));assertEquals("CLARIFY",pending.get("status"));
+            var req=new Question(q,true,((Number)pending.get("conversationId")).longValue(),((Number)pending.get("version")).intValue(),null);
+            var result=assistant.ask(req);assertEquals("agent_action",result.get("topic"),q);assertNotNull(result.get("proposal"));
+            assertEquals(q,jdbc.queryForObject("SELECT question FROM mes_insight_turn WHERE id=?",String.class,result.get("turnId")));
+            assertEquals("{}",jdbc.queryForObject("SELECT pending_json FROM mes_insight_conversation WHERE id=?",String.class,pending.get("conversationId")));
+        }
+        verify(inventory,never()).inventory(anyMap());verify(inventory,never()).document(anyMap());verifyNoInteractions(legacy,models);
+    }
     @Test void realParserPersistsIndependentConversationAndSnapshotPager(){
         var answer=assistant.ask(ask("查2026年9月原材料库存台账，按批次"));
         assertEquals("inventory",answer.get("topic"));assertEquals("ANSWERED",answer.get("status"));assertEquals(1,answer.get("version"));

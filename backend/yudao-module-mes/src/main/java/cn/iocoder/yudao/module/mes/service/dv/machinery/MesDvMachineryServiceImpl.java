@@ -67,6 +67,8 @@ public class MesDvMachineryServiceImpl implements MesDvMachineryService {
     @Resource
     @Lazy
     private MesDvRepairService repairService;
+    @Resource
+    private cn.iocoder.yudao.module.mes.dal.mysql.dv.repair.MesDvRepairMapper repairMapper;
 
     @Override
     @Transactional(rollbackFor = Exception.class)
@@ -102,6 +104,23 @@ public class MesDvMachineryServiceImpl implements MesDvMachineryService {
         // 更新
         MesDvMachineryDO updateObj = BeanUtils.toBean(updateReqVO, MesDvMachineryDO.class);
         machineryMapper.updateById(updateObj);
+    }
+
+    @Override
+    @Transactional(rollbackFor = Exception.class)
+    public void updateMachineryStatus(Long id, Integer expectedStatus, Integer status) {
+        if (status == null || !java.util.Arrays.asList(cn.iocoder.yudao.module.mes.enums.dv.MesDvMachineryStatusEnum.ARRAYS).contains(status)) {
+            throw cn.iocoder.yudao.module.mes.service.insight.MesInsightWorkflow.invalid("请选择有效的设备状态");
+        }
+        MesDvMachineryDO current = machineryMapper.selectForUpdate(id);
+        if (current == null) throw exception(DV_MACHINERY_NOT_EXISTS);
+        if (!Objects.equals(current.getStatus(), expectedStatus)) {
+            throw cn.iocoder.yudao.module.mes.service.insight.MesInsightWorkflow.invalid("设备状态已变化，请重新生成执行预览");
+        }
+        if (status == 2 && !repairMapper.selectUnfinishedForUpdate(id).isEmpty()) {
+            throw cn.iocoder.yudao.module.mes.service.insight.MesInsightWorkflow.invalid("设备仍有未完成的维修工单，请通过维修验收流程恢复生产");
+        }
+        machineryMapper.updateById(new MesDvMachineryDO().setId(id).setStatus(status));
     }
 
     @Override

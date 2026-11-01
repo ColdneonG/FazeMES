@@ -57,14 +57,14 @@
         :title="
           receipt
             ? '本次业务操作已执行，执行回执已保存。'
-            : '以下为待确认的业务操作，尚未写入。请核对标题、关联记录、负责人和状态。'
+            : '请核对操作类型、业务记录和目标状态，再确认执行。'
         "
         :type="receipt ? 'success' : 'info'"
         :closable="false"
         show-icon
       />
       <el-button
-        v-if="canManage && !receipt"
+        v-if="canExecute && !receipt"
         type="primary"
         class="agent-review"
         @click="openReview"
@@ -72,15 +72,10 @@
         核对并执行业务操作
       </el-button>
     </template>
-    <el-alert
-      v-if="receipt"
-      :title="`${receipt.message}，异常编号 #${receipt.businessId}`"
-      type="success"
-      :closable="false"
-    />
-    <el-button v-if="receipt" link type="primary" @click="router.push('/mes/insight?tab=incidents')"
-      >查看异常闭环记录</el-button
-    >
+    <el-alert v-if="receipt" :title="receipt.message" type="success" :closable="false" />
+    <el-button v-if="receipt && canOpenReceipt" link type="primary" @click="openReceipt">{{
+      receiptLinkLabel
+    }}</el-button>
     <el-dialog
       v-model="visible"
       title="Agent 业务执行确认"
@@ -92,9 +87,7 @@
       <el-alert v-if="error" :title="error" type="error" :closable="false" show-icon />
       <el-form v-if="!preview" label-position="top" @submit.prevent>
         <el-form-item label="操作类型"
-          ><el-tag>{{
-            form.kind === 'CREATE_INCIDENT' ? '创建真实异常记录' : '推进异常处理状态'
-          }}</el-tag></el-form-item
+          ><el-tag>{{ operationLabels[form.kind] }}</el-tag></el-form-item
         >
         <template v-if="form.kind === 'CREATE_INCIDENT'">
           <el-form-item label="异常标题" required
@@ -112,7 +105,7 @@
             /></el-select>
           </el-form-item>
         </template>
-        <template v-else>
+        <template v-else-if="form.kind === 'MOVE_INCIDENT'">
           <el-form-item label="异常编号" required
             ><el-input-number v-model="form.incidentId" :min="1" :precision="0"
           /></el-form-item>
@@ -137,7 +130,30 @@
             ><el-input v-model="form.note" maxlength="2000"
           /></el-form-item>
         </template>
-        <el-form-item label="负责人（本租户已启用账号）" required
+        <template v-else-if="form.kind === 'UPDATE_DEVICE_STATUS'">
+          <el-form-item label="设备编码" required
+            ><el-input v-model="form.deviceCode" maxlength="100"
+          /></el-form-item>
+          <el-form-item label="目标状态" required>
+            <el-select v-model="form.deviceStatus">
+              <el-option
+                v-for="(label, key) in deviceStates"
+                :key="key"
+                :label="label"
+                :value="Number(key)"
+              />
+            </el-select>
+          </el-form-item>
+        </template>
+        <template v-else>
+          <el-form-item label="工单编码" required
+            ><el-input v-model="form.orderCode" maxlength="100"
+          /></el-form-item>
+        </template>
+        <el-form-item v-if="!isIncident" label="操作说明"
+          ><el-input v-model="form.note" maxlength="2000"
+        /></el-form-item>
+        <el-form-item v-if="isIncident" label="负责人（本租户已启用账号）" required
           ><el-select v-model="form.ownerId" filterable
             ><el-option
               v-for="owner in owners"
@@ -162,12 +178,22 @@
         <el-button v-if="preview" :disabled="executing" @click="resetPreview"
           >重新核对内容</el-button
         >
-        <el-button v-if="!preview" type="primary" :loading="preparing" @click="prepare"
+        <el-button
+          v-if="!preview"
+          type="primary"
+          :disabled="!canExecute"
+          :loading="preparing"
+          @click="prepare"
           >生成执行预览</el-button
         >
-        <el-button v-else type="danger" :loading="executing" @click="execute">{{
-          uncertain ? '重试当前确认并查询结果' : '确认执行上述业务操作'
-        }}</el-button>
+        <el-button
+          v-else
+          type="danger"
+          :disabled="!canExecute"
+          :loading="executing"
+          @click="execute"
+          >{{ uncertain ? '重试当前确认并查询结果' : '确认执行上述业务操作' }}</el-button
+        >
       </template>
     </el-dialog>
   </section>
@@ -186,6 +212,7 @@ import {
 import { InsightApi } from '@/api/mes/insight'
 import { checkPermi } from '@/utils/permission'
 import download from '@/utils/download'
+import { openCostCenter } from '@/views/mes/cost/navigation'
 const props = defineProps<{ answer: BusinessAnswer }>()
 const emit = defineEmits<{ failure: [error: unknown]; executed: [receipt: AgentReceipt] }>()
 const router = useRouter()
@@ -201,8 +228,53 @@ const preparing = ref(false)
 const executing = ref(false)
 const uncertain = ref(false)
 const error = ref('')
-const canManage = computed(() => checkPermi(['mes:insight:manage']))
+const operationPermissions: Record<AgentOperation['kind'], string[]> = {
+  CREATE_INCIDENT: ['mes:insight:manage'],
+  MOVE_INCIDENT: ['mes:insight:manage'],
+  CONFIRM_WORKORDER: ['mes:pro-work-order:query', 'mes:pro-work-order:update'],
+  CANCEL_WORKORDER: ['mes:pro-work-order:query', 'mes:pro-work-order:update'],
+  FINISH_WORKORDER: ['mes:pro-work-order:query', 'mes:pro-work-order:update'],
+  SETTLE_WORKORDER: ['mes:pro-work-order:query', 'mes:cost:query', 'mes:cost:settle'],
+  UPDATE_DEVICE_STATUS: ['mes:dv-machinery:query', 'mes:dv-machinery:update']
+}
+const operationKind = computed(
+  () => props.answer.proposal?.kind || receipt.value?.kind || form.kind
+)
+const canExecute = computed(() =>
+  operationPermissions[operationKind.value].every((permission) => checkPermi([permission]))
+)
+const isIncident = computed(() => ['CREATE_INCIDENT', 'MOVE_INCIDENT'].includes(form.kind))
 const canExport = computed(() => checkPermi(['mes:pro-work-order:export']))
+const operationLabels: Record<AgentOperation['kind'], string> = {
+  CREATE_INCIDENT: '创建异常记录',
+  MOVE_INCIDENT: '推进异常处理状态',
+  CONFIRM_WORKORDER: '确认工单',
+  CANCEL_WORKORDER: '取消工单',
+  FINISH_WORKORDER: '完成工单',
+  SETTLE_WORKORDER: '结算工单实际成本',
+  UPDATE_DEVICE_STATUS: '修改设备状态'
+}
+const deviceStates: Record<number, string> = { 1: '停机', 2: '生产中', 3: '维护中' }
+const receiptLinkLabel = computed(() =>
+  operationKind.value === 'UPDATE_DEVICE_STATUS'
+    ? '查看设备台账'
+    : operationKind.value === 'SETTLE_WORKORDER'
+      ? '查看工单成本'
+      : operationKind.value.endsWith('WORKORDER')
+        ? '查看生产工单'
+        : '查看异常闭环记录'
+)
+const canOpenReceipt = computed(() => {
+  const permission =
+    operationKind.value === 'UPDATE_DEVICE_STATUS'
+      ? 'mes:dv-machinery:query'
+      : operationKind.value === 'SETTLE_WORKORDER'
+        ? 'mes:cost:query'
+        : operationKind.value.endsWith('WORKORDER')
+          ? 'mes:pro-work-order:query'
+          : 'mes:insight:query'
+  return checkPermi([permission])
+})
 const categories: Record<string, string> = {
   DELIVERY: '交期',
   MATERIAL: '物料',
@@ -218,7 +290,7 @@ const states: Record<string, string> = {
 }
 const labels: Record<string, string> = {
   kind: '操作类型',
-  title: '异常标题',
+  title: '业务记录',
   description: '描述',
   category: '分类',
   orderCode: '关联工单',
@@ -230,19 +302,35 @@ const labels: Record<string, string> = {
   correctiveAction: '处理措施',
   evidence: '验证证据',
   note: '操作说明',
-  dueAt: '保留的截止日期'
+  dueAt: '保留的截止日期',
+  deviceCode: '设备编码',
+  fromStatusName: '原状态',
+  statusName: '目标状态',
+  actualMaterialCost: '实际材料成本（元）',
+  actualLaborCost: '实际人工成本（元）',
+  actualOverheadCost: '实际制造费用（元）',
+  actualTotalCost: '实际总成本（元，不含税）',
+  actualUnitCost: '实际单位成本（元）',
+  producedQuantity: '完工数量'
 }
 const reviewFields = computed(() =>
   Object.entries(preview.value?.payload || {})
-    .filter(([key, value]) => labels[key] && value != null && value !== '')
+    .filter(([key, value]) => {
+      const payload = preview.value?.payload || {}
+      return (
+        labels[key] &&
+        value != null &&
+        value !== '' &&
+        !(key === 'fromStatus' && payload.fromStatusName) &&
+        !(key === 'status' && payload.statusName)
+      )
+    })
     .map(([key, value]) => ({
       key,
       label: labels[key],
       value:
         key === 'kind'
-          ? value === 'CREATE_INCIDENT'
-            ? '创建异常记录'
-            : '推进异常状态'
+          ? operationLabels[value as AgentOperation['kind']] || String(value)
           : key === 'ownerId'
             ? owners.value.find((item) => item.id === value)?.name || value
             : key === 'category'
@@ -285,10 +373,12 @@ async function downloadReport() {
   }
 }
 async function openReview() {
+  if (!canExecute.value) return
   visible.value = true
   if (preview.value) return
   error.value = ''
   Object.assign(form, props.answer.proposal)
+  if (!isIncident.value) return
   try {
     owners.value = (await InsightApi.incidents()).owners
   } catch {
@@ -296,7 +386,7 @@ async function openReview() {
   }
 }
 async function prepare() {
-  if (preparing.value) return
+  if (preparing.value || !canExecute.value) return
   preparing.value = true
   error.value = ''
   try {
@@ -313,7 +403,7 @@ function resetPreview() {
   uncertain.value = false
 }
 async function execute() {
-  if (!preview.value || executing.value) return
+  if (!preview.value || executing.value || !canExecute.value) return
   executing.value = true
   error.value = ''
   try {
@@ -328,6 +418,18 @@ async function execute() {
       ' 可重试当前确认查询同一次结果；如需重新核对，系统也会先检查本轮是否已执行。'
   } finally {
     executing.value = false
+  }
+}
+async function openReceipt() {
+  if (!receipt.value || !canOpenReceipt.value) return
+  if (operationKind.value === 'SETTLE_WORKORDER') {
+    await openCostCenter(router, { workorderId: receipt.value.businessId })
+  } else if (operationKind.value === 'UPDATE_DEVICE_STATUS') {
+    await router.push({ name: 'MesDvMachinery' })
+  } else if (operationKind.value.endsWith('WORKORDER')) {
+    await router.push({ name: 'MesProWorkOrder' })
+  } else {
+    await router.push('/mes/insight?tab=incidents')
   }
 }
 </script>

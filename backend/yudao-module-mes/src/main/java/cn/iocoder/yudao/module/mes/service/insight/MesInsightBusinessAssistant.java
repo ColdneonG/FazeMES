@@ -41,7 +41,7 @@ public class MesInsightBusinessAssistant {
             var context=new LinkedHashMap<>(claim.context());var slots=new LinkedHashMap<String,Object>();
             var pending=claim.pending();boolean selected=!claim.selectedSlots().isEmpty();
             boolean pendingLive=pending.get("expiresAt")!=null&&OffsetDateTime.parse(pending.get("expiresAt").toString()).isAfter(OffsetDateTime.now(ZONE));
-            boolean follow=(followup(q)||(pendingLive&&q.length()<=100&&!INVENTORY.matcher(q).find()&&!LEGACY.matcher(q).find()))&&(!context.isEmpty()||pendingLive);
+            boolean follow=!isWrite(q)&&(followup(q)||(pendingLive&&q.length()<=100&&!INVENTORY.matcher(q).find()&&!LEGACY.matcher(q).find()))&&(!context.isEmpty()||pendingLive);
             if(selected||follow){
                 if(pendingLive&&pending.get("slots") instanceof Map<?,?> p)slots.putAll((Map<String,Object>)p);
                 else slots.putAll(context);
@@ -102,7 +102,7 @@ public class MesInsightBusinessAssistant {
     }
     private static String selectedLabel(Map<String,Object> pending,Question req){if(req.clarification()==null)return "选择澄清条件";Object choices=pending.get("choices");if(choices instanceof List<?> list)for(Object choice:list)if(choice instanceof Map<?,?> m&&Objects.equals(m.get("id"),req.clarification().choiceId()))return "选择："+m.get("label");return "选择澄清条件";}
     private static boolean followup(String q){return q.matches("(?s)^(那|只看|仅看|按|换成|改为|继续|再看).*" )||q.matches("[12][0-9]{3}年?")||q.matches("[一二三四五六七八九〇零]{4}年?")||q.matches("[0-9一二三四五六七八九十]{1,3}月份?")||q.equals("上个月")||q.equals("本月");}
-    private static boolean isWrite(String q){return q.matches("(?s).*(删除|修改|新增|创建工单|创建单据|提交|改价格|改价|把.*改成|将.*改成|扣减库存|增加库存|执行出库|执行入库|帮我.*(排产|入库|出库)).*");}
+    private static boolean isWrite(String q){return MesAgentCommandIntent.isWrite(q);}
     private static String intent(String q,Map<String,Object> previous){
         if(q.matches("(?s).*(推荐旅游|天气|写诗|笑话).*"))return "scope";
         if((q.contains("流水")&&Pattern.compile("单|出库|入库|销售|采购|领料|退货|调拨|[A-Za-z]+[-_][0-9A-Za-z]").matcher(q).find())||q.contains("单号")||q.contains("单据")||(q.matches("(?s).*(销售出库单|采购入库单|领料单|退货单|调拨单).*" )&&CODE.matcher(q).find()))return "document";

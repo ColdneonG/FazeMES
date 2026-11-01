@@ -1,7 +1,14 @@
 import request from '@/config/axios'
 
 export interface AgentOperation {
-  kind: 'CREATE_INCIDENT' | 'MOVE_INCIDENT'
+  kind:
+    | 'CREATE_INCIDENT'
+    | 'MOVE_INCIDENT'
+    | 'CONFIRM_WORKORDER'
+    | 'CANCEL_WORKORDER'
+    | 'FINISH_WORKORDER'
+    | 'SETTLE_WORKORDER'
+    | 'UPDATE_DEVICE_STATUS'
   title?: string
   description?: string
   orderCode?: string
@@ -13,6 +20,8 @@ export interface AgentOperation {
   correctiveAction?: string
   evidence?: string
   note?: string
+  deviceCode?: string
+  deviceStatus?: number
 }
 export interface AgentTable {
   kind: 'AGENT_TABLE'
@@ -35,6 +44,8 @@ export interface AgentReceipt {
   id: string
   status: string
   businessId: number
+  kind?: AgentOperation['kind']
+  businessCode?: string
   message: string
   executedAt: string
 }

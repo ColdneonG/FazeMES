@@ -10,7 +10,8 @@ const { parse, compileScript } = require('vue/compiler-sfc')
 function setup(
   t,
   api = {},
-  answer = { proposal: { kind: 'CREATE_INCIDENT', title: '缺料' }, evidence: {}, turnId: 42 }
+  answer = { proposal: { kind: 'CREATE_INCIDENT', title: '缺料' }, evidence: {}, turnId: 42 },
+  allowed
 ) {
   const filename = path.join(__dirname, '../src/views/mes/insight/AgentResult.vue')
   const parsed = parse(fs.readFileSync(filename, 'utf8'), { filename })
@@ -21,14 +22,28 @@ function setup(
   const module = { exports: {} }
   const exports = module.exports
   const downloads = []
+  const routes = []
+  const events = []
+  const incidentRequests = []
   const deps = {
     vue,
-    'vue-router': { useRouter: () => ({ push: () => {} }) },
+    'vue-router': { useRouter: () => ({ push: (route) => routes.push(route) }) },
     '@/api/mes/insight/agent': { AgentApi: api },
     '@/api/mes/insight': {
-      InsightApi: { incidents: async () => ({ owners: [{ id: 10, name: '操作者' }] }) }
+      InsightApi: {
+        incidents: async () => {
+          incidentRequests.push(true)
+          return { owners: [{ id: 10, name: '操作者' }] }
+        }
+      }
     },
-    '@/utils/permission': { checkPermi: () => true },
+    '@/utils/permission': {
+      checkPermi: (permissions) =>
+        !allowed || permissions.some((permission) => allowed.value.has(permission))
+    },
+    '@/views/mes/cost/navigation': {
+      openCostCenter: (router, context) => router.push({ path: '/mes/md/cost', query: context })
+    },
     '@/utils/download': { __esModule: true, default: { excel: (...args) => downloads.push(args) } }
   }
   vm.runInNewContext(
@@ -44,10 +59,13 @@ function setup(
   )
   const scope = vue.effectScope()
   const state = scope.run(() =>
-    module.exports.default.setup(vue.reactive({ answer }), { expose() {}, emit() {} })
+    module.exports.default.setup(vue.reactive({ answer }), {
+      expose() {},
+      emit: (...args) => events.push(args)
+    })
   )
   t.after(() => scope.stop())
-  return { state, downloads }
+  return { state, downloads, routes, events, incidentRequests }
 }
 
 test('opening and preparing a proposal cannot execute business; confirmation sends only the reviewed nonce', async (t) => {
@@ -113,4 +131,137 @@ test('report downloads use the persisted answer id and do not request any busine
   await state.downloadReport()
   assert.equal(JSON.stringify(calls), '[77]')
   assert.equal(downloads[0][1], '生产工单报表-77.xlsx')
+})
+
+const businessOperations = [
+  { kind: 'CONFIRM_WORKORDER', orderCode: 'WO-001' },
+  { kind: 'CANCEL_WORKORDER', orderCode: 'WO-001' },
+  { kind: 'FINISH_WORKORDER', orderCode: 'WO-001' },
+  { kind: 'SETTLE_WORKORDER', orderCode: 'WO-001' },
+  { kind: 'UPDATE_DEVICE_STATUS', deviceCode: 'DV-001', deviceStatus: 3 }
+]
+for (const proposal of businessOperations) {
+  test(`${proposal.kind} prepares and executes the reviewed operation without requiring incident ownership`, async (t) => {
+    const prepared = []
+    const executed = []
+    const { state, events, incidentRequests } = setup(
+      t,
+      {
+        prepare: async (operation, turn) => {
+          prepared.push({ operation, turn })
+          return { id: 'business-preview', token: 'business-nonce', payload: operation }
+        },
+        execute: async (confirmation) => {
+          executed.push(confirmation)
+          return { kind: proposal.kind, businessId: 123, message: '已完成业务操作' }
+        }
+      },
+      { proposal, evidence: {}, turnId: 57 }
+    )
+    await state.openReview()
+    assert.equal(state.isIncident.value, false)
+    assert.equal(incidentRequests.length, 0)
+    assert.equal(executed.length, 0)
+    await state.prepare()
+    assert.equal(prepared[0].turn, 57)
+    assert.equal(prepared[0].operation.kind, proposal.kind)
+    assert.equal(prepared[0].operation.orderCode, proposal.orderCode)
+    assert.equal(prepared[0].operation.deviceCode, proposal.deviceCode)
+    assert.equal(prepared[0].operation.deviceStatus, proposal.deviceStatus)
+    assert.equal(executed.length, 0)
+    state.form.orderCode = 'WO-OTHER'
+    state.form.deviceStatus = 1
+    await state.execute()
+    assert.equal(JSON.stringify(executed), '[{"id":"business-preview","token":"business-nonce"}]')
+    assert.equal(state.receipt.value.kind, proposal.kind)
+    assert.equal(events[0][0], 'executed')
+  })
+}
+
+test('each business operation needs all module permissions and stops executing after revocation', async (t) => {
+  const permissions = vue.ref(new Set(['mes:pro-work-order:query']))
+  const calls = []
+  const { state } = setup(
+    t,
+    {
+      prepare: async () => {
+        calls.push('prepare')
+        return { id: 'preview', token: 'nonce', payload: {} }
+      },
+      execute: async () => calls.push('execute')
+    },
+    { proposal: { kind: 'CONFIRM_WORKORDER', orderCode: 'WO-001' }, evidence: {}, turnId: 9 },
+    permissions
+  )
+  assert.equal(state.canExecute.value, false)
+  await state.openReview()
+  await state.prepare()
+  assert.equal(calls.length, 0)
+  permissions.value.add('mes:pro-work-order:update')
+  assert.equal(state.canExecute.value, true)
+  await state.openReview()
+  await state.prepare()
+  permissions.value.delete('mes:pro-work-order:update')
+  await state.execute()
+  assert.deepEqual(calls, ['prepare'])
+})
+
+test('settlement review preserves exact monetary strings and shows named states', async (t) => {
+  const { state } = setup(
+    t,
+    {},
+    {
+      proposal: { kind: 'SETTLE_WORKORDER', orderCode: 'WO-001' },
+      evidence: {},
+      turnId: 9
+    }
+  )
+  state.preview.value = {
+    payload: {
+      kind: 'SETTLE_WORKORDER',
+      orderCode: 'WO-001',
+      fromStatus: 2,
+      fromStatusName: '已完成',
+      status: 'SETTLED',
+      statusName: '已结算',
+      actualTotalCost: '999999999999.000001',
+      actualUnitCost: '0.000001',
+      producedQuantity: '1.000001'
+    }
+  }
+  const fields = state.reviewFields.value
+  assert.equal(fields.find((field) => field.key === 'actualTotalCost').value, '999999999999.000001')
+  assert.equal(fields.find((field) => field.key === 'actualUnitCost').value, '0.000001')
+  assert.equal(fields.find((field) => field.key === 'statusName').value, '已结算')
+  assert.equal(
+    fields.some((field) => field.key === 'status' || field.key === 'fromStatus'),
+    false
+  )
+  assert.equal(
+    fields.some((field) => field.label.includes('异常')),
+    false
+  )
+})
+
+test('execution receipts navigate to the corresponding business page including reopened history', async (t) => {
+  for (const [kind, destination] of [
+    ['CONFIRM_WORKORDER', { name: 'MesProWorkOrder' }],
+    ['CANCEL_WORKORDER', { name: 'MesProWorkOrder' }],
+    ['FINISH_WORKORDER', { name: 'MesProWorkOrder' }],
+    ['UPDATE_DEVICE_STATUS', { name: 'MesDvMachinery' }],
+    ['SETTLE_WORKORDER', { path: '/mes/md/cost', query: { workorderId: 123 } }],
+    ['MOVE_INCIDENT', '/mes/insight?tab=incidents']
+  ]) {
+    const { state, routes } = setup(
+      t,
+      {},
+      {
+        evidence: {},
+        turnId: 9,
+        executionReceipt: { kind, businessId: 123, message: '已执行' }
+      }
+    )
+    await state.openReceipt()
+    assert.equal(JSON.stringify(routes), JSON.stringify([destination]))
+  }
 })

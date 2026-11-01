@@ -30,11 +30,21 @@ public class MesAgentBusinessTools {
     private final MesAssistantModelGateway models;
     private final TransactionTemplate tx;
     private final TransactionTemplate readTx;
+    @jakarta.annotation.Resource
+    private MesAgentExecutionService execution;
     private static final ZoneId ZONE=ZoneId.of("Asia/Shanghai");
-    private static final Set<String> KINDS=Set.of("WORKORDER_QUERY","WORKORDER_REPORT","DEVICE_QUERY","CREATE_INCIDENT","MOVE_INCIDENT");
+    private static final Set<String> DOMAIN_ACTIONS=Set.of("CONFIRM_WORKORDER","CANCEL_WORKORDER","FINISH_WORKORDER","SETTLE_WORKORDER","UPDATE_DEVICE_STATUS");
+    private static final Set<String> ACTIONS=Set.of("CREATE_INCIDENT","MOVE_INCIDENT","CONFIRM_WORKORDER","CANCEL_WORKORDER","FINISH_WORKORDER","SETTLE_WORKORDER","UPDATE_DEVICE_STATUS");
+    private static final Set<String> KINDS=Set.of("WORKORDER_QUERY","WORKORDER_REPORT","DEVICE_QUERY","CREATE_INCIDENT","MOVE_INCIDENT","CONFIRM_WORKORDER","CANCEL_WORKORDER","FINISH_WORKORDER","SETTLE_WORKORDER","UPDATE_DEVICE_STATUS");
     private static final Map<Integer,String> ORDER_STATUS=Map.of(0,"草稿",1,"已确认",2,"已完成",3,"已取消");
     public record Operation(String kind,String title,String description,String orderCode,String category,Long incidentId,
-                            String status,Long ownerId,String rootCause,String correctiveAction,String evidence,String note) {}
+                            String status,Long ownerId,String rootCause,String correctiveAction,String evidence,String note,
+                            String deviceCode,Integer deviceStatus) {
+        public Operation(String kind,String title,String description,String orderCode,String category,Long incidentId,
+                         String status,Long ownerId,String rootCause,String correctiveAction,String evidence,String note) {
+            this(kind,title,description,orderCode,category,incidentId,status,ownerId,rootCause,correctiveAction,evidence,note,null,null);
+        }
+    }
     public record Confirmation(String id,String token) {}
     public MesAgentBusinessTools(JdbcTemplate jdbc,ObjectMapper json,SecurityFrameworkService security,
                                  MesInsightWorkflow workflow,MesAssistantModelGateway models,PlatformTransactionManager manager){
@@ -45,6 +55,15 @@ public class MesAgentBusinessTools {
     private long user(){Long id=getLoginUserId();if(id==null)throw invalid("请先登录");return id;}
     private void permission(String name){if(!security.hasPermission(name))throw invalid("当前账号缺少业务权限："+name);}
     private void base(){user();permission("mes:insight:query");permission("mes:insight:chat");}
+    private Set<String> actionPermissions(String kind){
+        Set<String> names=switch(kind){
+            case "CONFIRM_WORKORDER","CANCEL_WORKORDER","FINISH_WORKORDER"->Set.of("mes:pro-work-order:query","mes:pro-work-order:update");
+            case "SETTLE_WORKORDER"->Set.of("mes:pro-work-order:query","mes:cost:query","mes:cost:settle");
+            case "UPDATE_DEVICE_STATUS"->Set.of("mes:dv-machinery:query","mes:dv-machinery:update");
+            default->Set.of("mes:insight:manage");
+        };
+        names.forEach(this::permission);return names;
+    }
     private String encode(Object value){try{return json.writeValueAsString(value);}catch(Exception ex){throw invalid("Agent资料保存失败");}}
     private Map<String,Object> decode(Object value){try{return json.readValue(value.toString(),new TypeReference<LinkedHashMap<String,Object>>(){});}catch(Exception ex){throw invalid("Agent执行资料无效");}}
     private static String text(Object value){return value==null?"":value.toString();}
@@ -54,6 +73,7 @@ public class MesAgentBusinessTools {
 
     public Map<String,Object> answer(String question,boolean allowModelPlanning,Set<String> required){
         String q=clean(question,1000),kind=detect(q);Operation operation=null;
+        if(kind==null&&MesAgentCommandIntent.isWrite(q))return map("answer","该操作尚未接入助手，请通过对应业务页面办理。","topic","scope","mode","RULES","evidence",map(),"status","OUT_OF_SCOPE","clarification",null,"suggestions",List.of(),"generatedAt",instant());
         if(kind==null&&allowModelPlanning){
             base();permission("mes:assistant:chat");required.add("mes:assistant:chat");
             try{
@@ -63,6 +83,8 @@ public class MesAgentBusinessTools {
                 String value=output.strip().replaceFirst("^```(?:json)?\\s*","").replaceFirst("\\s*```$","");
                 var node=json.readTree(value);kind=node.path("kind").asText();
                 if(!KINDS.contains(kind))return null;
+                // Financial and state changes require a deterministic user command, never a model guess.
+                if(DOMAIN_ACTIONS.contains(kind))return null;
                 // Models select a capability; only explicitly present user values can bind a business record.
                 String orderCode=node.path("orderCode").asText("");if(!orderCode.isBlank()&&!q.contains(orderCode))orderCode="";
                 Long incident=node.path("incidentId").canConvertToLong()?node.path("incidentId").longValue():null;
@@ -73,6 +95,13 @@ public class MesAgentBusinessTools {
         }
         if(kind==null)return null;
         base();
+        if(DOMAIN_ACTIONS.contains(kind)){
+            required.addAll(actionPermissions(kind));
+            String code=singleActionCode(q);
+            operation=new Operation(kind,"",q,kind.equals("UPDATE_DEVICE_STATUS")?"":code,null,null,null,null,null,null,null,q,
+                kind.equals("UPDATE_DEVICE_STATUS")?code:null,kind.equals("UPDATE_DEVICE_STATUS")?MesAgentCommandIntent.deviceStatus(q):null);
+            return response("请核对业务记录及目标操作，确认预览后执行并保存业务回执。","agent_action",map("kind","AGENT_ACTION"),map("proposal",operation));
+        }
         if(kind.equals("CREATE_INCIDENT")||kind.equals("MOVE_INCIDENT")){
             permission("mes:insight:manage");required.add("mes:insight:manage");
             if(operation==null){
@@ -96,13 +125,23 @@ public class MesAgentBusinessTools {
         return response(answer,"agent_data",evidence,Map.of());
     }
     private static String detect(String q){
+        var actions=MesAgentCommandIntent.actionKinds(q);
+        if(actions.size()>1||(!actions.isEmpty()&&MesAgentCommandIntent.hasUnsupportedActions(q)))throw invalid("一次只能执行一项业务操作，请分别发送每个操作。");
+        if(!actions.isEmpty())return actions.iterator().next();
         boolean lookup=q.matches("(?s)^(请)?(查询|查看|统计|列出|有哪些).*" );
         if(!lookup&&(q.matches("(?s).*(新建|创建|建立|登记|记录).*异常.*")||q.matches("(?s)^(请|帮我|请帮我)?跟进异常[：:].+")))return "CREATE_INCIDENT";
         if(!lookup&&q.contains("异常")&&q.matches("(?s).*(将|把|设为|标记|开始处理|关闭|重新处理|转为|改为|推进).*" )&&q.matches("(?s).*(处理中|开始处理|待验证|关闭|重新处理).*"))return "MOVE_INCIDENT";
+        if(MesAgentCommandIntent.isWrite(q))return null;
         if(q.contains("工单")&&q.matches("(?s).*(生成|制作|导出|报表|报告).*"))return "WORKORDER_REPORT";
         if(q.contains("工单")&&q.matches("(?s).*(查询|查看|清单|列表|明细|多少|有哪些|统计|进度).*" )&&!q.matches("(?s).*(风险|交期|成本|缺料|齐套).*"))return "WORKORDER_QUERY";
         if(q.contains("设备")&&q.matches("(?s).*(查询|查看|清单|列表|有哪些|多少|状态).*"))return "DEVICE_QUERY";
         return null;
+    }
+    private static String singleActionCode(String q){
+        var codes=new LinkedHashSet<String>();Matcher matcher=Pattern.compile("[A-Za-z][A-Za-z0-9_.-]*").matcher(q);
+        while(matcher.find()){String code=matcher.group();if(Set.of("BOM","EXCEL","CSV","XLSX").contains(code.toUpperCase(Locale.ROOT)))continue;codes.add(code);}
+        if(codes.size()>1)throw invalid("一次只能操作一条业务记录，请提供唯一的完整编码。");
+        return codes.isEmpty()?"":codes.iterator().next();
     }
     private static String extractCode(String q){Matcher m=Pattern.compile("[A-Za-z][A-Za-z0-9_.-]*").matcher(q);while(m.find()){String code=m.group();if(Set.of("BOM","EXCEL","CSV","XLSX").contains(code.toUpperCase(Locale.ROOT)))continue;if(code.matches(".*[0-9_.-].*")||code.matches("[A-Z]{2,}"))return code;}return "";}
     private static String category(String q){return q.contains("缺料")||q.contains("物料")?"MATERIAL":q.contains("质量")?"QUALITY":q.contains("设备")?"DEVICE":q.contains("交期")?"DELIVERY":"OTHER";}
@@ -149,7 +188,8 @@ public class MesAgentBusinessTools {
     public Map<String,Object> prepare(Operation operation){return prepare(operation,null);}
     public Map<String,Object> prepare(Operation operation,Long turnId){return tx.execute(status->prepareInside(operation,turnId));}
     private Map<String,Object> prepareInside(Operation operation,Long turnId){
-        base();permission("mes:insight:manage");if(operation==null||operation.kind()==null||!Set.of("CREATE_INCIDENT","MOVE_INCIDENT").contains(operation.kind()))throw invalid("不支持的Agent业务操作");
+        base();if(operation==null||operation.kind()==null||!ACTIONS.contains(operation.kind()))throw invalid("不支持的Agent业务操作");
+        actionPermissions(operation.kind());
         if(turnId!=null){
             var turns=jdbc.queryForList("SELECT answer_json FROM mes_insight_turn WHERE id=? AND tenant_id=? AND user_id=? FOR UPDATE",turnId,tenant(),user());if(turns.isEmpty())throw invalid("业务会话不存在或无权访问");
             Object proposal=decode(turns.get(0).get("answer_json")).get("proposal");if(!(proposal instanceof Map<?,?> proposed)||!operation.kind().equals(proposed.get("kind")))throw invalid("此轮答复不包含该业务操作");
@@ -157,25 +197,29 @@ public class MesAgentBusinessTools {
             if(!completed.isEmpty())throw invalid("此轮操作已经执行，请刷新会话查看执行回执，不要重复创建");
         }
         var payload=new LinkedHashMap<String,Object>();payload.put("kind",operation.kind());
-        long owner=operation.ownerId()==null?user():operation.ownerId();
-        if(jdbc.queryForList("SELECT id FROM system_users WHERE id=? AND tenant_id=? AND deleted=0 AND status=0",owner,tenant()).isEmpty())throw invalid("负责人不存在、已停用或不属于当前租户");
-        payload.put("ownerId",owner);
-        if(operation.kind().equals("CREATE_INCIDENT")){
-            String title=clean(operation.title(),160);if(title.isBlank())throw invalid("请填写异常标题");String category=clean(operation.category(),30);if(!Set.of("DELIVERY","MATERIAL","QUALITY","DEVICE","PROCESS","OTHER").contains(category))throw invalid("请选择有效异常分类");
-            Long order=null;String code=clean(operation.orderCode(),100);if(!code.isBlank()){var orders=jdbc.queryForList("SELECT id FROM mes_pro_work_order WHERE tenant_id=? AND code=? AND deleted=0",tenant(),code);if(orders.size()!=1)throw invalid("工单编码不存在或不唯一，请核对");order=((Number)orders.get(0).get("id")).longValue();}
-            payload.putAll(map("title",title,"description",clean(operation.description(),2000),"category",category,"orderCode",code,"workOrderId",order));
+        if(DOMAIN_ACTIONS.contains(operation.kind())){
+            payload.putAll(execution.prepare(operation.kind(),operation.orderCode(),operation.deviceCode(),operation.deviceStatus(),operation.note()));
         }else{
-            if(operation.incidentId()==null)throw invalid("请填写要处理的异常编号");
-            var rows=jdbc.queryForList("SELECT id,title,status,version,root_cause,corrective_action,evidence,due_at FROM mes_insight_incident WHERE tenant_id=? AND id=? AND deleted=0",tenant(),operation.incidentId());if(rows.isEmpty())throw invalid("异常不存在或无权访问");var current=rows.get(0);
-            if(!Set.of("IN_PROGRESS","VERIFYING","CLOSED").contains(text(operation.status())))throw invalid("目标状态无效");
-            payload.putAll(map("incidentId",operation.incidentId(),"title",current.get("title"),"fromStatus",current.get("status"),"version",current.get("version"),"status",operation.status(),
-                "rootCause",clean(operation.rootCause(),2000).isBlank()?text(current.get("root_cause")):clean(operation.rootCause(),2000),
-                "correctiveAction",clean(operation.correctiveAction(),2000).isBlank()?text(current.get("corrective_action")):clean(operation.correctiveAction(),2000),
-                "evidence",clean(operation.evidence(),2000).isBlank()?text(current.get("evidence")):clean(operation.evidence(),2000),
-                "dueAt",current.get("due_at")==null?null:current.get("due_at").toString().replace(' ','T'),"note",clean(operation.note(),2000)));
-            if(Set.of("VERIFYING","CLOSED").contains(operation.status())&&(text(payload.get("rootCause")).isBlank()||text(payload.get("correctiveAction")).isBlank()))throw invalid("进入验证或关闭必须填写真实原因和处理措施");
-            if(operation.status().equals("CLOSED")&&text(payload.get("evidence")).isBlank())throw invalid("关闭必须填写真实验证通过证据");
-            if(text(payload.get("note")).isBlank())throw invalid("请填写操作说明");
+            long owner=operation.ownerId()==null?user():operation.ownerId();
+            if(jdbc.queryForList("SELECT id FROM system_users WHERE id=? AND tenant_id=? AND deleted=0 AND status=0",owner,tenant()).isEmpty())throw invalid("负责人不存在、已停用或不属于当前租户");
+            payload.put("ownerId",owner);
+            if(operation.kind().equals("CREATE_INCIDENT")){
+                String title=clean(operation.title(),160);if(title.isBlank())throw invalid("请填写异常标题");String category=clean(operation.category(),30);if(!Set.of("DELIVERY","MATERIAL","QUALITY","DEVICE","PROCESS","OTHER").contains(category))throw invalid("请选择有效异常分类");
+                Long order=null;String code=clean(operation.orderCode(),100);if(!code.isBlank()){var orders=jdbc.queryForList("SELECT id FROM mes_pro_work_order WHERE tenant_id=? AND code=? AND deleted=0",tenant(),code);if(orders.size()!=1)throw invalid("工单编码不存在或不唯一，请核对");order=((Number)orders.get(0).get("id")).longValue();}
+                payload.putAll(map("title",title,"description",clean(operation.description(),2000),"category",category,"orderCode",code,"workOrderId",order));
+            }else{
+                if(operation.incidentId()==null)throw invalid("请填写要处理的异常编号");
+                var rows=jdbc.queryForList("SELECT id,title,status,version,root_cause,corrective_action,evidence,due_at FROM mes_insight_incident WHERE tenant_id=? AND id=? AND deleted=0",tenant(),operation.incidentId());if(rows.isEmpty())throw invalid("异常不存在或无权访问");var current=rows.get(0);
+                if(!Set.of("IN_PROGRESS","VERIFYING","CLOSED").contains(text(operation.status())))throw invalid("目标状态无效");
+                payload.putAll(map("incidentId",operation.incidentId(),"title",current.get("title"),"fromStatus",current.get("status"),"version",current.get("version"),"status",operation.status(),
+                    "rootCause",clean(operation.rootCause(),2000).isBlank()?text(current.get("root_cause")):clean(operation.rootCause(),2000),
+                    "correctiveAction",clean(operation.correctiveAction(),2000).isBlank()?text(current.get("corrective_action")):clean(operation.correctiveAction(),2000),
+                    "evidence",clean(operation.evidence(),2000).isBlank()?text(current.get("evidence")):clean(operation.evidence(),2000),
+                    "dueAt",current.get("due_at")==null?null:current.get("due_at").toString().replace(' ','T'),"note",clean(operation.note(),2000)));
+                if(Set.of("VERIFYING","CLOSED").contains(operation.status())&&(text(payload.get("rootCause")).isBlank()||text(payload.get("correctiveAction")).isBlank()))throw invalid("进入验证或关闭必须填写真实原因和处理措施");
+                if(operation.status().equals("CLOSED")&&text(payload.get("evidence")).isBlank())throw invalid("关闭必须填写真实验证通过证据");
+                if(text(payload.get("note")).isBlank())throw invalid("请填写操作说明");
+            }
         }
         String id=UUID.randomUUID().toString(),token=UUID.randomUUID().toString();LocalDateTime expires=LocalDateTime.now(ZONE).plusMinutes(15);
         if(turnId!=null)jdbc.update("UPDATE mes_agent_action SET status='SUPERSEDED' WHERE source_turn_id=? AND tenant_id=? AND user_id=? AND status='PENDING'",turnId,tenant(),user());
@@ -183,24 +227,28 @@ public class MesAgentBusinessTools {
         return map("id",id,"token",token,"payload",payload,"expiresAt",expires.toString(),"status","PENDING");
     }
     public Map<String,Object> execute(Confirmation confirmation){
-        base();permission("mes:insight:manage");if(confirmation==null||confirmation.id()==null||confirmation.token()==null)throw invalid("缺少执行确认凭据");
+        base();if(confirmation==null||confirmation.id()==null||confirmation.token()==null)throw invalid("缺少执行确认凭据");
         return tx.execute(status->{
             var source=jdbc.queryForList("SELECT source_turn_id FROM mes_agent_action WHERE id=? AND tenant_id=? AND user_id=?",confirmation.id(),tenant(),user());
             Long sourceTurn=source.isEmpty()||source.get(0).get("source_turn_id")==null?null:((Number)source.get(0).get("source_turn_id")).longValue();
             if(sourceTurn!=null&&jdbc.queryForList("SELECT id FROM mes_insight_turn WHERE id=? AND tenant_id=? AND user_id=? FOR UPDATE",sourceTurn,tenant(),user()).isEmpty())throw invalid("业务会话已删除，不能再执行");
             var rows=jdbc.queryForList("SELECT * FROM mes_agent_action WHERE id=? AND tenant_id=? AND user_id=? FOR UPDATE",confirmation.id(),tenant(),user());if(rows.isEmpty())throw invalid("操作预览不存在或无权访问");var action=rows.get(0);
+            actionPermissions(text(action.get("kind")));
             if(!MessageDigest.isEqual(hash(confirmation.token()).getBytes(StandardCharsets.US_ASCII),text(action.get("token_hash")).getBytes(StandardCharsets.US_ASCII)))throw invalid("执行凭据无效");
             if("SUCCEEDED".equals(action.get("status")))return decode(action.get("result_json"));
             if(!"PENDING".equals(action.get("status")))throw invalid("预览已被新的核对内容替代，请使用最新执行预览");
             LocalDateTime expires=action.get("expires_at") instanceof Timestamp t?t.toLocalDateTime():(LocalDateTime)action.get("expires_at");if(!expires.isAfter(LocalDateTime.now(ZONE)))throw invalid("执行预览已过期，请重新核对内容");
-            var p=decode(action.get("payload_json"));long id;
-            if("CREATE_INCIDENT".equals(action.get("kind"))){
+            var p=decode(action.get("payload_json"));long id;Map<String,Object> businessResult=Map.of();
+            if(DOMAIN_ACTIONS.contains(text(action.get("kind")))){
+                businessResult=execution.execute(p);id=((Number)businessResult.get("businessId")).longValue();
+            }else if("CREATE_INCIDENT".equals(action.get("kind"))){
                 Long order=p.get("workOrderId")==null?null:((Number)p.get("workOrderId")).longValue();
                 id=workflow.create(new IncidentCreate(text(p.get("title")),text(p.get("category")),order,null,null,((Number)p.get("ownerId")).longValue(),null,text(p.get("description"))));
             }else if("MOVE_INCIDENT".equals(action.get("kind"))){
                 id=((Number)p.get("incidentId")).longValue();workflow.move(new IncidentMove(id,((Number)p.get("version")).intValue(),text(p.get("status")),((Number)p.get("ownerId")).longValue(),p.get("dueAt")==null?null:LocalDateTime.parse(text(p.get("dueAt"))),text(p.get("rootCause")),text(p.get("correctiveAction")),text(p.get("evidence")),text(p.get("note"))));
             }else throw invalid("不支持的执行操作");
             var result=map("id",confirmation.id(),"status","SUCCEEDED","kind",action.get("kind"),"businessId",id,"message","业务操作已成功执行，记录已保存到异常闭环","executedAt",instant());
+            result.putAll(businessResult);
             if(sourceTurn!=null){var turn=jdbc.queryForMap("SELECT answer_json FROM mes_insight_turn WHERE id=? AND tenant_id=? AND user_id=?",sourceTurn,tenant(),user());var answer=decode(turn.get("answer_json"));answer.put("executionReceipt",result);jdbc.update("UPDATE mes_insight_turn SET answer_json=? WHERE id=? AND tenant_id=? AND user_id=?",encode(answer),sourceTurn,tenant(),user());}
             String resultJson=encode(result);jdbc.update("UPDATE mes_agent_action SET status='SUCCEEDED',result_json=?,executed_at=CURRENT_TIMESTAMP WHERE id=? AND tenant_id=? AND user_id=?",resultJson,confirmation.id(),tenant(),user());return decode(resultJson);
         });

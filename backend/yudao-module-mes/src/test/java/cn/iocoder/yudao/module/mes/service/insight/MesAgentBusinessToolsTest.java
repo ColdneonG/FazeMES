@@ -21,6 +21,7 @@ import org.springframework.transaction.annotation.AnnotationTransactionAttribute
 import org.springframework.mock.web.MockHttpServletRequest;
 import org.springframework.mock.web.MockHttpServletResponse;
 import org.springframework.security.core.context.SecurityContextHolder;
+import org.springframework.test.util.ReflectionTestUtils;
 import java.util.*;
 import java.util.concurrent.*;
 import static org.junit.jupiter.api.Assertions.*;
@@ -29,6 +30,7 @@ import static org.mockito.ArgumentMatchers.*;
 
 class MesAgentBusinessToolsTest {
     JdbcTemplate jdbc;SecurityFrameworkService security;MesAgentBusinessTools tools;MesInsightWorkflow workflow;
+    MesAssistantModelGateway models;MesAgentExecutionService execution;
     @BeforeEach void setup(){
         var ds=new DriverManagerDataSource("jdbc:h2:mem:agent_"+UUID.randomUUID()+";MODE=MySQL;DATABASE_TO_LOWER=TRUE;DB_CLOSE_DELAY=-1","sa","");
         new ResourceDatabasePopulator(new ClassPathResource("sql/production_insight.sql"),new ClassPathResource("sql/insight_business.sql"),new FileSystemResource("../../database/migrations/20261024_agent_business_actions.sql")).execute(ds);
@@ -42,13 +44,64 @@ class MesAgentBusinessToolsTest {
         jdbc.update("INSERT INTO mes_dv_machinery VALUES(1,1,'DV-001','设备',2,0),(2,2,'PRIVATE','foreign',1,0)");
         security=mock(SecurityFrameworkService.class);when(security.hasPermission(anyString())).thenReturn(true);
         var proxy=new ProxyFactory(new MesInsightWorkflow(jdbc));proxy.addAdvice(new TransactionInterceptor(manager,new AnnotationTransactionAttributeSource()));workflow=(MesInsightWorkflow)proxy.getProxy();
-        tools=new MesAgentBusinessTools(jdbc,new ObjectMapper(),security,workflow,mock(MesAssistantModelGateway.class),manager);login(1,10);
+        models=mock(MesAssistantModelGateway.class);execution=mock(MesAgentExecutionService.class);
+        tools=new MesAgentBusinessTools(jdbc,new ObjectMapper(),security,workflow,models,manager);
+        ReflectionTestUtils.setField(tools,"execution",execution);login(1,10);
     }
     private static void login(long tenant,long user){TenantContextHolder.setTenantId(tenant);SecurityFrameworkUtils.setLoginUser(new LoginUser().setId(user).setTenantId(tenant).setUserType(2),new MockHttpServletRequest());}
     @AfterEach void cleanup(){TenantContextHolder.clear();SecurityContextHolder.clearContext();jdbc.execute("DROP ALL OBJECTS");}
     private MesAgentBusinessTools.Operation create(String code){return new MesAgentBusinessTools.Operation("CREATE_INCIDENT","真实异常","测试描述",code,"MATERIAL",null,null,10L,null,null,null,"人工确认");}
     private MesAgentBusinessTools.Confirmation confirm(Map<String,Object> preview){return new MesAgentBusinessTools.Confirmation(preview.get("id").toString(),preview.get("token").toString());}
     @SuppressWarnings("unchecked") private Map<String,Object> evidence(Map<String,Object> answer){return (Map<String,Object>)answer.get("evidence");}
+    @Test void executionCommandsProduceSpecificProposalsWithoutQueryOrModelFallback(){
+        for(boolean useModel:List.of(false,true))for(String[] sample:List.of(
+                new String[]{"确认工单 WO-001","CONFIRM_WORKORDER"},new String[]{"取消工单 WO-001","CANCEL_WORKORDER"},
+                new String[]{"完成工单 WO-001","FINISH_WORKORDER"},new String[]{"结算工单 WO-001 的实际成本","SETTLE_WORKORDER"},
+                new String[]{"把设备 DV-001 的状态改成维护中","UPDATE_DEVICE_STATUS"})){
+            var required=new HashSet<String>();var answer=tools.answer(sample[0],useModel,required);
+            assertEquals("agent_action",answer.get("topic"),sample[0]);
+            var proposal=(MesAgentBusinessTools.Operation)answer.get("proposal");assertEquals(sample[1],proposal.kind());
+            if(proposal.kind().equals("UPDATE_DEVICE_STATUS")){assertEquals("DV-001",proposal.deviceCode());assertEquals(3,proposal.deviceStatus());}
+            else assertEquals("WO-001",proposal.orderCode());
+            assertFalse(required.contains("mes:insight:manage"));assertFalse(answer.containsKey("executionReceipt"));
+        }
+        verifyNoInteractions(models,execution);assertEquals(0,jdbc.queryForObject("SELECT COUNT(*) FROM mes_agent_action",Integer.class));
+        assertEquals(1,jdbc.queryForObject("SELECT status FROM mes_pro_work_order WHERE id=100",Integer.class));
+    }
+    @Test void historicalStatusQueriesStayReadOnlyAndMixedCommandsCannotPartiallyExecute(){
+        for(String q:List.of("查询已确认工单列表","查询已取消工单列表","查询未完成工单列表","查看工单 WO-001 是否完成","查看设备维护状态")){
+            var answer=tools.answer(q,false,new HashSet<>());assertEquals("agent_data",answer.get("topic"),q);assertFalse(answer.containsKey("proposal"));
+        }
+        for(String q:List.of("确认工单 WO-001 并完成工单 WO-001","修改工单 WO-001 的数量后确认工单 WO-001","确认工单 WO-001 和 WO-002"))
+            assertThrows(ServiceException.class,()->tools.answer(q,true,new HashSet<>()),q);
+        verifyNoInteractions(models,execution);
+    }
+    @Test void domainExecutionUsesOwnedPreviewPersistsReceiptAndRetriesOnlyOnce(){
+        var manager=new DataSourceTransactionManager(Objects.requireNonNull(jdbc.getDataSource()));
+        var store=new MesInsightConversationStore(jdbc,new ObjectMapper(),security,manager,mock(MesInsightInventoryQuery.class));
+        when(security.hasPermission("mes:insight:manage")).thenReturn(false);
+        String question="完成工单 WO-001";var required=new HashSet<String>();var answer=tools.answer(question,false,required);
+        var saved=store.finish(store.claim(new Question(question,false)),question,Map.of(),new LinkedHashMap<>(),answer,required);
+        long turn=((Number)saved.get("turnId")).longValue();var proposal=(MesAgentBusinessTools.Operation)answer.get("proposal");
+        when(execution.prepare(eq("FINISH_WORKORDER"),eq("WO-001"),isNull(),isNull(),anyString())).thenReturn(Map.of("kind","FINISH_WORKORDER","workOrderId",100,"orderCode","WO-001"));
+        when(execution.execute(anyMap())).thenAnswer(call->{jdbc.update("UPDATE mes_pro_work_order SET status=2 WHERE id=100");return Map.of("businessId",100,"businessCode","WO-001","message","工单 WO-001 已完成。");});
+        var preview=tools.prepare(proposal,turn);assertEquals(1,jdbc.queryForObject("SELECT status FROM mes_pro_work_order WHERE id=100",Integer.class));
+        var receipt=tools.execute(confirm(preview));assertEquals(2,jdbc.queryForObject("SELECT status FROM mes_pro_work_order WHERE id=100",Integer.class));
+        assertEquals("WO-001",receipt.get("businessCode"));assertEquals(receipt,tools.execute(confirm(preview)));verify(execution,times(1)).execute(anyMap());
+        assertTrue(jdbc.queryForObject("SELECT answer_json FROM mes_insight_turn WHERE id=?",String.class,turn).contains("executionReceipt"));
+        assertThrows(ServiceException.class,()->tools.prepare(proposal,turn));
+        when(security.hasPermission("mes:pro-work-order:update")).thenReturn(false);assertThrows(ServiceException.class,()->tools.execute(confirm(preview)));
+    }
+    @Test void failedDomainExecutionRollsBackBusinessAndNeverStoresSuccess(){
+        var proposal=(MesAgentBusinessTools.Operation)tools.answer("完成工单 WO-001",false,new HashSet<>()).get("proposal");
+        when(execution.prepare(anyString(),anyString(),isNull(),isNull(),anyString())).thenReturn(Map.of("kind","FINISH_WORKORDER","workOrderId",100));
+        var preview=tools.prepare(proposal);
+        when(execution.execute(anyMap())).thenAnswer(call->{jdbc.update("UPDATE mes_pro_work_order SET status=2 WHERE id=100");throw new IllegalStateException("business failure");});
+        assertThrows(IllegalStateException.class,()->tools.execute(confirm(preview)));
+        assertEquals(1,jdbc.queryForObject("SELECT status FROM mes_pro_work_order WHERE id=100",Integer.class));
+        assertEquals("PENDING",jdbc.queryForObject("SELECT status FROM mes_agent_action",String.class));
+        assertNull(jdbc.queryForObject("SELECT result_json FROM mes_agent_action",String.class));
+    }
     @Test void reportReadsActualTenantDataAndRequiresExportPermission(){
         var required=new HashSet<String>();var answer=tools.answer("生成全部工单报表",false,required);var rows=(List<?>)evidence(answer).get("list");
         assertEquals(1,rows.size());assertTrue(rows.toString().contains("10.000001"));assertFalse(rows.toString().contains("PRIVATE"));assertTrue(required.contains("mes:pro-work-order:export"));

@@ -2,7 +2,7 @@
   <section class="business-assistant">
     <p class="note">
       可查询工单、设备、库存、单据、质量、成本与生产风险，生成工单 Excel 报表。
-      可创建和推进异常闭环：核对执行预览并确认后真实写入业务，保留操作记录。
+      可确认、取消或完成工单、结算工单成本、修改设备状态及处理异常：核对预览并确认后执行，保留操作记录。
     </p>
     <div class="conversation-controls">
       <el-select
@@ -64,9 +64,7 @@
       <MarkdownView
         class="answer-text"
         :content="
-          turn.answer.executionReceipt
-            ? `业务操作已执行，异常编号 #${turn.answer.executionReceipt.businessId}。`
-            : turn.answer.answer
+          turn.answer.executionReceipt ? turn.answer.executionReceipt.message : turn.answer.answer
         "
       />
       <p v-if="turn.answer.modelWarning" class="note">{{ turn.answer.modelWarning }}</p>
@@ -125,7 +123,7 @@
       maxlength="1000"
       show-word-limit
       :disabled="!canChat || sending || historyLoading || olderLoading || !!recoverId"
-      placeholder="例如：生成本月未完成工单报表；查询设备状态；新建异常：工单缺料，需要跟进。"
+      placeholder="例如：确认工单 WO-001；结算工单 WO-001 的实际成本；把设备 DV-001 的状态改成维护中。请使用实际编码。"
     />
     <div class="conversation-controls">
       <el-checkbox v-model="useModel" :disabled="!canModel || sending">
@@ -413,7 +411,13 @@ watch(
   () => [
     canChat.value,
     checkPermi(['mes:wm-material-stock:query']),
-    checkPermi(['mes:cost:query'])
+    checkPermi(['mes:cost:query']),
+    checkPermi(['mes:cost:settle']),
+    checkPermi(['mes:pro-work-order:query']),
+    checkPermi(['mes:pro-work-order:update']),
+    checkPermi(['mes:dv-machinery:query']),
+    checkPermi(['mes:dv-machinery:update']),
+    checkPermi(['mes:insight:manage'])
   ],
   (next, previous) => {
     if (previous?.some((allowed, index) => allowed && !next[index])) handleFailure()
