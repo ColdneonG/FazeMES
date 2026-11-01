@@ -2,7 +2,7 @@
   <section class="business-assistant">
     <p class="note">
       可查询工单、设备、库存、单据、质量、成本与生产风险，生成工单 Excel 报表。
-      可确认、取消或完成工单、结算工单成本、修改设备状态及处理异常：核对预览并确认后执行，保留操作记录。
+      可修改参考采购单价、确认或取消及完成工单、结算工单成本、修改设备状态和处理异常：核对预览并确认后执行，保留操作记录。
     </p>
     <div class="conversation-controls">
       <el-select
@@ -123,7 +123,7 @@
       maxlength="1000"
       show-word-limit
       :disabled="!canChat || sending || historyLoading || olderLoading || !!recoverId"
-      placeholder="例如：确认工单 WO-001；结算工单 WO-001 的实际成本；把设备 DV-001 的状态改成维护中。请使用实际编码。"
+      placeholder="例如：修改Broky电机采购模块的采购单价为64元；确认工单 WO-001；把设备 DV-001 的状态改成维护中。请使用实际物料或编码。"
     />
     <div class="conversation-controls">
       <el-checkbox v-model="useModel" :disabled="!canModel || sending">
@@ -412,6 +412,7 @@ watch(
     canChat.value,
     checkPermi(['mes:wm-material-stock:query']),
     checkPermi(['mes:cost:query']),
+    checkPermi(['mes:cost:update']),
     checkPermi(['mes:cost:settle']),
     checkPermi(['mes:pro-work-order:query']),
     checkPermi(['mes:pro-work-order:update']),

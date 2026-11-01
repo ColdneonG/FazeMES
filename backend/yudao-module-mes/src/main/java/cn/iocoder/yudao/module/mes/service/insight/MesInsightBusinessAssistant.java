@@ -20,7 +20,7 @@ public class MesInsightBusinessAssistant {
     private static final Pattern MONTH=Pattern.compile("([0-9]{1,2}|[一二三四五六七八九十]{1,3})月(?:份)?");
     private static final Pattern CODE=Pattern.compile("(?<![A-Za-z0-9_.%\\-])([A-Za-z][A-Za-z0-9_.%\\-]*)(?![A-Za-z0-9_.%\\-])");
     private static final Pattern INVENTORY=Pattern.compile("库存|台账|收发存|入库出库|入库和出库|进出库|原材料.*(入库|出库)|原料.*(入库|出库)");
-    private static final Pattern LEGACY=Pattern.compile("成本|价格|售价|定价|预算|BOM|质量|不良|合格|缺陷|瓶颈|等待|流程|工序|异常|安灯|处置|负责人|风险|交期|延期|延误|工单|齐套|缺料|排产|生产概况",Pattern.CASE_INSENSITIVE);
+    private static final Pattern LEGACY=Pattern.compile("成本|价格|采购价|单价|售价|定价|预算|BOM|质量|不良|合格|缺陷|瓶颈|等待|流程|工序|异常|安灯|处置|负责人|风险|交期|延期|延误|工单|齐套|缺料|排产|生产概况",Pattern.CASE_INSENSITIVE);
     private final JdbcTemplate jdbc;
     private final SecurityFrameworkService security;
     private final MesInsightConversationStore store;
@@ -85,7 +85,7 @@ public class MesInsightBusinessAssistant {
                     catch(MesInsightInventoryQuery.ClarificationException need){required.addAll(need.getRequiredPermissions());answer=clarify(need.getReason(),need.getPrompt(),need.getChoices(),slots,q);}
                 }
             }else if(intent.equals("legacy")){
-                if(Pattern.compile("成本|价格|售价|定价|预算|BOM",Pattern.CASE_INSENSITIVE).matcher(q).find())required.add("mes:cost:query");
+                if(Pattern.compile("成本|价格|采购价|单价|售价|定价|预算|BOM",Pattern.CASE_INSENSITIVE).matcher(q).find())required.add("mes:cost:query");
                 store.require(required);
                 if(req.useModel()&&!security.hasPermission("mes:assistant:chat"))throw invalid("调用模型还需要AI助手会话权限");
                 answer=new LinkedHashMap<>(legacy.ask(new Question(q,false)));answer.put("status","ANSWERED");answer.put("clarification",null);answer.put("generatedAt",stamp());

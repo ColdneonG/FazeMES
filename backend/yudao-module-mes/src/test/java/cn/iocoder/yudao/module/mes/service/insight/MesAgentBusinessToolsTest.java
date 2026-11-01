@@ -57,16 +57,40 @@ class MesAgentBusinessToolsTest {
         for(boolean useModel:List.of(false,true))for(String[] sample:List.of(
                 new String[]{"确认工单 WO-001","CONFIRM_WORKORDER"},new String[]{"取消工单 WO-001","CANCEL_WORKORDER"},
                 new String[]{"完成工单 WO-001","FINISH_WORKORDER"},new String[]{"结算工单 WO-001 的实际成本","SETTLE_WORKORDER"},
-                new String[]{"把设备 DV-001 的状态改成维护中","UPDATE_DEVICE_STATUS"})){
+                new String[]{"把设备 DV-001 的状态改成维护中","UPDATE_DEVICE_STATUS"},
+                new String[]{"修改Broky电机采购模块的采购单价为64元","UPDATE_PURCHASE_PRICE"})){
             var required=new HashSet<String>();var answer=tools.answer(sample[0],useModel,required);
             assertEquals("agent_action",answer.get("topic"),sample[0]);
             var proposal=(MesAgentBusinessTools.Operation)answer.get("proposal");assertEquals(sample[1],proposal.kind());
             if(proposal.kind().equals("UPDATE_DEVICE_STATUS")){assertEquals("DV-001",proposal.deviceCode());assertEquals(3,proposal.deviceStatus());}
+            else if(proposal.kind().equals("UPDATE_PURCHASE_PRICE")){assertEquals("Broky电机采购模块",proposal.itemName());assertEquals("64",proposal.purchasePrice());}
             else assertEquals("WO-001",proposal.orderCode());
             assertFalse(required.contains("mes:insight:manage"));assertFalse(answer.containsKey("executionReceipt"));
         }
         verifyNoInteractions(models,execution);assertEquals(0,jdbc.queryForObject("SELECT COUNT(*) FROM mes_agent_action",Integer.class));
         assertEquals(1,jdbc.queryForObject("SELECT status FROM mes_pro_work_order WHERE id=100",Integer.class));
+    }
+    @Test void purchasePriceFlowsThroughOwnedReviewAndPersistsAnIdempotentReceiptWithExactDecimalText(){
+        var manager=new DataSourceTransactionManager(Objects.requireNonNull(jdbc.getDataSource()));
+        var store=new MesInsightConversationStore(jdbc,new ObjectMapper(),security,manager,mock(MesInsightInventoryQuery.class));
+        when(security.hasPermission("mes:insight:manage")).thenReturn(false);
+        String question="把BROKY-R16的参考采购单价改为999999999999.123456元";
+        var required=new HashSet<String>();var answer=tools.answer(question,true,required);
+        assertEquals(Set.of("mes:cost:query","mes:cost:update"),required);
+        var saved=store.finish(store.claim(new Question(question,false)),question,Map.of(),new LinkedHashMap<>(),answer,required);
+        long turn=((Number)saved.get("turnId")).longValue();
+        var proposal=(MesAgentBusinessTools.Operation)answer.get("proposal");
+        assertEquals("BROKY-R16",proposal.itemCode());assertEquals("999999999999.123456",proposal.purchasePrice());
+        when(execution.preparePurchasePrice(eq("BROKY-R16"),nullable(String.class),eq("999999999999.123456"),eq(question)))
+            .thenReturn(Map.of("kind","UPDATE_PURCHASE_PRICE","itemId",16,"itemCode","BROKY-R16","purchasePrice","999999999999.123456","priceVersion",1));
+        when(execution.execute(anyMap())).thenReturn(Map.of("businessId",16,"businessCode","BROKY-R16","message","参考采购单价已修改","priceVersion",2));
+        var preview=tools.prepare(proposal,turn);verify(execution,never()).execute(anyMap());
+        assertTrue(jdbc.queryForObject("SELECT payload_json FROM mes_agent_action WHERE id=?",String.class,preview.get("id")).contains("999999999999.123456"));
+        var receipt=tools.execute(confirm(preview));assertEquals("UPDATE_PURCHASE_PRICE",receipt.get("kind"));assertEquals(2,receipt.get("priceVersion"));
+        assertEquals(receipt,tools.execute(confirm(preview)));verify(execution,times(1)).execute(anyMap());
+        assertTrue(jdbc.queryForObject("SELECT answer_json FROM mes_insight_turn WHERE id=?",String.class,turn).contains("executionReceipt"));
+        when(security.hasPermission("mes:cost:update")).thenReturn(false);assertThrows(ServiceException.class,()->tools.execute(confirm(preview)));
+        verifyNoInteractions(models);
     }
     @Test void historicalStatusQueriesStayReadOnlyAndMixedCommandsCannotPartiallyExecute(){
         for(String q:List.of("查询已确认工单列表","查询已取消工单列表","查询未完成工单列表","查看工单 WO-001 是否完成","查看设备维护状态")){

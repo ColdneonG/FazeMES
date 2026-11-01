@@ -57,7 +57,7 @@
         :title="
           receipt
             ? '本次业务操作已执行，执行回执已保存。'
-            : '请核对操作类型、业务记录和目标状态，再确认执行。'
+            : '请核对操作类型、业务记录和变更内容，再确认执行。'
         "
         :type="receipt ? 'success' : 'info'"
         :closable="false"
@@ -145,6 +145,23 @@
             </el-select>
           </el-form-item>
         </template>
+        <template v-else-if="form.kind === 'UPDATE_PURCHASE_PRICE'">
+          <p class="agent-note">物料编码和名称至少填写一项；执行预览会核对具体物料。</p>
+          <el-form-item label="物料编码"
+            ><el-input v-model="form.itemCode" maxlength="100"
+          /></el-form-item>
+          <el-form-item label="物料名称"
+            ><el-input v-model="form.itemName" maxlength="255"
+          /></el-form-item>
+          <el-form-item label="参考采购单价（人民币，不含税）" required>
+            <el-input
+              v-model="form.purchasePrice"
+              inputmode="decimal"
+              maxlength="19"
+              placeholder="非负数，最多 6 位小数"
+            />
+          </el-form-item>
+        </template>
         <template v-else>
           <el-form-item label="工单编码" required
             ><el-input v-model="form.orderCode" maxlength="100"
@@ -213,6 +230,7 @@ import { InsightApi } from '@/api/mes/insight'
 import { checkPermi } from '@/utils/permission'
 import download from '@/utils/download'
 import { openCostCenter } from '@/views/mes/cost/navigation'
+import { decimalRule } from '@/views/mes/cost/format'
 const props = defineProps<{ answer: BusinessAnswer }>()
 const emit = defineEmits<{ failure: [error: unknown]; executed: [receipt: AgentReceipt] }>()
 const router = useRouter()
@@ -235,7 +253,8 @@ const operationPermissions: Record<AgentOperation['kind'], string[]> = {
   CANCEL_WORKORDER: ['mes:pro-work-order:query', 'mes:pro-work-order:update'],
   FINISH_WORKORDER: ['mes:pro-work-order:query', 'mes:pro-work-order:update'],
   SETTLE_WORKORDER: ['mes:pro-work-order:query', 'mes:cost:query', 'mes:cost:settle'],
-  UPDATE_DEVICE_STATUS: ['mes:dv-machinery:query', 'mes:dv-machinery:update']
+  UPDATE_DEVICE_STATUS: ['mes:dv-machinery:query', 'mes:dv-machinery:update'],
+  UPDATE_PURCHASE_PRICE: ['mes:cost:query', 'mes:cost:update']
 }
 const operationKind = computed(
   () => props.answer.proposal?.kind || receipt.value?.kind || form.kind
@@ -252,23 +271,27 @@ const operationLabels: Record<AgentOperation['kind'], string> = {
   CANCEL_WORKORDER: '取消工单',
   FINISH_WORKORDER: '完成工单',
   SETTLE_WORKORDER: '结算工单实际成本',
-  UPDATE_DEVICE_STATUS: '修改设备状态'
+  UPDATE_DEVICE_STATUS: '修改设备状态',
+  UPDATE_PURCHASE_PRICE: '修改物料参考采购单价'
 }
+const purchasePriceRule = decimalRule(12, 6, true)
 const deviceStates: Record<number, string> = { 1: '停机', 2: '生产中', 3: '维护中' }
 const receiptLinkLabel = computed(() =>
   operationKind.value === 'UPDATE_DEVICE_STATUS'
     ? '查看设备台账'
-    : operationKind.value === 'SETTLE_WORKORDER'
-      ? '查看工单成本'
-      : operationKind.value.endsWith('WORKORDER')
-        ? '查看生产工单'
-        : '查看异常闭环记录'
+    : operationKind.value === 'UPDATE_PURCHASE_PRICE'
+      ? '查看物料价格与成本'
+      : operationKind.value === 'SETTLE_WORKORDER'
+        ? '查看工单成本'
+        : operationKind.value.endsWith('WORKORDER')
+          ? '查看生产工单'
+          : '查看异常闭环记录'
 )
 const canOpenReceipt = computed(() => {
   const permission =
     operationKind.value === 'UPDATE_DEVICE_STATUS'
       ? 'mes:dv-machinery:query'
-      : operationKind.value === 'SETTLE_WORKORDER'
+      : ['SETTLE_WORKORDER', 'UPDATE_PURCHASE_PRICE'].includes(operationKind.value)
         ? 'mes:cost:query'
         : operationKind.value.endsWith('WORKORDER')
           ? 'mes:pro-work-order:query'
@@ -311,7 +334,15 @@ const labels: Record<string, string> = {
   actualOverheadCost: '实际制造费用（元）',
   actualTotalCost: '实际总成本（元，不含税）',
   actualUnitCost: '实际单位成本（元）',
-  producedQuantity: '完工数量'
+  producedQuantity: '完工数量',
+  itemCode: '物料编码',
+  itemName: '物料名称',
+  oldPurchasePrice: '原参考采购单价（元）',
+  purchasePrice: '新参考采购单价（元）',
+  priceVersion: '当前价格版本',
+  newPriceVersion: '保存后价格版本',
+  currency: '币种',
+  taxBasis: '计税口径'
 }
 const reviewFields = computed(() =>
   Object.entries(preview.value?.payload || {})
@@ -319,7 +350,8 @@ const reviewFields = computed(() =>
       const payload = preview.value?.payload || {}
       return (
         labels[key] &&
-        value != null &&
+        (value != null ||
+          (key === 'oldPurchasePrice' && payload.kind === 'UPDATE_PURCHASE_PRICE')) &&
         value !== '' &&
         !(key === 'fromStatus' && payload.fromStatusName) &&
         !(key === 'status' && payload.statusName)
@@ -329,15 +361,21 @@ const reviewFields = computed(() =>
       key,
       label: labels[key],
       value:
-        key === 'kind'
-          ? operationLabels[value as AgentOperation['kind']] || String(value)
-          : key === 'ownerId'
-            ? owners.value.find((item) => item.id === value)?.name || value
-            : key === 'category'
-              ? categories[String(value)] || String(value)
-              : value === 'OPEN'
-                ? '待处理'
-                : states[String(value)] || String(value)
+        key === 'oldPurchasePrice' && value == null
+          ? '未设置'
+          : key === 'kind'
+            ? operationLabels[value as AgentOperation['kind']] || String(value)
+            : key === 'ownerId'
+              ? owners.value.find((item) => item.id === value)?.name || value
+              : key === 'currency' && value === 'CNY'
+                ? '人民币（CNY）'
+                : key === 'taxBasis' && value === 'EXCLUSIVE'
+                  ? '不含税'
+                  : key === 'category'
+                    ? categories[String(value)] || String(value)
+                    : value === 'OPEN'
+                      ? '待处理'
+                      : states[String(value)] || String(value)
     }))
 )
 watch(
@@ -387,8 +425,18 @@ async function openReview() {
 }
 async function prepare() {
   if (preparing.value || !canExecute.value) return
-  preparing.value = true
   error.value = ''
+  if (form.kind === 'UPDATE_PURCHASE_PRICE') {
+    if (typeof form.purchasePrice !== 'string') {
+      error.value = '请填写参考采购单价，使用非负十进制数，最多 6 位小数。'
+      return
+    }
+    purchasePriceRule.validator(undefined, form.purchasePrice, (problem) => {
+      if (problem) error.value = problem.message
+    })
+    if (error.value) return
+  }
+  preparing.value = true
   try {
     preview.value = await AgentApi.prepare({ ...form }, props.answer.turnId)
   } catch (cause) {
@@ -422,7 +470,9 @@ async function execute() {
 }
 async function openReceipt() {
   if (!receipt.value || !canOpenReceipt.value) return
-  if (operationKind.value === 'SETTLE_WORKORDER') {
+  if (operationKind.value === 'UPDATE_PURCHASE_PRICE') {
+    await openCostCenter(router, { itemId: receipt.value.businessId })
+  } else if (operationKind.value === 'SETTLE_WORKORDER') {
     await openCostCenter(router, { workorderId: receipt.value.businessId })
   } else if (operationKind.value === 'UPDATE_DEVICE_STATUS') {
     await router.push({ name: 'MesDvMachinery' })

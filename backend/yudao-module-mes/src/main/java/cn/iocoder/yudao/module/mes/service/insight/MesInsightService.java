@@ -247,7 +247,7 @@ public class MesInsightService {
     public Map<String,Object> ask(Question req) {
         Map<String,Object> result; String answer,topic;
         String q=req.question();
-        if(java.util.regex.Pattern.compile("成本|价格|售价|定价|预算|BOM", java.util.regex.Pattern.CASE_INSENSITIVE).matcher(q).find()) { result=costQuery.query(q); topic="cost"; answer=MesInsightCostQuery.answer(result); }
+        if(java.util.regex.Pattern.compile("成本|价格|采购价|单价|售价|定价|预算|BOM", java.util.regex.Pattern.CASE_INSENSITIVE).matcher(q).find()) { result=costQuery.query(q); topic="cost"; answer=MesInsightCostQuery.answer(result); }
         else if(q.matches(".*(质量|不良|合格|缺陷).*")) { result=quality(30,30); topic="quality"; answer="已查询近30天的完成报工质量关联。共"+result.get("records")+"条有效报工；差异按同产品基线比较，需结合样本和现场验证。"; }
         else if(q.matches(".*(瓶颈|等待|流程|工序).*")) { result=flow(30); topic="flow"; answer="已查询近30天的任务与报工路径。以下依据展示计划至首报间隔及工序流转；间隔不能直接解释为设备停机。"; }
         else if(q.matches(".*(异常|安灯|处置|负责人).*")) { result=incidents(); topic="incidents"; answer="已查询当前异常处理记录及尚未导入的安灯，可查看负责人、截止日期和验证状态。"; }

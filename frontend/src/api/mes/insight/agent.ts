@@ -9,6 +9,7 @@ export interface AgentOperation {
     | 'FINISH_WORKORDER'
     | 'SETTLE_WORKORDER'
     | 'UPDATE_DEVICE_STATUS'
+    | 'UPDATE_PURCHASE_PRICE'
   title?: string
   description?: string
   orderCode?: string
@@ -22,6 +23,9 @@ export interface AgentOperation {
   note?: string
   deviceCode?: string
   deviceStatus?: number
+  itemCode?: string
+  itemName?: string
+  purchasePrice?: string
 }
 export interface AgentTable {
   kind: 'AGENT_TABLE'
@@ -46,6 +50,7 @@ export interface AgentReceipt {
   businessId: number
   kind?: AgentOperation['kind']
   businessCode?: string
+  priceVersion?: number
   message: string
   executedAt: string
 }

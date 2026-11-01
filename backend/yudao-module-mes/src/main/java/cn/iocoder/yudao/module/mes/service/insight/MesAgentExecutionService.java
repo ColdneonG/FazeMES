@@ -3,6 +3,7 @@ package cn.iocoder.yudao.module.mes.service.insight;
 import cn.iocoder.yudao.framework.security.core.service.SecurityFrameworkService;
 import cn.iocoder.yudao.framework.tenant.core.context.TenantContextHolder;
 import cn.iocoder.yudao.module.mes.controller.admin.cost.vo.MesCostVO.WorkorderCost;
+import cn.iocoder.yudao.module.mes.controller.admin.cost.vo.MesCostVO.Profile;
 import cn.iocoder.yudao.module.mes.service.cost.MesCostService;
 import cn.iocoder.yudao.module.mes.service.dv.machinery.MesDvMachineryService;
 import cn.iocoder.yudao.module.mes.service.pro.integrity.MesProductionIntegrityService;
@@ -13,6 +14,7 @@ import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
 import java.math.BigDecimal;
+import java.math.RoundingMode;
 import java.nio.charset.StandardCharsets;
 import java.security.MessageDigest;
 import java.util.*;
@@ -41,11 +43,37 @@ public class MesAgentExecutionService {
     private void permission(String name){if(!security.hasPermission(name))throw invalid("当前账号缺少业务权限："+name);}
     private void authorize(String kind){
         if("UPDATE_DEVICE_STATUS".equals(kind)){permission("mes:dv-machinery:query");permission("mes:dv-machinery:update");}
+        else if("UPDATE_PURCHASE_PRICE".equals(kind)){permission("mes:cost:query");permission("mes:cost:update");}
         else if(kind!=null&&ORDER_ACTIONS.contains(kind)){
             permission("mes:pro-work-order:query");
             if("SETTLE_WORKORDER".equals(kind)){permission("mes:cost:query");permission("mes:cost:settle");}
             else permission("mes:pro-work-order:update");
         }else throw invalid("不支持的业务执行操作");
+    }
+
+    /** Reference purchase price only; historical document prices and frozen plans remain independent. */
+    @Transactional(rollbackFor=Exception.class)
+    public Map<String,Object> preparePurchasePrice(String itemCode,String itemName,String purchasePrice,String note){
+        authorize("UPDATE_PURCHASE_PRICE");
+        BigDecimal amount=purchaseAmount(purchasePrice);
+        String operationNote=note==null?"":note.strip();
+        if(operationNote.length()>2000)throw invalid("操作说明不能超过2000字");
+        String code=itemCode==null?"":itemCode.strip(),name=itemName==null?"":itemName.strip();
+        if(code.length()>100||name.length()>255)throw invalid("物料编码或名称过长，请核对完整物料资料");
+        if(code.isEmpty()&&name.isEmpty())throw invalid("请提供完整物料编码或精确物料名称");
+        // Every profile writer locks its item before its price rows, including the first version.
+        var matches=jdbc.queryForList("SELECT * FROM mes_md_item WHERE tenant_id=? AND deleted=0 AND "+(code.isEmpty()?"name":"code")+"=? ORDER BY id LIMIT 2 FOR UPDATE",tenant(),code.isEmpty()?name:code);
+        if(matches.isEmpty())throw invalid("未找到当前租户的物料，请核对完整物料编码或精确名称");
+        if(matches.size()!=1)throw invalid("匹配到多个同名物料或重复编码，请使用唯一的完整物料编码");
+        var item=matches.get(0);long id=number(item.get("id"));
+        if(!code.isEmpty()&&!name.isEmpty()&&!name.equals(text(item.get("name"))))throw invalid("物料编码与名称不一致，请核对后重新生成改价预览");
+        Map<String,Object> price=currentPrice(id);
+        int version=price==null?0:((Number)price.get("version")).intValue();
+        return map("kind","UPDATE_PURCHASE_PRICE","itemId",id,"itemCode",item.get("code"),"itemName",item.get("name"),
+            "title",item.get("name"),"oldPurchasePrice",price==null||price.get("purchase_price")==null?null:decimal(new BigDecimal(price.get("purchase_price").toString())),
+            "purchasePrice",decimal(amount),"priceVersion",version,"newPriceVersion",version+1,"expectedPriceVersion",version,
+            "currency","CNY","taxBasis","EXCLUSIVE","note",operationNote,
+            "expectedState",fingerprint(item),"expectedPriceState",price==null?"NONE":fingerprint(price));
     }
 
     @Transactional(rollbackFor=Exception.class)
@@ -75,6 +103,7 @@ public class MesAgentExecutionService {
     @Transactional(rollbackFor=Exception.class)
     public Map<String,Object> execute(Map<String,Object> payload){
         String kind=text(payload.get("kind"));authorize(kind);
+        if("UPDATE_PURCHASE_PRICE".equals(kind))return executePurchasePrice(payload);
         boolean device="UPDATE_DEVICE_STATUS".equals(kind);
         long id=number(payload.get(device?"deviceId":"workOrderId"));
         // Work-order confirmation has always locked the BOM graph before its order row.
@@ -110,6 +139,39 @@ public class MesAgentExecutionService {
             message="工单 "+code+switch(kind){case "CONFIRM_WORKORDER"->" 已确认";case "CANCEL_WORKORDER"->" 已取消";case "FINISH_WORKORDER"->" 已完成";default->" 实际成本已结算";};
         }
         return map("businessId",id,"businessCode",code,"message",message);
+    }
+
+    private Map<String,Object> executePurchasePrice(Map<String,Object> payload){
+        long id=number(payload.get("itemId"));
+        BigDecimal amount=purchaseAmount(text(payload.get("purchasePrice")));
+        var rows=jdbc.queryForList("SELECT * FROM mes_md_item WHERE id=? AND tenant_id=? AND deleted=0 FOR UPDATE",id,tenant());
+        if(rows.size()!=1)throw invalid("物料不存在或无权访问");
+        var item=rows.get(0);
+        if(!fingerprint(item).equals(text(payload.get("expectedState"))))throw invalid("物料资料已变化，请重新生成改价预览");
+        Map<String,Object> price=currentPrice(id);
+        int version=price==null?0:((Number)price.get("version")).intValue();
+        String priceState=price==null?"NONE":fingerprint(price);
+        if(version!=number(payload.get("expectedPriceVersion"))||!priceState.equals(text(payload.get("expectedPriceState"))))throw invalid("物料价格版本已变化，请重新生成改价预览");
+        Profile prior=costs.profile(id),update=new Profile();update.setItemId(id);update.setPurchasePrice(amount);
+        if(prior!=null){update.setSalePrice(prior.getSalePrice());update.setLaborCost(prior.getLaborCost());update.setOverheadCost(prior.getOverheadCost());update.setRemark(prior.getRemark());}
+        costs.saveProfile(update);
+        Profile saved=costs.profile(id);
+        if(saved==null||saved.getVersion()!=version+1||saved.getPurchasePrice()==null||saved.getPurchasePrice().compareTo(amount)!=0)throw invalid("采购单价未保存，请重试");
+        return map("businessId",id,"businessCode",item.get("code"),"priceVersion",saved.getVersion(),
+            "message","物料 "+item.get("code")+"（"+item.get("name")+"）参考采购单价已修改为 "+decimal(amount)+" 元（人民币，不含税），价格版本 V"+saved.getVersion());
+    }
+
+    private Map<String,Object> currentPrice(long itemId){
+        var prices=jdbc.queryForList("SELECT * FROM mes_cost_profile WHERE tenant_id=? AND item_id=? AND deleted=0 ORDER BY version DESC LIMIT 1 FOR UPDATE",tenant(),itemId);
+        return prices.isEmpty()?null:prices.get(0);
+    }
+    private static BigDecimal purchaseAmount(String value){
+        if(value==null||value.isBlank()||value.strip().length()>100)throw invalid("请填写有效采购单价，整数最多12位、小数最多6位");
+        try{
+            BigDecimal amount=new BigDecimal(value.strip());
+            if(amount.signum()<0||amount.scale()>6||amount.precision()-amount.scale()>12)throw invalid("采购单价必须不小于0，整数最多12位、小数最多6位");
+            return amount.setScale(6,RoundingMode.UNNECESSARY);
+        }catch(NumberFormatException|ArithmeticException ex){throw invalid("请填写有效采购单价，整数最多12位、小数最多6位");}
     }
 
     private Map<String,Object> byCode(String table,String code,String label){

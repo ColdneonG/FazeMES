@@ -80,6 +80,14 @@ class MesInsightCostQueryTest {
         assertTrue(MesInsightCostQuery.answer(result).contains("具体编码"));
         verifyNoInteractions(costs);
     }
+    @Test void purchasePriceAliasesUseTheSameReadOnlyCanonicalCostTool(){
+        var model=mock(MesAssistantModelGateway.class);
+        var assistant=new MesInsightService(jdbc,mock(MesProKittingService.class),mock(MesInsightWorkflow.class),model,security,new ObjectMapper(),tool);
+        var product=new ProductCost();product.setItemCode("BROKY-FG-V2");product.setTotalCost(new BigDecimal("64.000001"));
+        when(costs.product(100L)).thenReturn(product);
+        for(String q:List.of("查询BROKY-FG-V2的参考采购价","查询BROKY-FG-V2的采购单价"))assertEquals("cost",assistant.ask(new Question(q,false)).get("topic"));
+        verify(costs,times(2)).product(100L);verifyNoMoreInteractions(costs);verifyNoInteractions(model);
+    }
     @Test void boundedQueriesRejectMoreThanFiveMatchedRecords() {
         for (int i=1;i<=6;i++) jdbc.update("INSERT INTO mes_md_item VALUES(?,1,?,0)", 400+i, "P-"+i);
         assertThrows(ServiceException.class, () -> tool.query("P-1 P-2 P-3 P-4 P-5 P-6 成本"));

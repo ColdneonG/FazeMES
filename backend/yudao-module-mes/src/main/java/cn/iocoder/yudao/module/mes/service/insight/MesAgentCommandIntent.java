@@ -22,12 +22,81 @@ final class MesAgentCommandIntent {
     private static final Pattern DEVICE_EXTRA_FIELDS=Pattern.compile("(?:修改|更新|更改|变更|调整|设置).*设备.*(?:名称|编码|型号|品牌|车间|类型|数量)",Pattern.DOTALL);
     private static final Pattern STATUS=Pattern.compile("(?:"+ASSIGN+"|状态为)\\s*(停机|生产中|维护中)(?![\\p{IsHan}A-Za-z0-9])");
     private static final Pattern FILTER=Pattern.compile("^(?:(?:把|将|修改|更改|调整)?(?:查询|筛选|过滤|统计)(?:条件|范围|月份|年份|日期|时间|分组).*|(?:把|将|修改|更改|调整)?(?:月份|年份|查询日期|查询范围|筛选条件|分组条件).*|(?:改为|改成|换成|换为)(?:按.+|[0-9一二三四五六七八九十〇零]{1,4}(?:年|月|月份).*|本月|上个月|.+仓(?:库)?))$",Pattern.DOTALL);
+    private static final Pattern PURCHASE_PRICE=Pattern.compile("(?:参考)?采购(?:单价|价格|价)");
+    private static final Pattern PURCHASE_CHANGE=Pattern.compile("^(?:(?:把|将|为|对|给)\\s*)?(?:修改|调整|更改|更新|设置|设定|变更|改|设).*",Pattern.DOTALL);
+    private static final Pattern PRICE_ASSIGN=Pattern.compile(ASSIGN+"|调整到|调整至|改到|改至|调到|调至");
+    private static final Pattern ACTUAL_PURCHASE_PRICE=Pattern.compile("入库|收货|到货|订单|单据|单号|行价|行号|实际采购|采购单(?!价)|第[0-9一二三四五六七八九十]+行|(?i:receipt|lineId)");
+    private static final Pattern FOREIGN_CURRENCY=Pattern.compile("美元|美金|港币|港元|欧元|日元|英镑|(?i:USD|HKD|EUR|JPY|GBP)|[$€£]");
+    private static final Pattern PRICE_OTHER_FIELD=Pattern.compile("售价|销售(?:单)?价|人工(?:成本|费用)|制造费用|物料名称|名称|规格|型号|数量|交期|税率|币种|备注");
+
+    record PurchasePriceInput(String itemCode,String itemName,String purchasePrice) {}
 
     private record Intent(Set<String> kinds,boolean write,boolean unsupported) {}
 
     static Set<String> actionKinds(String question) { return analyze(question).kinds(); }
     static boolean isWrite(String question) { return analyze(question).write(); }
     static boolean hasUnsupportedActions(String question) { return analyze(question).unsupported(); }
+
+    /** Keep exact user decimals; the business service validates precision, sign and currency. */
+    static PurchasePriceInput purchasePriceInput(String question) {
+        String q=question==null?"":question.strip();
+        for(String part:SPLIT.split(q)) {
+            String clause=part.strip().replaceFirst("^"+PREFIX,"");
+            if(isRead(clause)||!purchasePriceCommand(clause))continue;
+            var price=PURCHASE_PRICE.matcher(clause);price.find();
+            String target=purchaseTarget(clause.substring(0,price.start()));
+            String amount=priceAmount(q.substring(q.indexOf(clause)+price.end()));
+            boolean explicitCode=Pattern.compile("^(?:(?:物料|材料|产品)?编码)").matcher(target).find();
+            target=target.replaceFirst("^(?:(?:物料|材料|产品)?编码)\\s*[:：]?\\s*","")
+                    .replaceFirst("^(?:物料|材料|产品)(?:名称)?[：:\\s]+","")
+                    .replaceFirst("^(?:物料|材料|产品)(?=[A-Za-z])","").strip();
+            target=target.replaceAll("^[‘’“”\\\"'「」]+|[‘’“”\\\"'「」]+$","").strip();
+            if(target.isBlank())return new PurchasePriceInput(null,null,amount);
+            boolean code=target.matches("[A-Za-z][A-Za-z0-9_.%\\-]*")
+                    &&(explicitCode||target.matches(".*[0-9_.%\\-].*")||target.matches("[A-Z]{2,}"));
+            return new PurchasePriceInput(code?target:null,code?null:target,amount);
+        }
+        return new PurchasePriceInput(null,null,null);
+    }
+
+    private static boolean purchasePriceCommand(String clause) {
+        var label=PURCHASE_PRICE.matcher(clause);
+        return !ACTUAL_PURCHASE_PRICE.matcher(clause).find()&&label.find()
+                &&(PURCHASE_CHANGE.matcher(clause).matches()||PRICE_ASSIGN.matcher(clause.substring(label.end())).find());
+    }
+
+    private static String purchaseTarget(String head) {
+        return head.strip().replaceFirst("^"+PREFIX,"")
+                .replaceFirst("^(?:把|将|为|对|给)\\s*","")
+                .replaceFirst("^(?:修改|调整|更改|更新|设置|设定|变更|改|设)(?:一下)?\\s*","")
+                .replaceFirst("(?:的|之)\\s*$","").strip();
+    }
+
+    private static String priceAmount(String tail) {
+        // A comma inside a numeric token is preserved, so invalid 1,000 is never silently changed to 1.
+        String amount=tail.split("(?<![0-9])[，,]|[，,](?![0-9])|[；;。\\n]|然后|并且|同时|接着|顺便|以及|并",2)[0].strip();
+        var assignment=Pattern.compile(PRICE_ASSIGN.pattern()+"|为|到|至|=|：|:").matcher(amount);
+        int target=-1;while(assignment.find())target=assignment.end();
+        if(target>=0)amount=amount.substring(target).strip();
+        amount=amount.replaceFirst("(?i)^(?:人民币|CNY|RMB|[￥¥])\\s*","").strip();
+        if(amount.isBlank())return null;
+        // Leave foreign-currency text intact for rejection rather than treating its digits as CNY.
+        if(FOREIGN_CURRENCY.matcher(amount).find())return amount;
+        int yuan=amount.indexOf('元');if(yuan>=0)amount=amount.substring(0,yuan).strip();
+        else amount=amount.replaceFirst("(?i)\\s*(?:人民币|CNY|RMB)$","").strip();
+        return amount.isBlank()?null:amount;
+    }
+
+    private static boolean mixedPurchaseFields(String clause) {
+        var label=PURCHASE_PRICE.matcher(clause);if(!label.find())return false;
+        String target=purchaseTarget(clause.substring(0,label.start()));
+        String tail=clause.substring(label.end());
+        return target.matches("(?s).*(?:[、，,；;]|\\s+(?:和|与|及|以及)\\s+).*")
+                ||Pattern.compile("[A-Za-z][A-Za-z0-9_.%\\-]*").matcher(target).results()
+                .filter(match->match.group().matches(".*[0-9_.%\\-].*")).count()>1
+                ||target.matches("(?s).*(?:批量|全部|所有|分别|多个|两种|这些|每种|每个).*")
+                ||PRICE_OTHER_FIELD.matcher(tail).find();
+    }
 
     static Integer deviceStatus(String question) {
         if(question==null)return null;
@@ -64,15 +133,21 @@ final class MesAgentCommandIntent {
             }
             if(device&&(DEVICE_CHANGE.matcher(clause).find()
                     ||((clause.contains("状态")||STATUS.matcher(clause).find())&&Pattern.compile(ASSIGN).matcher(clause).find())))clauseKinds.add("UPDATE_DEVICE_STATUS");
+            if(purchasePriceCommand(clause))clauseKinds.add("UPDATE_PURCHASE_PRICE");
             kinds.addAll(clauseKinds);
             if(!clauseKinds.isEmpty()) {
                 write=true;actionClauses++;
                 if(EXTRA_WRITE.matcher(clause).find()
                         ||Pattern.compile(ASSIGN).matcher(clause).results().count()>1
+                        ||(clauseKinds.contains("UPDATE_PURCHASE_PRICE")&&mixedPurchaseFields(clause))
                         ||(clauseKinds.contains("UPDATE_DEVICE_STATUS")&&DEVICE_EXTRA_FIELDS.matcher(clause).find()))unsupported=true;
             }else if(WRITE.matcher(clause).find()) {
                 write=true;unsupported=true;
             }
+        }
+        if(kinds.contains("UPDATE_PURCHASE_PRICE"))for(String part:SPLIT.split(q)) {
+            String clause=part.strip();
+            if(!isRead(clause)&&!PURCHASE_PRICE.matcher(clause).find()&&PRICE_OTHER_FIELD.matcher(clause).find())unsupported=true;
         }
         return new Intent(kinds,write,unsupported||actionClauses>1);
     }
@@ -84,6 +159,10 @@ final class MesAgentCommandIntent {
                 ||clause.matches("(?s)^(?:把|将)?\\s*"+ORDER+".*"+ASSIGN+"\\s*(?:已)?"+state.substring(1)+".*");
     }
 
-    private static boolean isRead(String clause) { return READ.matcher(clause).matches()||QUESTION.matcher(clause).find(); }
+    private static boolean isRead(String clause) {
+        return READ.matcher(clause).matches()||QUESTION.matcher(clause).find()
+                ||(PURCHASE_PRICE.matcher(clause).find()&&!PURCHASE_CHANGE.matcher(clause).matches()
+                &&!PRICE_ASSIGN.matcher(clause).find()&&clause.matches("(?s).*(?:历史|修改|变更|改价).*记录.*"));
+    }
     private static boolean isFilter(String clause) { return FILTER.matcher(clause).matches(); }
 }

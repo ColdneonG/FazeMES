@@ -46,11 +46,22 @@ class MesInsightBusinessAssistantTest {
     private Question ask(String q){return new Question(q,false);}
     private Question next(Map<String,Object> a,String q){return new Question(q,false,((Number)a.get("conversationId")).longValue(),((Number)a.get("version")).intValue(),null);}
     @SuppressWarnings("unchecked") private Map<String,Object> evidenceOf(Map<String,Object> answer){return (Map<String,Object>)answer.get("evidence");}
+    @Test void purchasePriceQueriesReachTheReadOnlyCostServiceAndRetainItsPermissionBoundary(){
+        var models=mock(MesAssistantModelGateway.class);
+        ReflectionTestUtils.setField(assistant,"tools",new MesAgentBusinessTools(jdbc,new ObjectMapper(),security,mock(MesInsightWorkflow.class),models,manager));
+        when(legacy.ask(any())).thenReturn(map("answer","当前参考采购价","topic","cost","mode","RULES","evidence",map("items",List.of()),"suggestions",List.of()));
+        for(String q:List.of("查询BROKY-R16的参考采购价","查询BROKY-R16的采购单价","查看Broky电机采购模块的采购价格历史修改记录")){
+            var answer=assistant.ask(ask(q));assertEquals("cost",answer.get("topic"));assertFalse(answer.containsKey("proposal"));
+        }
+        verify(legacy,times(3)).ask(any());verifyNoInteractions(models);
+        when(security.hasPermission("mes:cost:query")).thenReturn(false);clearInvocations(legacy);
+        assertThrows(ServiceException.class,()->assistant.ask(ask("查询BROKY-R16的参考采购价")));verifyNoInteractions(legacy);
+    }
     @Test void realCommandRoutingInterruptsPendingInventoryAndNeverReturnsQueryFacts(){
         var models=mock(MesAssistantModelGateway.class);
         var realTools=new MesAgentBusinessTools(jdbc,new ObjectMapper(),security,mock(MesInsightWorkflow.class),models,manager);
         ReflectionTestUtils.setField(assistant,"tools",realTools);
-        for(String q:List.of("确认工单 WO-001","取消工单 WO-001","完成工单 WO-001","结算工单 WO-001 的实际成本","把设备 DV-001 的状态改成维护中")){
+        for(String q:List.of("确认工单 WO-001","取消工单 WO-001","完成工单 WO-001","结算工单 WO-001 的实际成本","把设备 DV-001 的状态改成维护中","修改Broky电机采购模块的采购单价为64元")){
             var pending=assistant.ask(ask("9月份库存"));assertEquals("CLARIFY",pending.get("status"));
             var req=new Question(q,true,((Number)pending.get("conversationId")).longValue(),((Number)pending.get("version")).intValue(),null);
             var result=assistant.ask(req);assertEquals("agent_action",result.get("topic"),q);assertNotNull(result.get("proposal"));

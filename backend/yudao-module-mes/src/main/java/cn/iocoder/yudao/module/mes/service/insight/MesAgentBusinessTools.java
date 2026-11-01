@@ -33,13 +33,18 @@ public class MesAgentBusinessTools {
     @jakarta.annotation.Resource
     private MesAgentExecutionService execution;
     private static final ZoneId ZONE=ZoneId.of("Asia/Shanghai");
-    private static final Set<String> DOMAIN_ACTIONS=Set.of("CONFIRM_WORKORDER","CANCEL_WORKORDER","FINISH_WORKORDER","SETTLE_WORKORDER","UPDATE_DEVICE_STATUS");
-    private static final Set<String> ACTIONS=Set.of("CREATE_INCIDENT","MOVE_INCIDENT","CONFIRM_WORKORDER","CANCEL_WORKORDER","FINISH_WORKORDER","SETTLE_WORKORDER","UPDATE_DEVICE_STATUS");
-    private static final Set<String> KINDS=Set.of("WORKORDER_QUERY","WORKORDER_REPORT","DEVICE_QUERY","CREATE_INCIDENT","MOVE_INCIDENT","CONFIRM_WORKORDER","CANCEL_WORKORDER","FINISH_WORKORDER","SETTLE_WORKORDER","UPDATE_DEVICE_STATUS");
+    private static final Set<String> DOMAIN_ACTIONS=Set.of("CONFIRM_WORKORDER","CANCEL_WORKORDER","FINISH_WORKORDER","SETTLE_WORKORDER","UPDATE_DEVICE_STATUS","UPDATE_PURCHASE_PRICE");
+    private static final Set<String> ACTIONS=Set.of("CREATE_INCIDENT","MOVE_INCIDENT","CONFIRM_WORKORDER","CANCEL_WORKORDER","FINISH_WORKORDER","SETTLE_WORKORDER","UPDATE_DEVICE_STATUS","UPDATE_PURCHASE_PRICE");
+    private static final Set<String> KINDS=Set.of("WORKORDER_QUERY","WORKORDER_REPORT","DEVICE_QUERY","CREATE_INCIDENT","MOVE_INCIDENT","CONFIRM_WORKORDER","CANCEL_WORKORDER","FINISH_WORKORDER","SETTLE_WORKORDER","UPDATE_DEVICE_STATUS","UPDATE_PURCHASE_PRICE");
     private static final Map<Integer,String> ORDER_STATUS=Map.of(0,"草稿",1,"已确认",2,"已完成",3,"已取消");
     public record Operation(String kind,String title,String description,String orderCode,String category,Long incidentId,
                             String status,Long ownerId,String rootCause,String correctiveAction,String evidence,String note,
-                            String deviceCode,Integer deviceStatus) {
+                            String deviceCode,Integer deviceStatus,String itemCode,String itemName,String purchasePrice) {
+        public Operation(String kind,String title,String description,String orderCode,String category,Long incidentId,
+                         String status,Long ownerId,String rootCause,String correctiveAction,String evidence,String note,
+                         String deviceCode,Integer deviceStatus) {
+            this(kind,title,description,orderCode,category,incidentId,status,ownerId,rootCause,correctiveAction,evidence,note,deviceCode,deviceStatus,null,null,null);
+        }
         public Operation(String kind,String title,String description,String orderCode,String category,Long incidentId,
                          String status,Long ownerId,String rootCause,String correctiveAction,String evidence,String note) {
             this(kind,title,description,orderCode,category,incidentId,status,ownerId,rootCause,correctiveAction,evidence,note,null,null);
@@ -60,6 +65,7 @@ public class MesAgentBusinessTools {
             case "CONFIRM_WORKORDER","CANCEL_WORKORDER","FINISH_WORKORDER"->Set.of("mes:pro-work-order:query","mes:pro-work-order:update");
             case "SETTLE_WORKORDER"->Set.of("mes:pro-work-order:query","mes:cost:query","mes:cost:settle");
             case "UPDATE_DEVICE_STATUS"->Set.of("mes:dv-machinery:query","mes:dv-machinery:update");
+            case "UPDATE_PURCHASE_PRICE"->Set.of("mes:cost:query","mes:cost:update");
             default->Set.of("mes:insight:manage");
         };
         names.forEach(this::permission);return names;
@@ -97,9 +103,14 @@ public class MesAgentBusinessTools {
         base();
         if(DOMAIN_ACTIONS.contains(kind)){
             required.addAll(actionPermissions(kind));
-            String code=singleActionCode(q);
-            operation=new Operation(kind,"",q,kind.equals("UPDATE_DEVICE_STATUS")?"":code,null,null,null,null,null,null,null,q,
-                kind.equals("UPDATE_DEVICE_STATUS")?code:null,kind.equals("UPDATE_DEVICE_STATUS")?MesAgentCommandIntent.deviceStatus(q):null);
+            if(kind.equals("UPDATE_PURCHASE_PRICE")){
+                var input=MesAgentCommandIntent.purchasePriceInput(q);
+                operation=new Operation(kind,"",q,null,null,null,null,null,null,null,null,q,null,null,input.itemCode(),input.itemName(),input.purchasePrice());
+            }else{
+                String code=singleActionCode(q);
+                operation=new Operation(kind,"",q,kind.equals("UPDATE_DEVICE_STATUS")?"":code,null,null,null,null,null,null,null,q,
+                    kind.equals("UPDATE_DEVICE_STATUS")?code:null,kind.equals("UPDATE_DEVICE_STATUS")?MesAgentCommandIntent.deviceStatus(q):null);
+            }
             return response("请核对业务记录及目标操作，确认预览后执行并保存业务回执。","agent_action",map("kind","AGENT_ACTION"),map("proposal",operation));
         }
         if(kind.equals("CREATE_INCIDENT")||kind.equals("MOVE_INCIDENT")){
@@ -198,7 +209,9 @@ public class MesAgentBusinessTools {
         }
         var payload=new LinkedHashMap<String,Object>();payload.put("kind",operation.kind());
         if(DOMAIN_ACTIONS.contains(operation.kind())){
-            payload.putAll(execution.prepare(operation.kind(),operation.orderCode(),operation.deviceCode(),operation.deviceStatus(),operation.note()));
+            payload.putAll(operation.kind().equals("UPDATE_PURCHASE_PRICE")
+                ?execution.preparePurchasePrice(operation.itemCode(),operation.itemName(),operation.purchasePrice(),operation.note())
+                :execution.prepare(operation.kind(),operation.orderCode(),operation.deviceCode(),operation.deviceStatus(),operation.note()));
         }else{
             long owner=operation.ownerId()==null?user():operation.ownerId();
             if(jdbc.queryForList("SELECT id FROM system_users WHERE id=? AND tenant_id=? AND deleted=0 AND status=0",owner,tenant()).isEmpty())throw invalid("负责人不存在、已停用或不属于当前租户");

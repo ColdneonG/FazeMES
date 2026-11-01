@@ -46,6 +46,20 @@ function setup(
     },
     '@/utils/download': { __esModule: true, default: { excel: (...args) => downloads.push(args) } }
   }
+  const formatFile = path.join(__dirname, '../src/views/mes/cost/format.ts')
+  const formatModule = { exports: {} }
+  vm.runInNewContext(
+    ts.transpileModule(fs.readFileSync(formatFile, 'utf8'), {
+      compilerOptions: { module: ts.ModuleKind.CommonJS, target: ts.ScriptTarget.ES2022 }
+    }).outputText,
+    {
+      module: formatModule,
+      exports: formatModule.exports,
+      require: (name) => deps[name] || require(name)
+    },
+    { filename: formatFile }
+  )
+  deps['@/views/mes/cost/format'] = formatModule.exports
   vm.runInNewContext(
     ts.transpileModule(source, {
       compilerOptions: { module: ts.ModuleKind.CommonJS, target: ts.ScriptTarget.ES2022 }
@@ -138,7 +152,8 @@ const businessOperations = [
   { kind: 'CANCEL_WORKORDER', orderCode: 'WO-001' },
   { kind: 'FINISH_WORKORDER', orderCode: 'WO-001' },
   { kind: 'SETTLE_WORKORDER', orderCode: 'WO-001' },
-  { kind: 'UPDATE_DEVICE_STATUS', deviceCode: 'DV-001', deviceStatus: 3 }
+  { kind: 'UPDATE_DEVICE_STATUS', deviceCode: 'DV-001', deviceStatus: 3 },
+  { kind: 'UPDATE_PURCHASE_PRICE', itemCode: 'BROKY-R16', purchasePrice: '64.000001' }
 ]
 for (const proposal of businessOperations) {
   test(`${proposal.kind} prepares and executes the reviewed operation without requiring incident ownership`, async (t) => {
@@ -168,6 +183,8 @@ for (const proposal of businessOperations) {
     assert.equal(prepared[0].operation.orderCode, proposal.orderCode)
     assert.equal(prepared[0].operation.deviceCode, proposal.deviceCode)
     assert.equal(prepared[0].operation.deviceStatus, proposal.deviceStatus)
+    assert.equal(prepared[0].operation.itemCode, proposal.itemCode)
+    assert.equal(prepared[0].operation.purchasePrice, proposal.purchasePrice)
     assert.equal(executed.length, 0)
     state.form.orderCode = 'WO-OTHER'
     state.form.deviceStatus = 1
@@ -250,6 +267,7 @@ test('execution receipts navigate to the corresponding business page including r
     ['FINISH_WORKORDER', { name: 'MesProWorkOrder' }],
     ['UPDATE_DEVICE_STATUS', { name: 'MesDvMachinery' }],
     ['SETTLE_WORKORDER', { path: '/mes/md/cost', query: { workorderId: 123 } }],
+    ['UPDATE_PURCHASE_PRICE', { path: '/mes/md/cost', query: { itemId: 123 } }],
     ['MOVE_INCIDENT', '/mes/insight?tab=incidents']
   ]) {
     const { state, routes } = setup(
@@ -264,4 +282,142 @@ test('execution receipts navigate to the corresponding business page including r
     await state.openReceipt()
     assert.equal(JSON.stringify(routes), JSON.stringify([destination]))
   }
+})
+
+test('purchase price preparation preserves exact decimal strings and accepts a material name', async (t) => {
+  const calls = []
+  const { state, incidentRequests } = setup(
+    t,
+    {
+      prepare: async (operation) => {
+        calls.push(operation)
+        return { id: 'price-preview', token: 'price-nonce', payload: operation }
+      }
+    },
+    {
+      proposal: {
+        kind: 'UPDATE_PURCHASE_PRICE',
+        itemName: 'Broky电机采购模块',
+        purchasePrice: '999999999999.999999'
+      },
+      evidence: {},
+      turnId: 9
+    }
+  )
+  await state.openReview()
+  assert.equal(incidentRequests.length, 0)
+  await state.prepare()
+  assert.equal(calls[0].itemName, 'Broky电机采购模块')
+  assert.equal(calls[0].itemCode, undefined)
+  assert.equal(calls[0].purchasePrice, '999999999999.999999')
+  assert.equal(typeof calls[0].purchasePrice, 'string')
+  state.resetPreview()
+  state.form.purchasePrice = '0'
+  await state.prepare()
+  assert.equal(calls[1].purchasePrice, '0')
+})
+
+test('purchase price input rejects numbers and invalid decimal text before requesting a preview', async (t) => {
+  const calls = []
+  const { state } = setup(
+    t,
+    { prepare: async (operation) => calls.push(operation) },
+    {
+      proposal: { kind: 'UPDATE_PURCHASE_PRICE', itemCode: 'BROKY-R16' },
+      evidence: {},
+      turnId: 9
+    }
+  )
+  await state.openReview()
+  for (const value of [
+    undefined,
+    64,
+    '',
+    '-1',
+    '1e3',
+    '1,000',
+    '64.0000001',
+    '1000000000000',
+    ' 64 ',
+    '64元'
+  ]) {
+    state.form.purchasePrice = value
+    await state.prepare()
+    assert.equal(calls.length, 0)
+    assert.notEqual(state.error.value, '')
+  }
+})
+
+test('purchase price update requires both cost permissions and blocks confirmation after revocation', async (t) => {
+  const permissions = vue.ref(new Set(['mes:cost:update']))
+  const calls = []
+  const { state } = setup(
+    t,
+    {
+      prepare: async () => {
+        calls.push('prepare')
+        return { id: 'price-preview', token: 'price-nonce', payload: {} }
+      },
+      execute: async () => calls.push('execute')
+    },
+    {
+      proposal: { kind: 'UPDATE_PURCHASE_PRICE', itemCode: 'BROKY-R16', purchasePrice: '64' },
+      evidence: {},
+      turnId: 9
+    },
+    permissions
+  )
+  assert.equal(state.canExecute.value, false)
+  await state.prepare()
+  assert.equal(calls.length, 0)
+  permissions.value.add('mes:cost:query')
+  await state.openReview()
+  await state.prepare()
+  assert.equal(state.canExecute.value, true)
+  permissions.value.delete('mes:cost:update')
+  assert.equal(state.canExecute.value, false)
+  await state.execute()
+  assert.deepEqual(calls, ['prepare'])
+})
+
+test('purchase price review shows an unset old price, exact new price, material and tax basis', async (t) => {
+  const { state } = setup(
+    t,
+    {},
+    {
+      proposal: {
+        kind: 'UPDATE_PURCHASE_PRICE',
+        itemName: 'Broky电机采购模块',
+        purchasePrice: '64'
+      },
+      evidence: {},
+      turnId: 9
+    }
+  )
+  state.preview.value = {
+    payload: {
+      kind: 'UPDATE_PURCHASE_PRICE',
+      itemId: 123,
+      itemCode: 'BROKY-R16',
+      itemName: 'Broky电机采购模块',
+      oldPurchasePrice: null,
+      purchasePrice: '64.000001',
+      priceVersion: 0,
+      currency: 'CNY',
+      taxBasis: 'EXCLUSIVE'
+    }
+  }
+  const fields = state.reviewFields.value
+  assert.equal(fields.find((field) => field.key === 'oldPurchasePrice').value, '未设置')
+  assert.equal(fields.find((field) => field.key === 'purchasePrice').value, '64.000001')
+  assert.equal(fields.find((field) => field.key === 'itemCode').value, 'BROKY-R16')
+  assert.equal(fields.find((field) => field.key === 'itemName').value, 'Broky电机采购模块')
+  assert.equal(fields.find((field) => field.key === 'currency').value, '人民币（CNY）')
+  assert.equal(fields.find((field) => field.key === 'taxBasis').value, '不含税')
+  state.preview.value.payload.oldPurchasePrice = '0.000000'
+  assert.equal(
+    state.reviewFields.value.find((field) => field.key === 'oldPurchasePrice').value,
+    '0.000000'
+  )
+  assert.equal(state.receiptLinkLabel.value, '查看物料价格与成本')
 })
